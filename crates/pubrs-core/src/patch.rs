@@ -181,7 +181,7 @@ impl Patch {
 pub struct Touched {
     pub frames: Vec<FrameId>,
     pub stories: Vec<StoryId>,
-    /// Present when the page list changed (all page ids listed).
+    /// Pages added, removed or changed (frames or guides on them, order).
     pub pages: Vec<PageId>,
     pub assets: Vec<AssetId>,
     pub styles: bool,

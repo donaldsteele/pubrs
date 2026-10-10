@@ -85,7 +85,8 @@ fn lookup<'a>(vars: &'a BTreeMap<String, Value>, path: &str) -> Option<&'a Value
     Some(cur)
 }
 
-fn substitute(v: &Value, vars: &BTreeMap<String, Value>) -> Result<Value, ApiError> {
+/// Replace `${name.path}` references in `v` with values from `vars`.
+pub fn substitute(v: &Value, vars: &BTreeMap<String, Value>) -> Result<Value, ApiError> {
     Ok(match v {
         Value::String(s) => {
             if let Some(inner) = s.strip_prefix("${").and_then(|r| r.strip_suffix('}'))

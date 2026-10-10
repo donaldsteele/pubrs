@@ -26,6 +26,9 @@ pub struct SessionConfig {
     pub user_templates_dir: Option<PathBuf>,
     /// Font files to use instead of the bundled set (tests).
     pub font_dir: Option<PathBuf>,
+    /// Folder that relative paths in save/open/export calls resolve against,
+    /// and where files go when no path is given.
+    pub output_dir: Option<PathBuf>,
 }
 
 /// One open document.
@@ -65,6 +68,7 @@ pub struct Session {
     pub(crate) ids: Box<dyn IdSource + Send>,
     pub(crate) config: SessionConfig,
     pub(crate) rasterizer: Option<pubrs_render::Rasterizer>,
+    pub(crate) templates: pubrs_io::templates::TemplateLibrary,
 }
 
 impl std::fmt::Debug for Session {
@@ -105,6 +109,7 @@ impl Session {
             current: None,
             ctx: ExportContext::new(fonts),
             ids,
+            templates: pubrs_io::templates::TemplateLibrary::new(config.user_templates_dir.clone()),
             config,
             rasterizer: None,
         }
@@ -112,6 +117,23 @@ impl Session {
 
     pub fn config(&self) -> &SessionConfig {
         &self.config
+    }
+
+    /// Resolve a user-supplied path: absolute paths are used as-is, relative
+    /// ones are joined to the output folder when one is configured.
+    pub fn resolve_path(&self, path: &str) -> PathBuf {
+        let p = PathBuf::from(path);
+        match &self.config.output_dir {
+            Some(dir) if p.is_relative() => dir.join(p),
+            _ => p,
+        }
+    }
+
+    /// A default file path in the output folder for a document (e.g. `bakery-flyer.pdf`).
+    pub fn default_path(&self, doc_id: Option<DocumentId>, ext: &str) -> Option<PathBuf> {
+        let dir = self.config.output_dir.as_ref()?;
+        let title = self.get(doc_id).ok()?.doc().meta.title.clone();
+        Some(dir.join(format!("{}.{ext}", slug(&title))))
     }
 
     pub fn ids(&mut self) -> &mut dyn IdSource {
@@ -367,4 +389,18 @@ pub fn changed(doc_id: DocumentId, change: &Change) -> Changed {
         revision: change.revision,
         affected_ids: ids,
     }
+}
+
+/// File-name-safe version of a title ("Golden Crust!" -> "golden-crust").
+pub fn slug(title: &str) -> String {
+    let mut s = String::new();
+    for c in title.chars() {
+        if c.is_alphanumeric() {
+            s.extend(c.to_lowercase());
+        } else if !s.ends_with('-') && !s.is_empty() {
+            s.push('-');
+        }
+    }
+    let s = s.trim_end_matches('-').to_string();
+    if s.is_empty() { "untitled".into() } else { s }
 }

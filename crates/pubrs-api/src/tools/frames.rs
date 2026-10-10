@@ -17,6 +17,7 @@ use crate::session::{Changed, Session};
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameAddText {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Page to place the frame on (default: first page). Or give master_id.
@@ -28,17 +29,21 @@ pub struct FrameAddText {
     pub x: f64,
     /// Top edge (points from the page's top edge, y grows down).
     pub y: f64,
+    /// Width in points.
     pub width: f64,
+    /// Height in points.
     pub height: f64,
     /// Initial text; "\n" separates paragraphs. With markup=true, `# `/`## `
     /// headings and **bold**, *italic*, __underline__ are recognised.
     #[serde(default)]
     pub text: Option<String>,
+    /// Interpret markup in `text` (see text).
     #[serde(default)]
     pub markup: bool,
     /// Paragraph style name for all paragraphs (e.g. "Body", "Heading 1").
     #[serde(default)]
     pub style: Option<String>,
+    /// Font family for the text, e.g. "Liberation Serif" (see fonts_list).
     #[serde(default)]
     pub font_family: Option<String>,
     /// Font size in points.
@@ -51,6 +56,7 @@ pub struct FrameAddText {
     /// Number of columns (1-12).
     #[serde(default)]
     pub columns: Option<u32>,
+    /// Display name shown in frame lists.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -71,15 +77,20 @@ pub struct FrameAddOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameAddImage {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
     pub page_id: Option<PageId>,
     #[serde(default)]
     pub master_id: Option<MasterId>,
+    /// Left edge in points from the page's left edge.
     pub x: f64,
+    /// Top edge in points from the page's top edge (y grows down).
     pub y: f64,
+    /// Width in points.
     pub width: f64,
+    /// Height in points.
     pub height: f64,
     /// Image file (PNG, JPEG or SVG). Omit both path and base64 for an empty picture frame.
     #[serde(default)]
@@ -87,12 +98,16 @@ pub struct FrameAddImage {
     /// Image bytes, base64.
     #[serde(default)]
     pub base64: Option<String>,
+    /// SVG markup as text (drawn artwork when no photo is available).
+    #[serde(default)]
+    pub svg: Option<String>,
     /// Display name for base64 images.
     #[serde(default)]
     pub filename: Option<String>,
     /// fill (default, covers the frame), fit (letterbox) or stretch.
     #[serde(default)]
     pub fit: Option<ImageFit>,
+    /// Display name shown in frame lists.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -109,6 +124,7 @@ pub enum ShapeKind {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameAddShape {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -117,9 +133,13 @@ pub struct FrameAddShape {
     pub master_id: Option<MasterId>,
     pub shape: ShapeKind,
     /// Bounding box. A line runs corner to corner; height 0 = horizontal line.
+    /// Left edge in points from the page's left edge.
     pub x: f64,
+    /// Top edge in points from the page's top edge (y grows down).
     pub y: f64,
+    /// Width in points.
     pub width: f64,
+    /// Height in points.
     pub height: f64,
     /// Rectangles: corner radius in points.
     #[serde(default)]
@@ -138,6 +158,7 @@ pub struct FrameAddShape {
     pub stroke_width: Option<f64>,
     #[serde(default)]
     pub dash: Option<Dash>,
+    /// Display name shown in frame lists.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -145,6 +166,7 @@ pub struct FrameAddShape {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameDelete {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -156,6 +178,7 @@ pub struct FrameDelete {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameMove {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -188,6 +211,7 @@ pub enum Anchor {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameResize {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -207,6 +231,7 @@ pub struct FrameResize {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameRotate {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -227,6 +252,7 @@ pub enum ZAction {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameSetZorder {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -240,6 +266,7 @@ pub struct FrameSetZorder {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameGroup {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// At least two frames on the same page.
@@ -256,6 +283,7 @@ pub struct FrameGroupOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameUngroup {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub group_id: FrameId,
@@ -272,6 +300,7 @@ pub struct FrameUngroupOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameLock {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -296,6 +325,7 @@ pub enum RelativeTo {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameAlign {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_ids: Vec<FrameId>,
@@ -308,6 +338,7 @@ pub struct FrameAlign {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameDistribute {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// At least two frames.
@@ -322,6 +353,7 @@ pub struct FrameDistribute {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameSetStyle {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -340,6 +372,7 @@ pub struct FrameSetStyle {
     #[serde(default)]
     pub opacity: Option<f64>,
     /// Display name (empty string clears).
+    /// Display name shown in frame lists.
     #[serde(default)]
     pub name: Option<String>,
 }
@@ -347,6 +380,7 @@ pub struct FrameSetStyle {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameSetWrap {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -360,6 +394,7 @@ pub struct FrameSetWrap {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameSetPlaceholder {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -373,6 +408,7 @@ pub struct FrameSetPlaceholder {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameList {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Only frames on this page.
@@ -395,6 +431,7 @@ pub struct FrameListOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameRef {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -417,6 +454,7 @@ pub struct FrameGetOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FrameDuplicate {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -541,10 +579,11 @@ impl Session {
         let rect = self.rect_checked(req.x, req.y, req.width, req.height)?;
         let mut commands = Vec::new();
         let mut asset_id = None;
-        if req.path.is_some() || req.base64.is_some() {
+        if req.path.is_some() || req.base64.is_some() || req.svg.is_some() {
             let (cmd, id) = self.import_asset(
                 req.path.as_deref(),
                 req.base64.as_deref(),
+                req.svg.as_deref(),
                 req.filename.as_deref(),
             )?;
             commands.push(cmd);

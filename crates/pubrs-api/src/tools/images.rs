@@ -14,6 +14,7 @@ pub const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImagePlace {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// An image (picture) frame; create one with frame_add_image.
@@ -24,6 +25,10 @@ pub struct ImagePlace {
     /// Image bytes, base64-encoded.
     #[serde(default)]
     pub base64: Option<String>,
+    /// SVG markup as text (e.g. "<svg xmlns=..."). Handy for drawn artwork
+    /// when no photo is available; scales without losing quality.
+    #[serde(default)]
+    pub svg: Option<String>,
     /// Display name for base64 images.
     #[serde(default)]
     pub filename: Option<String>,
@@ -49,6 +54,7 @@ pub struct ImagePlaceOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImageCrop {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -69,6 +75,7 @@ pub struct ImageCrop {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ImageFitReq {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
@@ -85,10 +92,16 @@ impl Session {
         &mut self,
         path: Option<&str>,
         base64: Option<&str>,
+        svg: Option<&str>,
         filename: Option<&str>,
     ) -> ApiResult<(Command, AssetId)> {
         let (name, bytes) = match (path, base64) {
+            _ if svg.is_some() => (
+                filename.unwrap_or("artwork.svg").to_string(),
+                svg.unwrap_or_default().as_bytes().to_vec(),
+            ),
             (Some(p), _) => {
+                let p = &self.resolve_path(p).display().to_string();
                 let meta = std::fs::metadata(p).map_err(|e| {
                     ApiError::new(
                         "file_not_found",
@@ -139,8 +152,8 @@ impl Session {
             }
             (None, None) => {
                 return Err(ApiError::invalid(
-                    "give path or base64",
-                    "pass a PNG/JPEG/SVG file path or base64 bytes",
+                    "give path, base64 or svg",
+                    "pass a PNG/JPEG/SVG file path, base64 bytes, or SVG markup",
                 ));
             }
         };
@@ -167,6 +180,7 @@ impl Session {
         let (add, asset_id) = self.import_asset(
             req.path.as_deref(),
             req.base64.as_deref(),
+            req.svg.as_deref(),
             req.filename.as_deref(),
         )?;
         let (pw, ph) = match &add {

@@ -3,7 +3,8 @@
 use pubrs_core::Document;
 use pubrs_layout::{DocumentLayout, FontLibrary, Layouter};
 use pubrs_render::{
-    PdfOptions, RasterOptions, RasterRenderer, RenderError, build_page_scene, render_pdf, tiny_skia,
+    PdfOptions, RasterOptions, RasterRenderer, RenderError, SceneOptions, build_page_scene,
+    build_page_scene_with, render_pdf, tiny_skia,
 };
 
 use crate::images::ImageCache;
@@ -68,7 +69,20 @@ impl ExportContext {
         page: usize,
         opts: &RasterOptions,
     ) -> Result<tiny_skia::Pixmap, ExportError> {
-        let scene = build_page_scene(doc, layout, page)
+        self.render_page_with(doc, layout, page, opts, SceneOptions::default())
+    }
+
+    /// Like [`ExportContext::render_page`] with scene options (e.g. previews
+    /// that show empty picture frames).
+    pub fn render_page_with(
+        &mut self,
+        doc: &Document,
+        layout: &DocumentLayout,
+        page: usize,
+        opts: &RasterOptions,
+        scene_opts: SceneOptions,
+    ) -> Result<tiny_skia::Pixmap, ExportError> {
+        let scene = build_page_scene_with(doc, layout, page, scene_opts)
             .ok_or(ExportError::NoSuchPage(page, doc.pages.len()))?;
         self.images.sync(doc);
         Ok(self.raster.render(&scene, &self.images, opts)?)

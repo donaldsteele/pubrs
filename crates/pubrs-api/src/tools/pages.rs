@@ -14,6 +14,7 @@ use crate::session::{Changed, Session};
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PageAdd {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Insert position, 0-based (default: after the last page).
@@ -36,6 +37,7 @@ pub struct PageAddOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PageDelete {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub page_id: PageId,
@@ -47,6 +49,7 @@ pub struct PageDelete {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PageReorder {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub page_id: PageId,
@@ -75,6 +78,7 @@ pub struct PageListOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PageRef {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub page_id: PageId,
@@ -96,6 +100,7 @@ pub struct PageInfoOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MasterCreate {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Display name, e.g. "Footer".
@@ -113,6 +118,7 @@ pub struct MasterCreateOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MasterApply {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Master to apply, or null to remove the master from the pages.
@@ -125,6 +131,7 @@ pub struct MasterApply {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MasterDelete {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub master_id: MasterId,
@@ -136,6 +143,7 @@ pub struct MasterDelete {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GuideAdd {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Page to add the guide to (or give master_id).
@@ -159,6 +167,7 @@ pub struct GuideAddOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GuideRemove {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]

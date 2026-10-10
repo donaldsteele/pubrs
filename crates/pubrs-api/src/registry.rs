@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
-use crate::tools::{doc, export, frames, history, images, pages, query, styles, text};
+use crate::tools::{doc, export, frames, history, images, pages, query, styles, templates, text};
 
 /// One tool.
 pub struct ToolDef {
@@ -218,6 +218,13 @@ pub static TOOLS: &[ToolDef] = &[
         "Set how the image fills its frame: fill (cover, may crop), fit (all visible) or stretch. resize_frame: true makes the frame match the image's aspect ratio."),
     tool!("image_replace", "Images", image_replace, images::ImagePlace => images::ImagePlaceOut, ro = false, destructive = false, image = None,
         "Swap the image in a picture frame for another file/base64 image, keeping the frame and fit mode (crop is reset)."),
+    // ---------------------------------------------------------------- templates
+    tool!("template_list", "Templates", template_list, templates::TemplateList => templates::TemplateListOut, ro = true, destructive = false, image = None,
+        "List templates (built-in: flyer, trifold_brochure, business_card, newsletter; plus user templates) with page size and every placeholder's name, kind, hint and size."),
+    tool!("template_apply", "Templates", template_apply, templates::TemplateApply => templates::TemplateApplyOut, ro = false, destructive = false, image = None,
+        "Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place."),
+    tool!("template_save", "Templates", template_save, templates::TemplateSave => templates::TemplateSaveOut, ro = false, destructive = false, image = None,
+        "Save the document as a reusable user template. Mark frames as placeholders first with frame_set_placeholder."),
     // ---------------------------------------------------------------- export
     tool!("export_pdf", "Export", export_pdf, export::ExportPdf => export::ExportPdfOut, ro = true, destructive = false, image = None,
         "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines. Writes to path, or returns base64 when no path is given."),

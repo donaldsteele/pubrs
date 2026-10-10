@@ -13,6 +13,7 @@ use crate::session::{Changed, Session};
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextSet {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// A text frame (its whole chain's story is replaced). Or give story_id.
@@ -42,6 +43,7 @@ pub struct TextChangeOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextInsert {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -58,6 +60,7 @@ pub struct TextInsert {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextReplaceRange {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -75,6 +78,7 @@ pub struct TextReplaceRange {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextApplyCharStyle {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -114,6 +118,7 @@ pub struct TextApplyCharStyle {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextApplyParaStyle {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -150,6 +155,7 @@ pub struct TextApplyParaStyle {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextLinkFrames {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Text frame whose overflow continues into `to_frame_id`.
@@ -161,6 +167,7 @@ pub struct TextLinkFrames {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextUnlinkFrames {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// The link after this frame is broken; later frames get a new empty story.
@@ -178,6 +185,7 @@ pub struct TextUnlinkOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextRef {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -265,6 +273,7 @@ pub struct OverflowOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextSetFrameOptions {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,

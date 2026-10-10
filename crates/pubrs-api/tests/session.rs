@@ -168,6 +168,7 @@ fn flyer_flow_save_reopen_equal() {
             height: 180.0,
             path: Some(png.display().to_string()),
             base64: None,
+            svg: None,
             filename: None,
             fit: Some(ImageFit::Fill),
             name: None,
@@ -206,7 +207,7 @@ fn flyer_flow_save_reopen_equal() {
     let saved = s
         .doc_save_as(DocSaveAs {
             doc_id: None,
-            path: tmp("flyer").display().to_string(),
+            path: Some(tmp("flyer").display().to_string()),
         })
         .unwrap();
     assert!(saved.path.ends_with("flyer.pubrs"));

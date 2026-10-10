@@ -211,11 +211,29 @@ fn geom_of(shape: Shape, w: f64, h: f64) -> Geom {
     }
 }
 
+/// Options for scene building.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SceneOptions {
+    /// Draw empty picture frames as grey boxes with a cross (previews and
+    /// the editor; never in exports).
+    pub show_empty_images: bool,
+}
+
 /// Build the scene for page `index` (master frames first, then the page's).
 pub fn build_page_scene(
     doc: &Document,
     layout: &DocumentLayout,
     index: usize,
+) -> Option<PageScene> {
+    build_page_scene_with(doc, layout, index, SceneOptions::default())
+}
+
+/// Like [`build_page_scene`] with options.
+pub fn build_page_scene_with(
+    doc: &Document,
+    layout: &DocumentLayout,
+    index: usize,
+    opts: SceneOptions,
 ) -> Option<PageScene> {
     let page = doc.pages.get(index)?;
     let mut nodes = Vec::new();
@@ -223,13 +241,13 @@ pub fn build_page_scene(
         && doc.master(m).is_some()
     {
         for id in doc.paint_order(Owner::Master(m)) {
-            if let Some(n) = frame_node(doc, layout, id) {
+            if let Some(n) = frame_node_with(doc, layout, id, opts) {
                 nodes.push(n);
             }
         }
     }
     for id in doc.paint_order(Owner::Page(page.id)) {
-        if let Some(n) = frame_node(doc, layout, id) {
+        if let Some(n) = frame_node_with(doc, layout, id, opts) {
             nodes.push(n);
         }
     }
@@ -243,6 +261,16 @@ pub fn build_page_scene(
 
 /// The display node for one (non-group) frame.
 pub fn frame_node(doc: &Document, layout: &DocumentLayout, id: FrameId) -> Option<Node> {
+    frame_node_with(doc, layout, id, SceneOptions::default())
+}
+
+/// Like [`frame_node`] with options.
+pub fn frame_node_with(
+    doc: &Document,
+    layout: &DocumentLayout,
+    id: FrameId,
+    opts: SceneOptions,
+) -> Option<Node> {
     let f = doc.frame(id)?;
     let (w, h) = (f.rect.width, f.rect.height);
     let mut prims = Vec::new();
@@ -260,6 +288,20 @@ pub fn frame_node(doc: &Document, layout: &DocumentLayout, id: FrameId) -> Optio
     }
     match &f.content {
         FrameContent::Image(img) => {
+            if img.asset.is_none() && opts.show_empty_images {
+                prims.push(Prim::Fill {
+                    geom: Geom::Rect { w, h, radius: 0.0 },
+                    color: Color::rgb(0xE5, 0xE7, 0xEB),
+                });
+                for (x0, y0, x1, y1) in [(0.0, 0.0, w, h), (0.0, h, w, 0.0)] {
+                    prims.push(Prim::Stroke {
+                        geom: Geom::Line { x0, y0, x1, y1 },
+                        color: Color::rgb(0x9C, 0xA3, 0xAF),
+                        width: 1.0,
+                        dash: Dash::Solid,
+                    });
+                }
+            }
             if let Some(asset) = img.asset
                 && let Some((sw, sh)) = doc.intrinsic_size(asset)
             {

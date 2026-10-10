@@ -11,6 +11,7 @@ use crate::session::{Changed, Session};
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StyleList {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Only paragraph or character styles.
@@ -40,6 +41,7 @@ pub struct StyleListOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StyleCreate {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Unique name.
@@ -66,6 +68,7 @@ pub struct StyleCreateOut {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StyleUpdate {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Style name or id.
@@ -87,6 +90,7 @@ pub struct StyleUpdate {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StyleDelete {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Style name or id. Text using it falls back to its parent / default.

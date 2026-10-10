@@ -10,11 +10,11 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M3 Render to PNG, golden images | done locally; CI blocked (billing) | +5 golden render tests, GPU vs CPU test (feature gpu) |
 | M4 PDF export via krilla | done locally; CI blocked (billing) | +8 PDF tests (lopdf parse-back, hayro raster comparison) |
 | M5 pubrs-api Session + CLI | done locally; CI blocked (billing) | +6 session, +2 script, +3 registry, +2 CLI tests |
-| M6 MCP server | in progress | |
-| M7 GUI | pending | |
+| M6 MCP server | done locally; CI blocked (billing) | +2 acceptance, +1 examples (all 71 tools), +1 HTTP, +2 template, +3 io template tests |
+| M7 GUI | in progress | |
 | M8 Templates, printing, installers, docs, DoD | pending | |
 
-**Next step:** M6: templates (trifold, flyer, business card, newsletter as ordinary documents with placeholders) + template_list/apply/save tools; `pubrs-mcp` rmcp server (stdio + streamable HTTP) mapping the registry 1:1, resources, prompts; in-process acceptance test; MCP.md generated from the registry with executed examples; examples/mcp configs.
+**Next step:** M7: pubrs-app GUI over Session: platform traits (FileDialogs, AppPaths, Clipboard, SystemFonts, PrintBackend + NullPlatform), canvas with page rendering (Rasterizer GPU/CPU) and zoom/scroll, selection + handles (move/resize/rotate), properties panel, pages panel, in-place text editing (carets from layout), image placement, undo/redo, keymap (Cmd/Ctrl), autosave + crash recovery, macOS native menu.
 
 ## Verification per milestone
 

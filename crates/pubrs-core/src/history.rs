@@ -54,6 +54,25 @@ pub struct Editor {
     limit: usize,
 }
 
+/// Ids of pages that were added, removed or changed between two page lists.
+fn changed_pages(
+    before: &[crate::model::Page],
+    after: &[crate::model::Page],
+) -> Vec<crate::id::PageId> {
+    let mut out = Vec::new();
+    for p in after {
+        if before.iter().find(|b| b.id == p.id) != Some(p) {
+            out.push(p.id);
+        }
+    }
+    for b in before {
+        if !after.iter().any(|p| p.id == b.id) {
+            out.push(b.id);
+        }
+    }
+    out
+}
+
 impl Editor {
     pub fn new(doc: Document) -> Self {
         Self {
@@ -125,7 +144,8 @@ impl Editor {
                 touched: Touched::default(),
             });
         }
-        let touched = forward.touched();
+        let mut touched = forward.touched();
+        touched.pages = changed_pages(&before.pages, &self.doc.pages);
         let mergeable = key.is_some()
             && self.redo.is_empty()
             && self.undo.last().is_some_and(|e| e.coalesce == key);
@@ -172,8 +192,10 @@ impl Editor {
     /// Undo the last step. Returns `None` if there is nothing to undo.
     pub fn undo(&mut self) -> Option<Change> {
         let entry = self.undo.pop()?;
+        let pages = self.doc.pages.clone();
         entry.backward.apply(&mut self.doc);
-        let touched = entry.backward.touched();
+        let mut touched = entry.backward.touched();
+        touched.pages = changed_pages(&pages, &self.doc.pages);
         self.redo.push(entry);
         self.revision += 1;
         Some(Change {
@@ -185,8 +207,10 @@ impl Editor {
     /// Redo the last undone step. Returns `None` if there is nothing to redo.
     pub fn redo(&mut self) -> Option<Change> {
         let entry = self.redo.pop()?;
+        let pages = self.doc.pages.clone();
         entry.forward.apply(&mut self.doc);
-        let touched = entry.forward.touched();
+        let mut touched = entry.forward.touched();
+        touched.pages = changed_pages(&pages, &self.doc.pages);
         self.undo.push(entry);
         self.revision += 1;
         Some(Change {

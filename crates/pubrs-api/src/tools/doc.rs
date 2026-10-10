@@ -133,7 +133,7 @@ pub struct DocOpenOut {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocRef {
-    /// Document (default: the most recently used).
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
 }
@@ -141,10 +141,13 @@ pub struct DocRef {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocSaveAs {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
-    /// Destination path; ".pubrs" is appended if missing.
-    pub path: String,
+    /// Destination path; ".pubrs" is appended if missing. Relative paths and
+    /// the default (the document title) go in the server's output folder.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -158,6 +161,7 @@ pub struct DocSaveOut {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocClose {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Required when the document has unsaved changes (they are discarded).
@@ -225,6 +229,7 @@ pub struct DocInfoOut {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DocSetPageSize {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(flatten)]
@@ -233,6 +238,7 @@ pub struct DocSetPageSize {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DocSetMargins {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(flatten)]
@@ -242,6 +248,7 @@ pub struct DocSetMargins {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocSetBleed {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Bleed in points on every side (0..=144). 9pt = 0.125in is standard.
@@ -251,6 +258,7 @@ pub struct DocSetBleed {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocSetInfo {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     #[serde(default)]
@@ -262,6 +270,7 @@ pub struct DocSetInfo {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocSetGrid {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Grid spacing in points.
@@ -343,7 +352,7 @@ impl Session {
     }
 
     pub fn doc_open(&mut self, req: DocOpen) -> ApiResult<DocOpenOut> {
-        let path = PathBuf::from(&req.path);
+        let path = self.resolve_path(&req.path);
         let doc = pubrs_io::load(&path)?;
         let title = doc.meta.title.clone();
         let page_ids = doc.pages.iter().map(|p| p.id).collect();
@@ -384,7 +393,13 @@ impl Session {
     }
 
     pub fn doc_save_as(&mut self, req: DocSaveAs) -> ApiResult<DocSaveOut> {
-        self.save_to(req.doc_id, normalize_path(&req.path))
+        let path = match &req.path {
+            Some(p) => normalize_path(&self.resolve_path(p).display().to_string()),
+            None => self.default_path(req.doc_id, "pubrs").ok_or_else(|| {
+                ApiError::invalid("no path given", "pass a path ending in .pubrs")
+            })?,
+        };
+        self.save_to(req.doc_id, path)
     }
 
     pub fn doc_close(&mut self, req: DocClose) -> ApiResult<DocCloseOut> {

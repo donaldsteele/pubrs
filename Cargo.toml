@@ -53,8 +53,8 @@ usvg = "0.47"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 base64 = "0.22"
 
-rmcp = "3.5"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "net", "sync", "time"] }
+rmcp = { version = "3.5", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "net", "sync", "time", "signal"] }
 
 eframe = { version = "0.36", default-features = false }
 egui = "0.36"

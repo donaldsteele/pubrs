@@ -129,6 +129,9 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), IoError> {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => std::env::current_dir()?,
     };
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)?;
+    }
     let name = path
         .file_name()
         .ok_or_else(|| IoError::Format(format!("not a file path: {}", path.display())))?;

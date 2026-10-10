@@ -19,4 +19,7 @@ pub use images::{ImageContent, ImageResolver, NoImages, RasterImage, pixmap_from
 pub use pdf::{FontEmbedding, PdfError, PdfOptions, render_pdf};
 pub use raster::{RasterOptions, RasterRenderer, RenderError, pixel_size};
 pub use resvg::tiny_skia;
-pub use scene::{Affine, Node, PageScene, Prim, build_page_scene, frame_node, frame_transform};
+pub use scene::{
+    Affine, Node, PageScene, Prim, SceneOptions, build_page_scene, build_page_scene_with,
+    frame_node, frame_node_with, frame_transform,
+};

@@ -23,6 +23,7 @@ pub enum FontEmbeddingIn {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExportPdf {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Output file path. Without a path the PDF is returned as base64.
@@ -56,6 +57,7 @@ pub struct ExportPdfOut {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExportPng {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Page to render (default: first page).
@@ -91,6 +93,7 @@ pub struct ExportPngOut {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RenderPreview {
+    /// Document id (default: the most recently used document).
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     /// Page to look at (default: first page).
@@ -147,16 +150,23 @@ impl Session {
     }
 
     /// Render a page to PNG bytes (used by tools, resources and the CLI).
+    /// With `preview`, empty picture frames are drawn as grey boxes.
     pub fn page_png(
         &mut self,
         doc_id: Option<DocumentId>,
         index: usize,
         opts: &RasterOptions,
+        preview: bool,
     ) -> ApiResult<(u32, u32, Vec<u8>)> {
         let layout = self.layout(doc_id)?;
         let id = self.resolve(doc_id)?;
         let doc = self.get(Some(id))?.doc().clone();
-        let pm = self.ctx.render_page(&doc, &layout, index, opts)?;
+        let scene = pubrs_render::SceneOptions {
+            show_empty_images: preview,
+        };
+        let pm = self
+            .ctx
+            .render_page_with(&doc, &layout, index, opts, scene)?;
         let (w, h) = (pm.width(), pm.height());
         let png = pm
             .encode_png()
@@ -175,7 +185,15 @@ impl Session {
         let layout = self.layout(doc_id)?;
         let id = self.resolve(doc_id)?;
         let doc = self.get(Some(id))?.doc().clone();
-        let scene = pubrs_render::build_page_scene(&doc, &layout, index).ok_or_else(|| {
+        let scene = pubrs_render::build_page_scene_with(
+            &doc,
+            &layout,
+            index,
+            pubrs_render::SceneOptions {
+                show_empty_images: true,
+            },
+        )
+        .ok_or_else(|| {
             ApiError::not_found("page", &index.to_string(), "list pages with page_list")
         })?;
         self.ctx.images.sync(&doc);
@@ -205,6 +223,7 @@ impl Session {
                     dpi,
                     ..Default::default()
                 },
+                false,
             )?
             .2)
     }
@@ -223,15 +242,19 @@ impl Session {
             author: None,
         };
         let pdf = self.ctx.export_pdf(&doc, &opts)?;
-        if let Some(p) = &req.path {
-            write_file(p, &pdf)?;
+        let path = match &req.path {
+            Some(p) => Some(self.resolve_path(p)),
+            None => self.default_path(Some(id), "pdf"),
+        };
+        if let Some(p) = &path {
+            write_file(&p.display().to_string(), &pdf)?;
         }
         Ok(ExportPdfOut {
             doc_id: id,
-            path: req.path.clone(),
+            path: path.as_ref().map(|p| p.display().to_string()),
             bytes: pdf.len() as u64,
             page_count: doc.pages.len(),
-            base64: (req.path.is_none() || req.return_base64).then(|| b64(&pdf)),
+            base64: (path.is_none() || req.return_base64).then(|| b64(&pdf)),
             revision: self.get(Some(id))?.revision(),
         })
     }
@@ -254,9 +277,16 @@ impl Session {
                 include_bleed: req.include_bleed,
                 ..Default::default()
             },
+            false,
         )?;
-        if let Some(p) = &req.path {
-            write_file(p, &png)?;
+        let path = match &req.path {
+            Some(p) => Some(self.resolve_path(p)),
+            None => self
+                .default_path(Some(id), "png")
+                .map(|p| p.with_extension(format!("p{}.png", index + 1))),
+        };
+        if let Some(p) = &path {
+            write_file(&p.display().to_string(), &png)?;
         }
         let open = self.get(Some(id))?;
         Ok(ExportPngOut {
@@ -265,8 +295,8 @@ impl Session {
             width: w,
             height: h,
             bytes: png.len() as u64,
-            path: req.path.clone(),
-            base64: (req.path.is_none() || req.return_base64).then(|| b64(&png)),
+            path: path.as_ref().map(|p| p.display().to_string()),
+            base64: (path.is_none() || req.return_base64).then(|| b64(&png)),
             revision: open.revision(),
         })
     }
@@ -282,6 +312,7 @@ impl Session {
                 dpi,
                 ..Default::default()
             },
+            true,
         )?;
         let open = self.get(Some(id))?;
         Ok(RenderPreviewOut {

@@ -7,6 +7,7 @@ pub mod export;
 pub mod format;
 pub mod images;
 pub mod migrate;
+pub mod templates;
 
 pub use assets::{ImageInfo, image_info, import_image, sniff_format};
 pub use error::IoError;

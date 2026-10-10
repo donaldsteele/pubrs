@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pubrs": {
+      "type": "stdio",
+      "command": "pubrs-mcp",
+      "args": []
+    }
+  }
+}

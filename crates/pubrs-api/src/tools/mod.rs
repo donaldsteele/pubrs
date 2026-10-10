@@ -15,6 +15,7 @@ pub mod images;
 pub mod pages;
 pub mod query;
 pub mod styles;
+pub mod templates;
 pub mod text;
 
 use std::borrow::Cow;

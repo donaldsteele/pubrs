@@ -18,3 +18,5 @@ Any dependency outside that stack has a one-line justification below.
 - `fontdb` pinned to 0.23 to match usvg 0.47 (one font database type for SVG text and font discovery).
 - `skrifa` pinned to 0.44 to match parley 0.12's internal version (no duplicate outline code).
 - `hayro` (dev, pubrs-io): rasterises exported PDFs in tests so PDF output is compared against the PNG renderer.
+- `axum` (pubrs-mcp): hosts rmcp's streamable-HTTP tower service for `pubrs-mcp --http`.
+- `tokio-util` (pubrs-mcp): `CancellationToken` for graceful HTTP shutdown (rmcp's own type).

@@ -92,3 +92,26 @@ script is exactly a recorded sequence of MCP calls. Errors are always
 `{code, message, hint}`; tool panics are caught and reported as `internal`.
 Destructive tools require `confirm: true`. `doc_id` defaults to the most
 recently used document.
+
+## MCP server
+
+`pubrs-mcp` wraps one `Session` in `Arc<Mutex<_>>` and implements rmcp's
+`ServerHandler` by hand: `tools/list` publishes `registry::TOOLS` with their
+generated input and output schemas and annotations; `tools/call` runs the
+registry handler on a blocking thread and returns structured content (plus
+an image block for `render_preview`), or a tool error whose text is
+`{code, message, hint}`. Resources (`pubrs://fonts`, `pubrs://templates/{name}`,
+`pubrs://doc/{id}`, `pubrs://doc/{id}/page/{n}.png`) and prompts
+(`make_flyer`, `make_trifold`, `make_business_card`) are the only MCP-specific
+logic. Transports: stdio (default) and streamable HTTP via axum.
+
+MCP.md is generated from the registry and `docs/mcp-examples.json`; the
+integration test executes every example through an in-process rmcp client.
+
+## Templates
+
+Templates are ordinary documents whose frames carry `placeholder` metadata
+(name, kind, hint). Built-ins (`flyer`, `trifold_brochure`, `business_card`,
+`newsletter`) are built in `pubrs-io::templates` through normal commands with
+deterministic ids; user templates are `.pubrs` files in the user template
+folder. A text placeholder counts as unfilled while its text equals its hint.
