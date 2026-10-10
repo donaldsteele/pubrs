@@ -41,7 +41,8 @@ None.
   macos-15-intel (run 38081976081), and locally.
 - Golden images are byte-identical to the references on all four CI machines (step "Golden images byte-identical
   on this OS?"); the bundled sample exports to the same 217,300-byte PDF on Linux, Windows and macOS.
-- Release workflow run 38084072933 (manual dispatch): MSI x64 and ARM64, .deb and AppImage x86_64 and aarch64
-  built and checked; universal DMG built and checked in run 38083248497.
+- Release workflow run 38084072933 (manual dispatch, commit 98426ff): MSI x64 and ARM64, universal DMG, .deb and
+  AppImage x86_64 and aarch64 all built and checked (install, launch, export the sample, uninstall). CI run
+  38085477371 is green on all four OSes at eacbb3c.
 - CI fixes found on first real runs: libxkbcommon-x11 on Linux, verbatim Windows paths, relative GUI paths, vello
   on the WARP software adapter, self-test timing on slow renderers, WiX/cargo-bundle packaging details.
