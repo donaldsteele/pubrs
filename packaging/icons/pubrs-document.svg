@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <path d="M96 24 h220 l120 120 v320 a24 24 0 0 1 -24 24 h-316 a24 24 0 0 1 -24 -24 v-416 a24 24 0 0 1 24 -24 z" fill="#FFFFFF" stroke="#1E3A5F" stroke-width="12"/>
+  <path d="M316 24 v96 a24 24 0 0 0 24 24 h96 z" fill="#FDBA74"/>
+  <rect x="120" y="190" width="200" height="40" rx="10" fill="#C2410C"/>
+  <rect x="120" y="260" width="272" height="110" rx="12" fill="#1E3A5F"/>
+  <rect x="120" y="400" width="272" height="20" rx="10" fill="#94A3B8"/>
+  <text x="256" y="470" font-family="Liberation Sans" font-size="44" font-weight="bold" fill="#1E3A5F" text-anchor="middle">PUBRS</text>
+</svg>

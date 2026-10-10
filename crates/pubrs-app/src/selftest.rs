@@ -54,6 +54,8 @@ pub struct SelfTest {
     data: Data,
     shots: usize,
     started: Instant,
+    /// File to drop on the window with the next frame.
+    drop: Option<PathBuf>,
 }
 
 fn png(w: u32, h: u32, seed: u8) -> Vec<u8> {
@@ -78,6 +80,7 @@ impl SelfTest {
             data: Data::default(),
             shots: 0,
             started: Instant::now(),
+            drop: None,
         }
     }
 
@@ -85,6 +88,10 @@ impl SelfTest {
     pub fn inject(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(events) = self.pending.pop_front() {
             raw.events.extend(events);
+        }
+        if let Some(path) = self.drop.take() {
+            raw.dropped_files
+                .push(std::sync::Arc::new(DroppedPath(path)));
         }
     }
 
@@ -496,11 +503,13 @@ impl SelfTest {
                     return Err("document did not close (unsaved changes?)".into());
                 }
                 self.ok("saved and closed the publication");
+                // Reopen it the way a user would drag it from the file manager.
+                self.drop = Some(path);
             }
             14 => {
-                let path = self.out.join("brochure.pubrs");
-                app.open_path(&path);
-                let id = app.doc_id().ok_or("reopen failed")?;
+                let id = app
+                    .doc_id()
+                    .ok_or("dropping the saved file on the window did not open it")?;
                 let json = serde_json::to_value(
                     &app.session
                         .doc_to_json(DocRef { doc_id: Some(id) })
@@ -531,7 +540,7 @@ impl SelfTest {
                         ));
                     }
                 }
-                self.ok("reopened: identical document JSON and byte-identical page renders");
+                self.ok("reopened by dropping the file on the window: identical document JSON and byte-identical page renders");
                 self.screenshot(ctx);
             }
             15 => {
@@ -555,5 +564,19 @@ impl SelfTest {
             _ => return Ok(true),
         }
         Ok(false)
+    }
+}
+
+/// A file "dropped" on the window by the self-test.
+#[derive(Debug)]
+struct DroppedPath(PathBuf);
+
+impl egui::DroppedFile for DroppedPath {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
     }
 }

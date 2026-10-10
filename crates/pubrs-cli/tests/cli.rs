@@ -74,3 +74,35 @@ fn failing_script_and_missing_file_exit_nonzero() {
         .unwrap();
     assert_eq!(st.code(), Some(2));
 }
+
+/// The sample every installer ships opens, has no print problems and exports.
+#[test]
+fn bundled_sample_validates_and_exports() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let sample = root.join("examples/samples/bakery-trifold.pubrs");
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-sample");
+    std::fs::create_dir_all(&out).unwrap();
+
+    let v = bin()
+        .args(["validate", "--json"])
+        .arg(&sample)
+        .output()
+        .unwrap();
+    assert!(v.status.success(), "{}", String::from_utf8_lossy(&v.stdout));
+    let report: serde_json::Value = serde_json::from_slice(&v.stdout).unwrap();
+    assert_eq!(report["ok"], true, "{report}");
+
+    let pdf = out.join("sample.pdf");
+    assert!(
+        bin()
+            .args(["export", "-o"])
+            .arg(&pdf)
+            .arg(&sample)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let bytes = std::fs::read(&pdf).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert!(bytes.windows(9).any(|w| w == b"/BleedBox"));
+}

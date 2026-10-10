@@ -12,9 +12,9 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M5 pubrs-api Session + CLI | done locally; CI blocked (billing) | +6 session, +2 script, +3 registry, +2 CLI tests |
 | M6 MCP server | done locally; CI blocked (billing) | +2 acceptance, +1 examples (all 71 tools), +1 HTTP, +2 template, +3 io template tests |
 | M7 GUI | done locally; CI blocked (billing) | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
-| M8 Templates, printing, installers, docs, DoD | in progress | templates and printing done early (M6/M7) |
+| M8 Templates, printing, installers, docs, DoD | done locally | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** M8: release workflow (MSI via cargo-wix, macOS universal .app + .dmg via cargo-bundle, AppImage + .deb, Flatpak manifest), icons and .pubrs file association, USER_GUIDE.md with per-OS install, RELEASE.md with manual installer checks, polish, Definition of Done verification.
+**Next step:** Definition of Done follow-up: keep CI green on all four OSes, run the Release workflow (Actions → Release → Run workflow) and fix any installer job from its logs, then do the manual installer check in RELEASE.md on real Windows/macOS/Linux desktops.
 
 ## Verification per milestone
 
@@ -27,9 +27,7 @@ None.
 
 ## Open questions
 
-- **CI cannot start.** The repo `donaldsteele/pubrs` was created private (no remote existed). GitHub refuses to start
-  Actions jobs: "recent account payments have failed or your spending limit needs to be increased". Fix by updating
-  billing or making the repo public (public repos get free standard runners). Until then Windows/macOS are only
-  compile-checked locally.
+- CI: the repo was private and Actions could not start (billing). On 2026-10-10 the owner asked for the repo to be made
+  public; it now runs on free standard runners.
 - Pushing uses SSH (`git remote set-url --push origin git@github.com:...`) because the gh OAuth token lacks the
   `workflow` scope needed to push `.github/workflows/*`.

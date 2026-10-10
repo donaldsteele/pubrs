@@ -1,0 +1,10 @@
+#!/bin/sh
+# AppImage entry point: the GUI by default; `--mcp` runs the MCP server and
+# `--cli` the command-line tool from the same AppImage.
+HERE="$(dirname "$(readlink -f "$0")")"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+case "$1" in
+    --mcp) shift; exec "$HERE/usr/bin/pubrs-mcp" "$@" ;;
+    --cli) shift; exec "$HERE/usr/bin/pubrs" "$@" ;;
+esac
+exec "$HERE/usr/bin/pubrs-app" "$@"

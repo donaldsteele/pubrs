@@ -1,0 +1,44 @@
+# Flatpak manifest for pubrs.
+#   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.donaldsteele.pubrs.yml
+# Local builds fetch crates over the network (build-args below). For Flathub,
+# generate offline sources with flatpak-cargo-generator from Cargo.lock and
+# replace the network build arg with `- cargo-sources.json` in `sources`.
+app-id: io.github.donaldsteele.pubrs
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: pubrs-app
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --socket=cups
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-pictures:ro
+  - --filesystem=xdg-download
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/pubrs/cargo
+modules:
+  - name: pubrs
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - cargo build --release --locked -p pubrs-app -p pubrs-cli -p pubrs-mcp
+      - install -Dm755 target/release/pubrs-app /app/bin/pubrs-app
+      - install -Dm755 target/release/pubrs /app/bin/pubrs
+      - install -Dm755 target/release/pubrs-mcp /app/bin/pubrs-mcp
+      - install -Dm644 packaging/linux/pubrs.desktop /app/share/applications/io.github.donaldsteele.pubrs.desktop
+      - desktop-file-edit --set-icon=io.github.donaldsteele.pubrs /app/share/applications/io.github.donaldsteele.pubrs.desktop
+      - install -Dm644 packaging/linux/pubrs-mime.xml /app/share/mime/packages/io.github.donaldsteele.pubrs.xml
+      - for s in 16 32 48 64 128 256 512; do install -Dm644 packaging/icons/pubrs-$s.png /app/share/icons/hicolor/${s}x${s}/apps/io.github.donaldsteele.pubrs.png; done
+      - install -Dm644 packaging/flatpak/io.github.donaldsteele.pubrs.metainfo.xml /app/share/metainfo/io.github.donaldsteele.pubrs.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..

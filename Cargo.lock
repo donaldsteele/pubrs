@@ -4065,6 +4065,7 @@ dependencies = [
  "pubrs-core",
  "pubrs-layout",
  "pubrs-render",
+ "resvg",
  "schemars",
  "serde",
  "serde_json",

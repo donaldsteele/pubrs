@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.donaldsteele.pubrs</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>pubrs</name>
+  <summary>Desktop publishing for flyers, brochures, cards and newsletters</summary>
+  <description>
+    <p>pubrs makes print documents easy: start from a template, type your text,
+    drop in pictures and export a print-ready PDF with bleed and crop marks.
+    It also includes an MCP server so AI assistants can create publications.</p>
+  </description>
+  <launchable type="desktop-id">io.github.donaldsteele.pubrs.desktop</launchable>
+  <url type="homepage">https://github.com/donaldsteele/pubrs</url>
+  <provides>
+    <mediatype>application/vnd.pubrs+zip</mediatype>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-10"/>
+  </releases>
+</component>

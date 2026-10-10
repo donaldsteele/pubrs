@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=pubrs
+GenericName=Desktop Publishing
+Comment=Create flyers, brochures, business cards and newsletters
+Exec=pubrs-app %F
+Icon=pubrs
+Terminal=false
+Categories=Office;Publishing;
+Keywords=publisher;flyer;brochure;newsletter;card;layout;
+MimeType=application/vnd.pubrs+zip;
+StartupWMClass=pubrs

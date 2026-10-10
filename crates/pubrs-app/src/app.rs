@@ -438,6 +438,45 @@ impl PubrsApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
+    /// Files dropped on the window: publications open, a picture goes into the
+    /// selected picture frame.
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let paths: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        for path in paths {
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase())
+                .unwrap_or_default();
+            if ext == "pubrs" {
+                self.open_path(&path);
+                continue;
+            }
+            let target = match self.selection().as_slice() {
+                [f] => self
+                    .doc()
+                    .and_then(|d| d.frame(*f))
+                    .filter(|fr| fr.kind() == FrameKind::Image)
+                    .map(|fr| fr.id),
+                _ => None,
+            };
+            match target {
+                Some(frame) => {
+                    self.place_image(frame, &path);
+                }
+                None => self.notify(format!(
+                    "Select one picture frame, then drop {} on the window to place it",
+                    path.display()
+                )),
+            }
+        }
+    }
+
     // ------------------------------------------------------------ frame actions
 
     pub fn place_image(&mut self, frame: FrameId, path: &Path) -> bool {
@@ -1027,6 +1066,7 @@ impl eframe::App for PubrsApp {
             }
         }
         self.handle_shortcuts(&ctx);
+        self.handle_dropped_files(&ctx);
         if self.native_menu.is_none() {
             crate::panels::menu_bar(self, ui);
         }

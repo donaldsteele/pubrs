@@ -1,0 +1,200 @@
+name: Release
+
+# Builds every installer from one tag (vX.Y.Z), checks that each installs,
+# runs, exports the bundled sample to PDF and uninstalls, then drafts a
+# GitHub release with the artifacts. See RELEASE.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: MSI (${{ matrix.target }})
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Install WiX Toolset 3 and cargo-wix
+        shell: pwsh
+        run: |
+          choco install wixtoolset --version 3.14.1 -y --no-progress
+          "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          cargo install cargo-wix --locked
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p pubrs-app -p pubrs-cli -p pubrs-mcp
+      - name: Build MSI
+        run: cargo wix -p pubrs-app --no-build --nocapture --target ${{ matrix.target }} --output target/wix/pubrs-${{ env.VERSION }}-${{ matrix.target }}.msi
+      - name: Sign MSI (placeholder, runs when a certificate is configured)
+        if: env.WINDOWS_CERT_BASE64 != ''
+        env:
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $msi = Get-ChildItem target/wix/*.msi | Select-Object -First 1
+          & signtool sign /f cert.pfx /p $env:WINDOWS_CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msi.FullName
+      - name: Install, run, export the sample, uninstall
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $msi = (Get-ChildItem target/wix/*.msi | Select-Object -First 1).FullName
+          Start-Process msiexec.exe -Wait -ArgumentList "/i `"$msi`" /qn /l*v install.log"
+          $bin = "C:\Program Files\pubrs\bin"
+          if (!(Test-Path "$bin\pubrs-app.exe")) { Get-Content install.log -Tail 50; throw "pubrs-app.exe not installed" }
+          & "$bin\pubrs.exe" --no-system-fonts export "C:\Program Files\pubrs\samples\bakery-trifold.pubrs" -o "$env:RUNNER_TEMP\sample.pdf"
+          if (!(Test-Path "$env:RUNNER_TEMP\sample.pdf")) { throw "export failed" }
+          & "$bin\pubrs-app.exe" --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw "GUI did not launch" }
+          $assoc = (cmd /c assoc .pubrs)
+          Write-Host "file association: $assoc"
+          if ($assoc -notmatch "pubrs.Publication") { throw ".pubrs is not associated" }
+          Start-Process msiexec.exe -Wait -ArgumentList "/x `"$msi`" /qn"
+          if (Test-Path "$bin\pubrs-app.exe") { throw "uninstall left files behind" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-${{ matrix.target }}
+          path: target/wix/*.msi
+
+  macos:
+    name: DMG (universal)
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+      - name: Version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle --locked
+      - name: Build universal app and DMG
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: packaging/macos/build-dmg.sh "$VERSION" dist
+      - name: Mount, run, export the sample, eject
+        run: |
+          hdiutil attach dist/*.dmg -mountpoint /Volumes/pubrs-check
+          cp -R /Volumes/pubrs-check/pubrs.app "$RUNNER_TEMP/"
+          hdiutil detach /Volumes/pubrs-check
+          APP="$RUNNER_TEMP/pubrs.app"
+          "$APP/Contents/MacOS/pubrs" --no-system-fonts export "$APP/Contents/Resources/samples/bakery-trifold.pubrs" -o "$RUNNER_TEMP/sample.pdf"
+          test -s "$RUNNER_TEMP/sample.pdf"
+          "$APP/Contents/MacOS/pubrs-app" --smoke-test
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:0:LSItemContentTypes:0" "$APP/Contents/Info.plist"
+          rm -rf "$APP"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg-universal
+          path: dist/*.dmg
+
+  linux:
+    name: deb + AppImage (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux-${{ matrix.arch }}
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libxkbcommon-dev libwayland-dev libx11-dev \
+            libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libfontconfig1-dev libdbus-1-dev \
+            xvfb mesa-vulkan-drivers desktop-file-utils libfuse2
+      - name: Version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/* ]] || v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release --locked -p pubrs-app -p pubrs-cli -p pubrs-mcp
+      - name: .deb
+        run: |
+          cargo install cargo-deb --locked
+          desktop-file-validate packaging/linux/pubrs.desktop
+          cargo deb -p pubrs-app --no-build --output dist/
+      - name: AppImage
+        run: packaging/linux/build-appimage.sh target/release "$VERSION" ${{ matrix.arch }} dist
+      - name: Install .deb, run, export the sample, uninstall
+        run: |
+          sudo apt-get install -y ./dist/*.deb
+          pubrs --no-system-fonts export /usr/share/doc/pubrs/examples/bakery-trifold.pubrs -o "$RUNNER_TEMP/sample.pdf"
+          test -s "$RUNNER_TEMP/sample.pdf"
+          xvfb-run -a pubrs-app --smoke-test
+          xdg-mime query filetype /usr/share/doc/pubrs/examples/bakery-trifold.pubrs || true
+          test -f /usr/share/mime/packages/pubrs.xml
+          sudo apt-get remove -y pubrs
+          test ! -e /usr/bin/pubrs-app
+      - name: Run the AppImage
+        run: |
+          APPIMAGE=$(ls dist/*.AppImage)
+          chmod +x "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract-and-run --cli --no-system-fonts export examples/samples/bakery-trifold.pubrs -o "$RUNNER_TEMP/appimage.pdf"
+          test -s "$RUNNER_TEMP/appimage.pdf"
+          xvfb-run -a "$APPIMAGE" --appimage-extract-and-run --smoke-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+
+  release:
+    name: Draft GitHub release
+    needs: [windows, macos, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --generate-notes dist/*

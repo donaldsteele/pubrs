@@ -11,6 +11,16 @@ use pubrs_api::tools::export::{ExportPdf, ExportPng, FontEmbeddingIn};
 use pubrs_api::{ScriptFile, Session, SessionConfig, run_script};
 use serde_json::json;
 
+/// `println!` that exits quietly when stdout is closed (e.g. `pubrs tools | head`).
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        if writeln!(std::io::stdout(), $($arg)*).is_err() {
+            std::process::exit(0);
+        }
+    }};
+}
+
 #[derive(Parser)]
 #[command(
     name = "pubrs",
@@ -149,7 +159,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     path: Some(path.display().to_string()),
                     ..Default::default()
                 }))?;
-                println!("{} ({}x{})", path.display(), out.width, out.height);
+                say!("{} ({}x{})", path.display(), out.width, out.height);
             }
             Ok(ExitCode::SUCCESS)
         }
@@ -173,7 +183,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 },
                 ..Default::default()
             }))?;
-            println!(
+            say!(
                 "{} ({} pages, {} bytes)",
                 out.display(),
                 r.page_count,
@@ -185,12 +195,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
             open(&mut s, file)?;
             let v = api(s.validate(DocRef::default()))?;
             if *json {
-                println!("{}", serde_json::to_string_pretty(&v)?);
+                say!("{}", serde_json::to_string_pretty(&v)?);
             } else if v.ok {
-                println!("{}: no problems found", file.display());
+                say!("{}: no problems found", file.display());
             } else {
                 for w in &v.warnings {
-                    println!(
+                    say!(
                         "{:?}: {}{}\n  hint: {}",
                         w.code,
                         w.message,
@@ -198,7 +208,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                         w.hint
                     );
                 }
-                println!("{} warning(s)", v.warnings.len());
+                say!("{} warning(s)", v.warnings.len());
             }
             Ok(if v.ok {
                 ExitCode::SUCCESS
@@ -235,18 +245,21 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             let report = run_script(&mut s, &script.steps(), v);
             if *json {
-                println!("{}", serde_json::to_string_pretty(&report)?);
+                say!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 for r in &report.results {
                     match (&r.error, r.ok) {
-                        (None, _) => println!("ok    {:>3} {}", r.index, r.tool),
+                        (None, _) => say!("ok    {:>3} {}", r.index, r.tool),
                         (Some(e), true) => {
-                            println!("ok    {:>3} {} (expected {})", r.index, r.tool, e.code)
+                            say!("ok    {:>3} {} (expected {})", r.index, r.tool, e.code)
                         }
                         (Some(e), false) => {
-                            println!(
+                            say!(
                                 "FAIL  {:>3} {}: {} — {}",
-                                r.index, r.tool, e.message, e.hint
+                                r.index,
+                                r.tool,
+                                e.message,
+                                e.hint
                             )
                         }
                     }
@@ -260,12 +273,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Cmd::Tools { json } => {
             for t in pubrs_api::all_tools() {
                 if *json {
-                    println!(
+                    say!(
                         "{}",
                         json!({"name": t.name, "description": t.description, "input_schema": (t.input_schema)()})
                     );
                 } else {
-                    println!("{:<24} {}", t.name, t.description);
+                    say!("{:<24} {}", t.name, t.description);
                 }
             }
             Ok(ExitCode::SUCCESS)

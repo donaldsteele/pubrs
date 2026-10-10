@@ -1,0 +1,20 @@
+[
+  {"tool": "template_apply", "args": {"name": "trifold_brochure", "title": "Golden Crust Bakery"}, "as": "t"},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.0.frame_id}", "text": "About Us"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.1.frame_id}", "text": "Golden Crust has been baking in the same stone oven on Mill Lane since 1987. We mill our own rye, feed a sourdough starter older than the shop, and shape every loaf by hand.\nCome early: the first batch leaves the oven at six."}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.2.frame_id}", "text": "Visit Us"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.3.frame_id}", "text": "12 Mill Lane\nRiverton RT1 4BB\n01234 567890\nOpen daily 7am – 3pm\ngoldencrust.example"}},
+  {"tool": "image_place", "args": {"frame_id": "${t.placeholders.4.frame_id}", "path": "${script_dir}/../assets/bread.jpg"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.5.frame_id}", "text": "Golden Crust Bakery"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.6.frame_id}", "text": "Real bread, baked before sunrise"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.7.frame_id}", "text": "Our Story"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.8.frame_id}", "text": "It started with one oven and a borrowed recipe for country sourdough. Neighbours queued around the corner, so we kept baking.\nToday the bakery is still family run. We use flour from farms within forty miles, long slow fermentation for flavour and keeping quality, and nothing you cannot pronounce.\nEvery morning we bake sourdough, rye, seeded and spelt loaves, buttery croissants and cinnamon buns. On Fridays and Saturdays we add gluten-free and vegan bakes.\nCelebration cakes are made to order: tell us the occasion three days ahead and we will design something special. We also supply cafés and restaurants across the valley, delivering before eight so their bread is as fresh as ours.\nBaking classes run on the first Sunday of every month: mix, shape and bake your own loaf, and take home a jar of our starter."}},
+  {"tool": "text_link_frames", "args": {"from_frame_id": "${t.placeholders.8.frame_id}", "to_frame_id": "${t.named_frames.inside_body_continued}"}},
+  {"tool": "image_place", "args": {"frame_id": "${t.placeholders.9.frame_id}", "path": "${script_dir}/../assets/coffee.png"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.10.frame_id}", "text": "What We Offer"}},
+  {"tool": "text_set", "args": {"frame_id": "${t.placeholders.11.frame_id}", "text": "Sourdough, rye and seeded loaves\nCroissants and pastries\nCelebration cakes to order\nGluten-free Fridays\nWholesale for cafés"}},
+  {"tool": "text_overflow_status", "args": {}, "as": "overflow"},
+  {"tool": "validate", "args": {}, "as": "check"},
+  {"tool": "doc_save_as", "args": {"path": "${out_dir}/bakery-trifold.pubrs"}},
+  {"tool": "export_pdf", "args": {"path": "${out_dir}/bakery-trifold.pdf", "crop_marks": true}}
+]

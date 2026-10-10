@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.pubrs+zip">
+    <comment>pubrs publication</comment>
+    <sub-class-of type="application/zip"/>
+    <glob pattern="*.pubrs"/>
+    <icon name="application-vnd.pubrs+zip"/>
+  </mime-type>
+</mime-info>

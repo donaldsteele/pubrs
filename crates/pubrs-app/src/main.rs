@@ -70,13 +70,19 @@ pub struct Outcome {
 }
 
 fn options(renderer: eframe::Renderer) -> eframe::NativeOptions {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("pubrs")
+        .with_app_id("pubrs")
+        .with_inner_size([1280.0, 860.0])
+        .with_min_inner_size([720.0, 480.0]);
+    if let Ok(icon) =
+        eframe::icon_data::from_png_bytes(include_bytes!("../../../packaging/icons/pubrs-256.png"))
+    {
+        viewport = viewport.with_icon(icon);
+    }
     let mut opts = eframe::NativeOptions {
         renderer,
-        viewport: egui::ViewportBuilder::default()
-            .with_title("pubrs")
-            .with_app_id("pubrs")
-            .with_inner_size([1280.0, 860.0])
-            .with_min_inner_size([720.0, 480.0]),
+        viewport,
         ..Default::default()
     };
     // egui draws with Vulkan/Metal/DX12 here and leaves GL to the glow fallback.

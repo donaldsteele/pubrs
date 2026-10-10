@@ -1,0 +1,134 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  pubrs MSI (WiX Toolset v3, built with `cargo wix`). Installs pubrs-app,
+  pubrs and pubrs-mcp, a Start menu shortcut, the .pubrs file association
+  (ProgId with icon) and adds the bin folder to PATH (so AI assistants can
+  start pubrs-mcp).
+  Code signing: see RELEASE.md (signtool hook in the release workflow).
+-->
+<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
+    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?else ?>
+    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?endif ?>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+    <Product
+        Id='*'
+        Name='pubrs'
+        UpgradeCode='4BC4B456-73FC-45F1-8782-0BAC79F4C647'
+        Manufacturer='pubrs project'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='pubrs desktop publishing'
+            Manufacturer='pubrs project'
+            InstallerVersion='500'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252'
+            Platform='$(sys.BUILDARCH)'/>
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+        <Property Id='DiskPrompt' Value='pubrs Installation'/>
+
+        <Icon Id='ProductICO' SourceFile='..\..\packaging\icons\pubrs.ico'/>
+        <Icon Id='DocumentICO' SourceFile='..\..\packaging\icons\pubrs-document.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/donaldsteele/pubrs'/>
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+                <Directory Id='APPLICATIONFOLDER' Name='pubrs'>
+                    <Component Id='License' Guid='*'>
+                        <File Id='LicenseFile' Name='LICENSE.txt' DiskId='1' Source='..\..\LICENSE' KeyPath='yes'/>
+                    </Component>
+                    <Directory Id='Samples' Name='samples'>
+                        <Component Id='SampleDoc' Guid='*'>
+                            <File Id='SampleFile' Name='bakery-trifold.pubrs' DiskId='1' Source='..\..\examples\samples\bakery-trifold.pubrs' KeyPath='yes'/>
+                        </Component>
+                    </Directory>
+                    <Directory Id='Bin' Name='bin'>
+                        <Component Id='Path' Guid='39A5ED17-9DAC-4314-97ED-418C7D92F0DD' KeyPath='yes'>
+                            <Environment
+                                Id='PATH'
+                                Name='PATH'
+                                Value='[Bin]'
+                                Permanent='no'
+                                Part='last'
+                                Action='set'
+                                System='yes'/>
+                        </Component>
+                        <Component Id='AppExe' Guid='*'>
+                            <File
+                                Id='pubrsAppExe'
+                                Name='pubrs-app.exe'
+                                DiskId='1'
+                                Source='$(var.CargoTargetBinDir)\pubrs-app.exe'
+                                KeyPath='yes'/>
+                            <ProgId Id='pubrs.Publication' Description='pubrs publication' Icon='DocumentICO'>
+                                <Extension Id='pubrs' ContentType='application/vnd.pubrs+zip'>
+                                    <Verb Id='open' Command='Open' TargetFile='pubrsAppExe' Argument='"%1"'/>
+                                </Extension>
+                            </ProgId>
+                        </Component>
+                        <Component Id='CliExe' Guid='*'>
+                            <File Id='pubrsCliExe' Name='pubrs.exe' DiskId='1' Source='$(var.CargoTargetBinDir)\pubrs.exe' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='McpExe' Guid='*'>
+                            <File Id='pubrsMcpExe' Name='pubrs-mcp.exe' DiskId='1' Source='$(var.CargoTargetBinDir)\pubrs-mcp.exe' KeyPath='yes'/>
+                        </Component>
+                    </Directory>
+                </Directory>
+            </Directory>
+            <Directory Id='ProgramMenuFolder'>
+                <Component Id='StartMenu' Guid='67CE8226-827F-4BA1-8F16-237A7577E1BC'>
+                    <Shortcut
+                        Id='AppShortcut'
+                        Name='pubrs'
+                        Description='Desktop publishing'
+                        Target='[Bin]pubrs-app.exe'
+                        WorkingDirectory='Bin'
+                        Icon='ProductICO'/>
+                    <RegistryValue Root='HKLM' Key='Software\pubrs' Name='StartMenuShortcut' Type='integer' Value='1' KeyPath='yes'/>
+                </Component>
+            </Directory>
+        </Directory>
+
+        <Feature
+            Id='Binaries'
+            Title='pubrs'
+            Description='The pubrs app, command-line tool and MCP server.'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+            <ComponentRef Id='License'/>
+            <ComponentRef Id='SampleDoc'/>
+            <ComponentRef Id='AppExe'/>
+            <ComponentRef Id='CliExe'/>
+            <ComponentRef Id='McpExe'/>
+            <ComponentRef Id='StartMenu'/>
+            <Feature
+                Id='Environment'
+                Title='PATH environment variable'
+                Description='Add the install location to PATH so pubrs and pubrs-mcp can be run from anywhere.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='Path'/>
+            </Feature>
+        </Feature>
+
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <UIRef Id='WixUI_FeatureTree'/>
+        <WixVariable Id='WixUILicenseRtf' Value='..\..\packaging\windows\License.rtf'/>
+    </Product>
+</Wix>

@@ -46,3 +46,49 @@ objc2-app-kit = { workspace = true, features = ["NSPrintOperation", "NSPrintInfo
 objc2-foundation = { workspace = true, features = ["NSString", "NSURL"] }
 objc2-pdf-kit = { workspace = true, features = ["PDFDocument", "objc2-app-kit"] }
 muda = "0.21"
+
+[package.metadata.deb]
+name = "pubrs"
+maintainer = "pubrs project <pubrs@users.noreply.github.com>"
+copyright = "2026, pubrs contributors"
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+Desktop publishing for flyers, brochures, business cards and newsletters. \
+Includes the pubrs-app GUI, the pubrs command-line tool and the pubrs-mcp \
+server for AI assistants."""
+section = "graphics"
+priority = "optional"
+revision = ""
+# winit and wgpu/glow load these with dlopen, so `$auto` cannot see them.
+depends = "$auto, libxkbcommon0, libgl1 | libvulkan1"
+recommends = "libxkbcommon-x11-0, libwayland-client0, libx11-6, libxcursor1, libxi6, libxrandr2, mesa-vulkan-drivers, cups-client"
+assets = [
+    ["target/release/pubrs-app", "usr/bin/", "755"],
+    ["target/release/pubrs", "usr/bin/", "755"],
+    ["target/release/pubrs-mcp", "usr/bin/", "755"],
+    ["../../packaging/linux/pubrs.desktop", "usr/share/applications/pubrs.desktop", "644"],
+    ["../../packaging/linux/pubrs-mime.xml", "usr/share/mime/packages/pubrs.xml", "644"],
+    ["../../packaging/icons/pubrs-16.png", "usr/share/icons/hicolor/16x16/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-32.png", "usr/share/icons/hicolor/32x32/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-48.png", "usr/share/icons/hicolor/48x48/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-64.png", "usr/share/icons/hicolor/64x64/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-128.png", "usr/share/icons/hicolor/128x128/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-256.png", "usr/share/icons/hicolor/256x256/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-512.png", "usr/share/icons/hicolor/512x512/apps/pubrs.png", "644"],
+    ["../../packaging/icons/pubrs-document-48.png", "usr/share/icons/hicolor/48x48/mimetypes/application-vnd.pubrs+zip.png", "644"],
+    ["../../packaging/icons/pubrs-document-128.png", "usr/share/icons/hicolor/128x128/mimetypes/application-vnd.pubrs+zip.png", "644"],
+    ["../../packaging/icons/pubrs-document-256.png", "usr/share/icons/hicolor/256x256/mimetypes/application-vnd.pubrs+zip.png", "644"],
+    ["../../examples/samples/bakery-trifold.pubrs", "usr/share/doc/pubrs/examples/", "644"],
+    ["../../USER_GUIDE.md", "usr/share/doc/pubrs/", "644"],
+]
+
+[package.metadata.bundle]
+name = "pubrs"
+identifier = "io.github.donaldsteele.pubrs"
+icon = ["../../packaging/icons/pubrs-512.png", "../../packaging/icons/pubrs-256.png", "../../packaging/icons/pubrs-128.png", "../../packaging/icons/pubrs-32.png", "../../packaging/icons/pubrs-16.png"]
+version = "0.1.0"
+copyright = "Copyright (c) 2026 pubrs contributors"
+category = "public.app-category.graphics-design"
+short_description = "Desktop publishing"
+long_description = "Create flyers, brochures, business cards and newsletters."
+osx_minimum_system_version = "12.0"

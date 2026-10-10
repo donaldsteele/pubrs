@@ -25,3 +25,4 @@ tracing.workspace = true
 image = { workspace = true, features = ["png", "jpeg"] }
 lopdf.workspace = true
 hayro = "0.8"
+resvg.workspace = true
