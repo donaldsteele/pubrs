@@ -40,7 +40,6 @@
         <Property Id='DiskPrompt' Value='pubrs Installation'/>
 
         <Icon Id='ProductICO' SourceFile='..\..\packaging\icons\pubrs.ico'/>
-        <Icon Id='DocumentICO' SourceFile='..\..\packaging\icons\pubrs-document.ico'/>
         <Property Id='ARPPRODUCTICON' Value='ProductICO'/>
         <Property Id='ARPHELPLINK' Value='https://github.com/donaldsteele/pubrs'/>
 
@@ -73,7 +72,9 @@
                                 DiskId='1'
                                 Source='$(var.CargoTargetBinDir)\pubrs-app.exe'
                                 KeyPath='yes'/>
-                            <ProgId Id='pubrs.Publication' Description='pubrs publication' Icon='DocumentICO'>
+                            <!-- ProgId icons must be installed files, not Icon elements. -->
+                            <File Id='DocumentIco' Name='pubrs-document.ico' DiskId='1' Source='..\..\packaging\icons\pubrs-document.ico'/>
+                            <ProgId Id='pubrs.Publication' Description='pubrs publication' Icon='DocumentIco' IconIndex='0'>
                                 <Extension Id='pubrs' ContentType='application/vnd.pubrs+zip'>
                                     <Verb Id='open' Command='Open' TargetFile='pubrsAppExe' Argument='"%1"'/>
                                 </Extension>
