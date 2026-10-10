@@ -13,7 +13,6 @@ Deferred and partial work. Each entry says what is missing and why.
 
 ## Not yet implemented (scheduled)
 
-- `pubrs` CLI binary prints "not implemented" until M5.
 - `pubrs-mcp` binary prints "not implemented" until M6.
 
 ## Partial features

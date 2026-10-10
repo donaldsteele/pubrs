@@ -690,15 +690,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "camino"
-version = "1.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
-dependencies = [
- "serde_core",
-]
-
-[[package]]
 name = "cbc"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3528,7 +3519,7 @@ name = "pubrs-api"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "camino",
+ "lopdf",
  "pubrs-core",
  "pubrs-io",
  "pubrs-layout",

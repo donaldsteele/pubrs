@@ -75,3 +75,20 @@ Arial and Times New Roman). System fonts are discovered with fontdb and
 registered lazily. A document that names a missing font renders with the
 bundled fallback and `validate` warns about it. Golden tests use only the
 fonts in `tests/fonts/`.
+
+## The API layer
+
+`pubrs-api::Session` owns open documents (keyed by a per-session `doc_id`),
+one `Editor` per document, a layout cache keyed by revision, and the shared
+export caches (fonts, decoded images, glyph outlines). Every operation is a
+typed method `fn tool_name(&mut self, Request) -> ApiResult<Response>`; request
+and response types derive `JsonSchema`, so the JSON Schemas published over MCP
+come straight from the Rust types.
+
+`registry::TOOLS` lists every operation by name with its schemas, description
+and annotations (read-only, destructive, image output). The MCP server and
+`pubrs script` both dispatch through `call_tool(session, name, json)`, so a
+script is exactly a recorded sequence of MCP calls. Errors are always
+`{code, message, hint}`; tool panics are caught and reported as `internal`.
+Destructive tools require `confirm: true`. `doc_id` defaults to the most
+recently used document.

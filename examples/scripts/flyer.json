@@ -1,0 +1,19 @@
+[
+  {"tool": "doc_new", "args": {"page_size": {"preset": "letter"}, "bleed": 9, "title": "Golden Crust Bakery"}, "as": "doc"},
+  {"tool": "frame_add_shape", "args": {"shape": "rectangle", "x": -9, "y": -9, "width": 630, "height": 200, "fill": "#1E3A8A"}, "as": "band"},
+  {"tool": "frame_add_text", "args": {"x": 36, "y": 30, "width": 420, "height": 140,
+    "text": "Golden Crust Bakery\nFresh bread since 1987", "font_size": 20, "color": "#FFFFFF"}, "as": "title"},
+  {"tool": "text_apply_char_style", "args": {"frame_id": "${title.frame_id}", "start": 0, "end": 19, "font_size": 34, "bold": true}},
+  {"tool": "frame_add_image", "args": {"x": 456, "y": 30, "width": 130, "height": 130, "path": "${script_dir}/../assets/logo.svg", "fit": "fit"}, "as": "logo"},
+  {"tool": "frame_add_image", "args": {"x": 126, "y": 220, "width": 360, "height": 240, "path": "${script_dir}/../assets/bread.jpg"}, "as": "photo"},
+  {"tool": "frame_add_text", "args": {"x": 36, "y": 490, "width": 260, "height": 240, "style": "Body",
+    "text": "Every loaf is shaped by hand and baked in our stone oven before sunrise. Sourdough, rye, seeded and brioche are ready from 7am, with celebration cakes made to order.\nGluten-free and vegan options are baked fresh on Fridays and Saturdays."}, "as": "body"},
+  {"tool": "frame_add_text", "args": {"x": 316, "y": 490, "width": 260, "height": 240, "style": "Body"}, "as": "body2"},
+  {"tool": "text_link_frames", "args": {"from_frame_id": "${body.frame_id}", "to_frame_id": "${body2.frame_id}"}},
+  {"tool": "frame_add_text", "args": {"x": 36, "y": 750, "width": 540, "height": 24, "text": "12 Mill Lane · Open daily 7am–3pm · goldencrust.example", "align": "center", "font_size": 10}},
+  {"tool": "text_overflow_status", "args": {}, "as": "overflow"},
+  {"tool": "validate", "args": {}, "as": "check"},
+  {"tool": "export_pdf", "args": {"path": "${out_dir}/flyer.pdf", "crop_marks": true}},
+  {"tool": "export_png", "args": {"path": "${out_dir}/flyer.png", "dpi": 72}},
+  {"tool": "doc_save_as", "args": {"path": "${out_dir}/flyer.pubrs"}}
+]
