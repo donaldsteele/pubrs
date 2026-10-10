@@ -34,11 +34,6 @@ pub fn sniff_format(bytes: &[u8]) -> Option<ImageFormat> {
     None
 }
 
-/// Parse options for SVG assets. Text in SVGs uses the fonts given here.
-pub fn svg_options() -> usvg::Options<'static> {
-    usvg::Options::default()
-}
-
 /// Decode just enough of an image to learn its format and size.
 pub fn image_info(bytes: &[u8]) -> Result<ImageInfo, IoError> {
     let format =
@@ -50,12 +45,20 @@ pub fn image_info(bytes: &[u8]) -> Result<ImageInfo, IoError> {
             } else {
                 image::ImageFormat::Jpeg
             };
-            image::ImageReader::with_format(Cursor::new(bytes), fmt)
-                .into_dimensions()
-                .map_err(|e| IoError::Image(e.to_string()))?
+            // Report the size after EXIF rotation, matching what is drawn.
+            use image::ImageDecoder;
+            use image::metadata::Orientation as O;
+            let mut dec = image::ImageReader::with_format(Cursor::new(bytes), fmt)
+                .into_decoder()
+                .map_err(|e| IoError::Image(e.to_string()))?;
+            let (w, h) = dec.dimensions();
+            match dec.orientation().unwrap_or(O::NoTransforms) {
+                O::Rotate90 | O::Rotate270 | O::Rotate90FlipH | O::Rotate270FlipH => (h, w),
+                _ => (w, h),
+            }
         }
         ImageFormat::Svg => {
-            let tree = usvg::Tree::from_data(bytes, &svg_options())
+            let tree = usvg::Tree::from_data(bytes, crate::images::svg_options())
                 .map_err(|e| IoError::Image(e.to_string()))?;
             let s = tree.size();
             (

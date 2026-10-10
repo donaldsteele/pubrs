@@ -20,6 +20,7 @@ resvg.workspace = true
 usvg.workspace = true
 krilla.workspace = true
 krilla-svg.workspace = true
+skrifa.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 vello = { workspace = true, optional = true }

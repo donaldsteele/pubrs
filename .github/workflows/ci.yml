@@ -39,11 +39,13 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all -- --check
       - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: core builds without default features
         run: cargo build -p pubrs-core --no-default-features
       - name: tests (unit, goldens, PDF, MCP integration)
         run: cargo test --workspace
+      - name: GPU renderer test (skips without an adapter)
+        run: cargo test -p pubrs-render --features gpu --test gpu
       - name: GUI smoke launch (Linux, xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a cargo run -p pubrs-app -- --smoke-test

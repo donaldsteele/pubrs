@@ -7,14 +7,14 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M0 Workspace skeleton, CI, command system + undo | done locally; CI blocked (billing) | 36 core tests; GUI smoke launch passes on Linux/xvfb |
 | M1 Core document model + file format round-trip | done locally; CI blocked (billing) | +7 core, +11 io tests; Windows/macOS cross clippy clean |
 | M2 Layout: shaping, linked chains, overflow | done locally; CI blocked (billing) | +15 layout tests incl. golden snapshot |
-| M3 Render to PNG, golden images | in progress | |
-| M4 PDF export via krilla | pending | |
+| M3 Render to PNG, golden images | done locally; CI blocked (billing) | +5 golden render tests, GPU vs CPU test (feature gpu) |
+| M4 PDF export via krilla | in progress | |
 | M5 pubrs-api Session + CLI | pending | |
 | M6 MCP server | pending | |
 | M7 GUI | pending | |
 | M8 Templates, printing, installers, docs, DoD | pending | |
 
-**Next step:** M3: `pubrs-render` display list (frames → paths, images, glyph runs; master pages beneath), tiny-skia raster backend with skrifa glyph outlines, PNG encode, golden PNG tests with tolerance under `tests/golden/render/`; vello GPU path behind the `gpu` feature with fallback.
+**Next step:** M4: `pubrs-render::pdf` krilla backend (pages with MediaBox = trim + bleed + slug, TrimBox/BleedBox/CropBox, crop marks, pre-shaped glyphs with subset fonts, JPEG pass-through, SVG via krilla-svg, opacity); `ExportContext::export_pdf`; lopdf-based tests for page count, boxes and embedded fonts.
 
 ## Verification per milestone
 

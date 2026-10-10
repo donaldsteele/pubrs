@@ -3249,6 +3249,7 @@ dependencies = [
  "pubrs-core",
  "pubrs-layout",
  "resvg",
+ "skrifa 0.44.0",
  "thiserror 2.0.21",
  "tracing",
  "usvg",

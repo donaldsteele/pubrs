@@ -6,5 +6,5 @@ set -eu
 for target in x86_64-pc-windows-msvc aarch64-apple-darwin; do
     rustup target add "$target" >/dev/null
     echo "== $target"
-    cargo clippy --workspace --all-targets --target "$target" -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --target "$target" -- -D warnings
 done
