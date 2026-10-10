@@ -56,6 +56,9 @@ pub struct SelfTest {
     started: Instant,
     /// File to drop on the window with the next frame.
     drop: Option<PathBuf>,
+    /// Input clock, one 60 Hz tick per frame, so double-clicks and drags do
+    /// not depend on how fast this machine renders (software GPUs on CI).
+    clock: f64,
 }
 
 fn png(w: u32, h: u32, seed: u8) -> Vec<u8> {
@@ -81,11 +84,15 @@ impl SelfTest {
             shots: 0,
             started: Instant::now(),
             drop: None,
+            clock: 0.0,
         }
     }
 
     /// Feed queued synthetic events into egui.
     pub fn inject(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.clock += 1.0 / 60.0;
+        raw.time = Some(self.clock);
+        raw.predicted_dt = 1.0 / 60.0;
         if let Some(events) = self.pending.pop_front() {
             raw.events.extend(events);
         }
