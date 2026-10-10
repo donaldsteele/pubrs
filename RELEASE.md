@@ -17,7 +17,10 @@
 1. Update `version` in the workspace `Cargo.toml` (and the AppStream
    `<release>` in `packaging/flatpak/*.metainfo.xml`), commit.
 2. Make sure CI is green on all four jobs.
-3. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+3. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`. GitHub does not start the
+   workflow for a tag on a commit whose message contains `[skip ci]`; in that case run it
+   on the tag by hand: `gh workflow run release.yml --ref v0.1.0` (it drafts the release
+   the same way).
 4. The **Release** workflow builds, checks and uploads:
    - `pubrs-<v>-x86_64-pc-windows-msvc.msi`, `pubrs-<v>-aarch64-pc-windows-msvc.msi` (cargo-wix, WiX 3.14)
    - `pubrs-<v>-macos-universal.dmg` (cargo-bundle + lipo, arm64 + x86_64, `.pubrs` document type)
