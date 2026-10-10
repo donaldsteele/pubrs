@@ -29,6 +29,9 @@ pub struct SessionConfig {
     /// Folder that relative paths in save/open/export calls resolve against,
     /// and where files go when no path is given.
     pub output_dir: Option<PathBuf>,
+    /// Never use the GPU for interactive renders (small throwaway sessions,
+    /// where creating a device costs more than drawing).
+    pub software_rendering: bool,
 }
 
 /// One open document.

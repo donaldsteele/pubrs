@@ -197,17 +197,19 @@ impl Session {
             ApiError::not_found("page", &index.to_string(), "list pages with page_list")
         })?;
         self.ctx.images.sync(&doc);
+        let software = self.config.software_rendering;
         let r = self
             .rasterizer
-            .get_or_insert_with(pubrs_render::Rasterizer::auto);
+            .get_or_insert_with(|| new_rasterizer(software));
         r.render_rgba(&scene, &self.ctx.images, opts)
             .map_err(|e| ApiError::new("export_failed", e.to_string(), "try a smaller zoom"))
     }
 
     /// Which raster path interactive rendering uses.
     pub fn render_backend(&mut self) -> String {
+        let software = self.config.software_rendering;
         self.rasterizer
-            .get_or_insert_with(pubrs_render::Rasterizer::auto)
+            .get_or_insert_with(|| new_rasterizer(software))
             .describe()
     }
 
@@ -324,5 +326,13 @@ impl Session {
             png_base64: b64(&png),
             revision: open.revision(),
         })
+    }
+}
+
+fn new_rasterizer(software: bool) -> pubrs_render::Rasterizer {
+    if software {
+        pubrs_render::Rasterizer::cpu()
+    } else {
+        pubrs_render::Rasterizer::auto()
     }
 }

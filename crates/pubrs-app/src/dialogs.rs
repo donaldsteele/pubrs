@@ -52,6 +52,7 @@ fn template_thumb(
     // Render the template's first page in a scratch session.
     let mut s = pubrs_api::Session::new(pubrs_api::SessionConfig {
         user_templates_dir: Some(app.platform.paths.user_templates_dir()),
+        software_rendering: true,
         ..Default::default()
     });
     let out = s
