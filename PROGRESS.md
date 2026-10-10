@@ -11,10 +11,10 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M4 PDF export via krilla | done locally; CI blocked (billing) | +8 PDF tests (lopdf parse-back, hayro raster comparison) |
 | M5 pubrs-api Session + CLI | done locally; CI blocked (billing) | +6 session, +2 script, +3 registry, +2 CLI tests |
 | M6 MCP server | done locally; CI blocked (billing) | +2 acceptance, +1 examples (all 71 tools), +1 HTTP, +2 template, +3 io template tests |
-| M7 GUI | in progress | |
-| M8 Templates, printing, installers, docs, DoD | pending | |
+| M7 GUI | done locally; CI blocked (billing) | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
+| M8 Templates, printing, installers, docs, DoD | in progress | templates and printing done early (M6/M7) |
 
-**Next step:** M7: pubrs-app GUI over Session: platform traits (FileDialogs, AppPaths, Clipboard, SystemFonts, PrintBackend + NullPlatform), canvas with page rendering (Rasterizer GPU/CPU) and zoom/scroll, selection + handles (move/resize/rotate), properties panel, pages panel, in-place text editing (carets from layout), image placement, undo/redo, keymap (Cmd/Ctrl), autosave + crash recovery, macOS native menu.
+**Next step:** M8: release workflow (MSI via cargo-wix, macOS universal .app + .dmg via cargo-bundle, AppImage + .deb, Flatpak manifest), icons and .pubrs file association, USER_GUIDE.md with per-OS install, RELEASE.md with manual installer checks, polish, Definition of Done verification.
 
 ## Verification per milestone
 

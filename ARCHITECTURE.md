@@ -115,3 +115,25 @@ Templates are ordinary documents whose frames carry `placeholder` metadata
 `newsletter`) are built in `pubrs-io::templates` through normal commands with
 deterministic ids; user templates are `.pubrs` files in the user template
 folder. A text placeholder counts as unfilled while its text equals its hint.
+
+## GUI
+
+`pubrs-app` (egui/eframe) is a client of the same `Session`: every edit is an
+API call or a `Command` executed through `Session::exec` (typing uses
+`exec_coalesced` so a burst of keystrokes is one undo step). Pages are
+rendered by `Session::page_rgba` (vello on the GPU when available, else
+tiny-skia) into a texture; selection handles, guides, the text caret and
+selection are egui overlays computed from the layout (`textedit.rs`).
+
+- `keymap.rs` is the single table of actions, shortcuts (`Modifiers::COMMAND`
+  = Cmd on macOS, Ctrl elsewhere) and menus; the egui menu bar and the native
+  macOS menu (muda) are both built from it.
+- `platform/` holds one trait per OS concern (`FileDialogs`, `AppPaths`,
+  `Clipboard`, `SystemFonts`, `PrintBackend`) with per-OS implementations and
+  a null implementation for headless runs. Printing always prints the PDF the
+  exporter produced: CUPS `lpr` on Linux, `NSPrintOperation` (PDFKit) on
+  macOS, the print dialog + GDI with WinRT's PDF renderer on Windows.
+- `autosave.rs` writes recovery copies of unsaved documents every minute and
+  offers them after a crash.
+- `--self-test DIR` drives the real window with injected input through the
+  Definition of Done scenario; CI runs it on every OS.

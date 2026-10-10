@@ -20,3 +20,5 @@ Any dependency outside that stack has a one-line justification below.
 - `hayro` (dev, pubrs-io): rasterises exported PDFs in tests so PDF output is compared against the PNG renderer.
 - `axum` (pubrs-mcp): hosts rmcp's streamable-HTTP tower service for `pubrs-mcp --http`.
 - `tokio-util` (pubrs-mcp): `CancellationToken` for graceful HTTP shutdown (rmcp's own type).
+- `muda` (macOS only): native NSMenu menu bar from the shared keymap table (egui has no native menus).
+- `windows` features `Data_Pdf`, `Graphics_Imaging`, `Storage*`: Windows printing rasterises the exported PDF with the OS PDF renderer (WinRT) and prints through GDI after the system print dialog.

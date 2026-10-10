@@ -52,6 +52,19 @@ jobs:
       - name: GUI smoke launch (Windows, macOS)
         if: runner.os != 'Linux'
         run: cargo run -p pubrs-app -- --smoke-test
+      - name: GUI end-to-end self-test (Linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" cargo run -p pubrs-app -- --self-test target/gui-selftest
+      - name: GUI end-to-end self-test (Windows, macOS)
+        if: runner.os != 'Linux'
+        run: cargo run -p pubrs-app -- --self-test target/gui-selftest
+      - name: Upload GUI self-test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-selftest-${{ matrix.os }}
+          path: target/gui-selftest/*.png
+          if-no-files-found: ignore
       - name: Upload golden diffs on failure
         if: failure()
         uses: actions/upload-artifact@v4
