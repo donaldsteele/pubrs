@@ -8,13 +8,13 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M1 Core document model + file format round-trip | done locally; CI blocked (billing) | +7 core, +11 io tests; Windows/macOS cross clippy clean |
 | M2 Layout: shaping, linked chains, overflow | done locally; CI blocked (billing) | +15 layout tests incl. golden snapshot |
 | M3 Render to PNG, golden images | done locally; CI blocked (billing) | +5 golden render tests, GPU vs CPU test (feature gpu) |
-| M4 PDF export via krilla | in progress | |
-| M5 pubrs-api Session + CLI | pending | |
+| M4 PDF export via krilla | done locally; CI blocked (billing) | +8 PDF tests (lopdf parse-back, hayro raster comparison) |
+| M5 pubrs-api Session + CLI | in progress | |
 | M6 MCP server | pending | |
 | M7 GUI | pending | |
 | M8 Templates, printing, installers, docs, DoD | pending | |
 
-**Next step:** M4: `pubrs-render::pdf` krilla backend (pages with MediaBox = trim + bleed + slug, TrimBox/BleedBox/CropBox, crop marks, pre-shaped glyphs with subset fonts, JPEG pass-through, SVG via krilla-svg, opacity); `ExportContext::export_pdf`; lopdf-based tests for page count, boxes and embedded fonts.
+**Next step:** M5: `pubrs-api` Session (open docs keyed by doc_id, Editor per doc, ExportContext), typed request/response structs with schemars, tool registry (name → schema → handler) covering every MCP tool, structured errors {code,message,hint}; `pubrs` CLI (render, export, validate, script) with a script replay test.
 
 ## Verification per milestone
 

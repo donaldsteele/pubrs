@@ -22,3 +22,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png", "jpeg"] }
+lopdf.workspace = true
+hayro = "0.8"

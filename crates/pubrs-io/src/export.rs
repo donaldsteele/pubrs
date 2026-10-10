@@ -2,7 +2,9 @@
 
 use pubrs_core::Document;
 use pubrs_layout::{DocumentLayout, FontLibrary, Layouter};
-use pubrs_render::{RasterOptions, RasterRenderer, RenderError, build_page_scene, tiny_skia};
+use pubrs_render::{
+    PdfOptions, RasterOptions, RasterRenderer, RenderError, build_page_scene, render_pdf, tiny_skia,
+};
 
 use crate::images::ImageCache;
 
@@ -70,6 +72,27 @@ impl ExportContext {
             .ok_or(ExportError::NoSuchPage(page, doc.pages.len()))?;
         self.images.sync(doc);
         Ok(self.raster.render(&scene, &self.images, opts)?)
+    }
+
+    /// Export every page to PDF.
+    pub fn export_pdf(
+        &mut self,
+        doc: &Document,
+        opts: &PdfOptions,
+    ) -> Result<Vec<u8>, ExportError> {
+        let layout = self.layout(doc);
+        self.images.sync(doc);
+        let scenes: Vec<_> = (0..doc.pages.len())
+            .filter_map(|i| build_page_scene(doc, &layout, i))
+            .collect();
+        let mut opts = opts.clone();
+        if opts.title.is_none() && !doc.meta.title.is_empty() {
+            opts.title = Some(doc.meta.title.clone());
+        }
+        if opts.author.is_none() && !doc.meta.author.is_empty() {
+            opts.author = Some(doc.meta.author.clone());
+        }
+        render_pdf(&scenes, &self.images, &opts).map_err(|e| ExportError::Pdf(e.to_string()))
     }
 
     /// Render one page (0-based) to PNG bytes, laying out the document first.

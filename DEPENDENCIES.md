@@ -17,3 +17,4 @@ Any dependency outside that stack has a one-line justification below.
 - `resvg`/`usvg` pinned to 0.47 (not 0.48): `krilla-svg` 0.8.1 accepts only usvg 0.47 `Tree`s; one usvg version keeps SVG raster and PDF paths on the same parsed tree.
 - `fontdb` pinned to 0.23 to match usvg 0.47 (one font database type for SVG text and font discovery).
 - `skrifa` pinned to 0.44 to match parley 0.12's internal version (no duplicate outline code).
+- `hayro` (dev, pubrs-io): rasterises exported PDFs in tests so PDF output is compared against the PNG renderer.
