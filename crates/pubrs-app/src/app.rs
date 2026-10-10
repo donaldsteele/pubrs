@@ -252,7 +252,7 @@ impl PubrsApp {
 
     pub fn open_path(&mut self, path: &Path) {
         let r = self.session.doc_open(DocOpen {
-            path: path.display().to_string(),
+            path: session_path(path),
         });
         if let Some(out) = self.report(r) {
             self.add_view(out.doc_id);
@@ -315,7 +315,7 @@ impl PubrsApp {
         };
         let r = self.session.doc_save_as(DocSaveAs {
             doc_id: Some(id),
-            path: Some(path.display().to_string()),
+            path: Some(session_path(path)),
         });
         match self.report(r) {
             Some(out) => {
@@ -333,7 +333,7 @@ impl PubrsApp {
         };
         let r = self.session.export_pdf(ExportPdf {
             doc_id: Some(id),
-            path: Some(path.display().to_string()),
+            path: Some(session_path(path)),
             ..Default::default()
         });
         match self.report(r) {
@@ -356,7 +356,7 @@ impl PubrsApp {
             doc_id: Some(v.doc_id),
             page_id: page,
             dpi: Some(300.0),
-            path: Some(path.display().to_string()),
+            path: Some(session_path(path)),
             ..Default::default()
         });
         if self.report(r).is_some() {
@@ -486,7 +486,7 @@ impl PubrsApp {
         let r = self.session.image_place(ImagePlace {
             doc_id: Some(id),
             frame_id: frame,
-            path: Some(path.display().to_string()),
+            path: Some(session_path(path)),
             base64: None,
             svg: None,
             filename: None,
@@ -1163,4 +1163,14 @@ impl PubrsApp {
             self.saved_settings = Some(s);
         }
     }
+}
+
+/// A path from a file dialog or the command line, made absolute against the
+/// current directory: the session resolves relative paths against its output
+/// folder, which is meant for MCP clients.
+fn session_path(path: &Path) -> String {
+    std::path::absolute(path)
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
