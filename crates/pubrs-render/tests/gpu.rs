@@ -11,8 +11,12 @@ use pubrs_render::{NoImages, RasterOptions, RasterRenderer, build_page_scene};
 
 #[test]
 fn gpu_matches_software_within_tolerance() {
-    let mut gpu = match GpuRenderer::new() {
-        Ok(g) => g,
+    // Software adapters are fine for vello on Linux (llvmpipe); WARP crashes.
+    let mut gpu = match GpuRenderer::with_software(!cfg!(windows)) {
+        Ok(g) => {
+            eprintln!("adapter: {}", g.adapter());
+            g
+        }
         Err(e) => {
             eprintln!("skipping: {e}");
             return;

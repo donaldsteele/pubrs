@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: cargo test -p pubrs-io --test render_golden -- --nocapture --test-threads=1 2>&1 | grep -o 'golden [a-z_]*: .*'
       - name: GPU renderer test (skips without an adapter)
-        run: cargo test -p pubrs-render --features gpu --test gpu
+        run: cargo test -p pubrs-render --features gpu --test gpu -- --nocapture
       - name: GUI smoke launch (Linux, xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a cargo run -p pubrs-app -- --smoke-test

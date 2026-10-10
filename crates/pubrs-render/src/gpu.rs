@@ -64,8 +64,15 @@ impl std::fmt::Debug for GpuRenderer {
 }
 
 impl GpuRenderer {
-    /// Create a device on the best available adapter.
+    /// Create a device on the best hardware adapter. Software adapters (WARP,
+    /// llvmpipe, SwiftShader) are refused: tiny-skia is faster and exact there,
+    /// and vello crashed the process on WARP (Windows CI, no GPU).
     pub fn new() -> Result<Self, GpuError> {
+        Self::with_software(false)
+    }
+
+    /// Like [`GpuRenderer::new`], optionally accepting a software adapter.
+    pub fn with_software(allow_software: bool) -> Result<Self, GpuError> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..wgpu::InstanceDescriptor::new_without_display_handle_from_env()
@@ -78,6 +85,12 @@ impl GpuRenderer {
         }))
         .map_err(|e| GpuError::NoAdapter(e.to_string()))?;
         let info = adapter.get_info();
+        if info.device_type == wgpu::DeviceType::Cpu && !allow_software {
+            return Err(GpuError::NoAdapter(format!(
+                "only a software adapter ({}, {:?})",
+                info.name, info.backend
+            )));
+        }
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("pubrs vello"),
             required_features: wgpu::Features::empty(),
