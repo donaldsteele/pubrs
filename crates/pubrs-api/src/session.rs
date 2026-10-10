@@ -122,7 +122,11 @@ impl Session {
     /// Resolve a user-supplied path: absolute paths are used as-is, relative
     /// ones are joined to the output folder when one is configured.
     pub fn resolve_path(&self, path: &str) -> PathBuf {
-        let p = PathBuf::from(path);
+        let p = if cfg!(windows) {
+            PathBuf::from(verbatim_separators(path).as_ref())
+        } else {
+            PathBuf::from(path)
+        };
         match &self.config.output_dir {
             Some(dir) if p.is_relative() => dir.join(p),
             _ => p,
@@ -403,4 +407,35 @@ pub fn slug(title: &str) -> String {
     }
     let s = s.trim_end_matches('-').to_string();
     if s.is_empty() { "untitled".into() } else { s }
+}
+
+/// Windows verbatim paths (`\\?\C:\...`, what `canonicalize` returns) accept
+/// no `/` separators, but clients often build paths by appending `/name`.
+pub fn verbatim_separators(path: &str) -> std::borrow::Cow<'_, str> {
+    if path.starts_with(r"\\?\") && path.contains('/') {
+        path.replace('/', r"\").into()
+    } else {
+        path.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbatim_paths_get_backslashes() {
+        assert_eq!(
+            verbatim_separators(r"\\?\D:\a\examples\assets/bread.jpg"),
+            r"\\?\D:\a\examples\assets\bread.jpg"
+        );
+        assert_eq!(verbatim_separators("C:/a/b.jpg"), "C:/a/b.jpg");
+        assert_eq!(verbatim_separators("/home/a/b.jpg"), "/home/a/b.jpg");
+    }
+
+    #[test]
+    fn slugs() {
+        assert_eq!(slug("Golden Crust!"), "golden-crust");
+        assert_eq!(slug("  "), "untitled");
+    }
 }

@@ -60,8 +60,8 @@ section = "graphics"
 priority = "optional"
 revision = ""
 # winit and wgpu/glow load these with dlopen, so `$auto` cannot see them.
-depends = "$auto, libxkbcommon0, libgl1 | libvulkan1"
-recommends = "libxkbcommon-x11-0, libwayland-client0, libx11-6, libxcursor1, libxi6, libxrandr2, mesa-vulkan-drivers, cups-client"
+depends = "$auto, libxkbcommon0, libxkbcommon-x11-0, libgl1 | libvulkan1"
+recommends = "libwayland-client0, libx11-6, libxcursor1, libxi6, libxrandr2, mesa-vulkan-drivers, cups-client"
 assets = [
     ["target/release/pubrs-app", "usr/bin/", "755"],
     ["target/release/pubrs", "usr/bin/", "755"],
