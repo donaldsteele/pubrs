@@ -45,7 +45,7 @@ jobs:
         run: |
           choco install wixtoolset --version 3.14.1 -y --no-progress
           "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          cargo install cargo-wix --locked
+          cargo install cargo-wix --version 0.3.9 --locked
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p pubrs-app -p pubrs-cli -p pubrs-mcp
       - name: Build MSI
@@ -99,7 +99,7 @@ jobs:
           [[ "$GITHUB_REF" == refs/tags/* ]] || v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           echo "VERSION=$v" >> "$GITHUB_ENV"
       - name: Install cargo-bundle
-        run: cargo install cargo-bundle --locked
+        run: cargo install cargo-bundle --version 0.12.0 --locked
       - name: Build universal app and DMG
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
@@ -153,7 +153,7 @@ jobs:
         run: cargo build --release --locked -p pubrs-app -p pubrs-cli -p pubrs-mcp
       - name: .deb
         run: |
-          cargo install cargo-deb --locked
+          cargo install cargo-deb --version 3.8.0 --locked
           desktop-file-validate packaging/linux/pubrs.desktop
           cargo deb -p pubrs-app --no-build --output dist/
       - name: AppImage

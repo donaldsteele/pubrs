@@ -91,4 +91,6 @@ copyright = "Copyright (c) 2026 pubrs contributors"
 category = "public.app-category.graphics-design"
 short_description = "Desktop publishing"
 long_description = "Create flyers, brochures, business cards and newsletters."
-osx_minimum_system_version = "12.0"
+
+[package.metadata.bundle.osx]
+minimum_system_version = "12.0"

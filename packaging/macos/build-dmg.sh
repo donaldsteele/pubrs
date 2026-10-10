@@ -14,7 +14,7 @@ for t in aarch64-apple-darwin x86_64-apple-darwin; do
     rustup target add "$t" >/dev/null
     cargo build --release --locked --target "$t" -p pubrs-app -p pubrs-cli -p pubrs-mcp
 done
-cargo bundle --release -p pubrs-app --target aarch64-apple-darwin
+cargo bundle --release -p pubrs-app --target aarch64-apple-darwin --format osx
 APP="target/aarch64-apple-darwin/release/bundle/osx/pubrs.app"
 test -d "$APP"
 for b in pubrs-app pubrs pubrs-mcp; do
