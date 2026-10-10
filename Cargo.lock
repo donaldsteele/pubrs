@@ -1334,17 +1334,9 @@ dependencies = [
  "hashbrown 0.17.1",
  "linebender_resource_handle",
  "memmap2",
- "objc2 0.6.5",
- "objc2-core-foundation",
- "objc2-core-text",
- "objc2-foundation 0.3.2",
  "parlance",
  "read-fonts 0.41.0",
- "roxmltree 0.21.1",
  "smallvec",
- "windows",
- "windows-core",
- "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
@@ -3225,6 +3217,7 @@ dependencies = [
  "fontique",
  "parley",
  "pubrs-core",
+ "serde_json",
  "skrifa 0.44.0",
  "thiserror 2.0.21",
  "tracing",
@@ -5376,17 +5369,6 @@ name = "xmp-writer"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9440ea3e5aeabb0ac63af70daf835274065238cdd0cec83418f417eae38bacee"
-
-[[package]]
-name = "yeslogic-fontconfig-sys"
-version = "6.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d8b8abf912b9a29ff112e1671c97c33636903d13a69712037190e6805af4f76"
-dependencies = [
- "dlib",
- "once_cell",
- "pkg-config",
-]
 
 [[package]]
 name = "yoke"

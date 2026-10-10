@@ -6,6 +6,7 @@
 //! as a forward/backward [`Patch`] pair for undo and redo.
 
 pub mod align;
+pub mod builder;
 pub mod bytes;
 pub mod color;
 pub mod command;
@@ -19,6 +20,7 @@ pub mod style;
 pub mod text;
 pub mod validate;
 
+pub use builder::DocBuilder;
 pub use bytes::Bytes;
 pub use color::Color;
 pub use command::{CmdResult, Command, CommandError, TextFrameProps};

@@ -1,0 +1,129 @@
+{
+  "stories": [
+    {
+      "frames": [
+        {
+          "chain_index": 0,
+          "lines": [
+            {
+              "baseline": 35.38,
+              "first_glyph_x": 16.0,
+              "glyphs": 13,
+              "h": 37.8,
+              "text": "Golden Crust ",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 4.0
+            },
+            {
+              "baseline": 73.18,
+              "first_glyph_x": 69.95,
+              "glyphs": 6,
+              "h": 37.8,
+              "text": "Bakery",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 41.8
+            },
+            {
+              "baseline": 102.19,
+              "first_glyph_x": 4.0,
+              "glyphs": 51,
+              "h": 13.75,
+              "text": "Fresh sourdough, rye and seeded loaves baked every ",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 91.6
+            },
+            {
+              "baseline": 115.94,
+              "first_glyph_x": 4.0,
+              "glyphs": 54,
+              "h": 13.75,
+              "text": "morning from 6am. Our starter is older than the shop, ",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 105.35
+            }
+          ]
+        },
+        {
+          "chain_index": 1,
+          "lines": [
+            {
+              "baseline": 14.59,
+              "first_glyph_x": 146.0,
+              "glyphs": 25,
+              "h": 13.75,
+              "text": "and we still shape every ",
+              "w": 110.0,
+              "x": 146.0,
+              "y": 4.0
+            },
+            {
+              "baseline": 28.34,
+              "first_glyph_x": 146.0,
+              "glyphs": 13,
+              "h": 13.75,
+              "text": "loaf by hand.",
+              "w": 110.0,
+              "x": 146.0,
+              "y": 17.75
+            },
+            {
+              "baseline": 48.09,
+              "first_glyph_x": 146.0,
+              "glyphs": 24,
+              "h": 13.75,
+              "text": "Order celebration cakes ",
+              "w": 110.0,
+              "x": 146.0,
+              "y": 37.5
+            },
+            {
+              "baseline": 61.84,
+              "first_glyph_x": 146.0,
+              "glyphs": 18,
+              "h": 13.75,
+              "text": "three days ahead. ",
+              "w": 110.0,
+              "x": 146.0,
+              "y": 51.25
+            },
+            {
+              "baseline": 75.59,
+              "first_glyph_x": 146.0,
+              "glyphs": 22,
+              "h": 13.75,
+              "text": "Gluten-free and vegan ",
+              "w": 110.0,
+              "x": 146.0,
+              "y": 65.0
+            },
+            {
+              "baseline": 89.34,
+              "first_glyph_x": 4.0,
+              "glyphs": 53,
+              "h": 13.75,
+              "text": "options are available on Fridays and Saturdays while ",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 78.75
+            },
+            {
+              "baseline": 103.09,
+              "first_glyph_x": 4.0,
+              "glyphs": 12,
+              "h": 13.75,
+              "text": "stocks last.",
+              "w": 252.0,
+              "x": 4.0,
+              "y": 92.5
+            }
+          ]
+        }
+      ],
+      "overflow": null
+    }
+  ]
+}

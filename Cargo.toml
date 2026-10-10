@@ -37,8 +37,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 camino = { version = "1.2", features = ["serde1"] }
 
-parley = "0.12"
-fontique = "0.12"
+parley = { version = "0.12", default-features = false, features = ["std"] }
+fontique = { version = "0.12", default-features = false, features = ["std"] }
 swash = "0.2"
 fontdb = "0.23"
 skrifa = "0.44"
