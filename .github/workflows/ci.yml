@@ -46,7 +46,8 @@ jobs:
         run: cargo test --workspace
       - name: Golden images byte-identical on this OS?
         shell: bash
-        run: cargo test -p pubrs-io --test render_golden -- --nocapture --test-threads=1 2>&1 | grep -o 'golden [a-z_]*: .*'
+        run: |
+          cargo test -p pubrs-io --test render_golden -- --nocapture --test-threads=1 2>&1 | grep -o 'golden [a-z_]*: .*'
       - name: GPU renderer test (skips without an adapter)
         run: cargo test -p pubrs-render --features gpu --test gpu -- --nocapture
       - name: GUI smoke launch (Linux, xvfb)
