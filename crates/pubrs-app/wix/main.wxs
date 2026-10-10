@@ -65,7 +65,8 @@
                                 Action='set'
                                 System='yes'/>
                         </Component>
-                        <Component Id='AppExe' Guid='*'>
+                        <!-- Two files (exe + document icon), so the GUID is fixed. -->
+                        <Component Id='AppExe' Guid='FD5EAAB7-3A54-458E-B98F-A2591EA2D101'>
                             <File
                                 Id='pubrsAppExe'
                                 Name='pubrs-app.exe'
