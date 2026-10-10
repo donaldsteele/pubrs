@@ -99,7 +99,8 @@
                         Target='[Bin]pubrs-app.exe'
                         WorkingDirectory='Bin'
                         Icon='ProductICO'/>
-                    <RegistryValue Root='HKLM' Key='Software\pubrs' Name='StartMenuShortcut' Type='integer' Value='1' KeyPath='yes'/>
+                    <!-- ICE38/ICE43: shortcut components need an HKCU key path, even per-machine. -->
+                    <RegistryValue Root='HKCU' Key='Software\pubrs' Name='StartMenuShortcut' Type='integer' Value='1' KeyPath='yes'/>
                 </Component>
             </Directory>
         </Directory>
