@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple Silicon; macos-15-intel replaces the retired
+        # macos-13 Intel image (docs/adr/0002-macos-intel-runner.md).
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux system packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev \
+            libxi-dev libgl1-mesa-dev libegl1 mesa-vulkan-drivers libfontconfig1-dev \
+            libdbus-1-dev xvfb
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: core builds without default features
+        run: cargo build -p pubrs-core --no-default-features
+      - name: tests (unit, goldens, PDF, MCP integration)
+        run: cargo test --workspace
+      - name: GUI smoke launch (Linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo run -p pubrs-app -- --smoke-test
+      - name: GUI smoke launch (Windows, macOS)
+        if: runner.os != 'Linux'
+        run: cargo run -p pubrs-app -- --smoke-test
+      - name: Upload golden diffs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diffs-${{ matrix.os }}
+          path: target/golden-diffs/
+          if-no-files-found: ignore

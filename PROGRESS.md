@@ -4,7 +4,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 
 | Milestone | Status | Notes |
 |-----------|--------|-------|
-| M0 Workspace skeleton, CI, command system + undo | in progress | |
+| M0 Workspace skeleton, CI, command system + undo | done (local green; CI run pending) | 36 core tests |
 | M1 Core document model + file format round-trip | pending | |
 | M2 Layout: shaping, linked chains, overflow | pending | |
 | M3 Render to PNG, golden images | pending | |
@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | pending | |
 | M8 Templates, printing, installers, docs, DoD | pending | |
 
-**Next step:** M0: create the workspace crates, command system with undo/redo tests, CI matrix.
+**Next step:** M1: core model helpers (snap, align/distribute, validation), `.pubrs` zip format with migration, save → load → equal tests. Check the M0 CI run first.
 
 ## Known failing tests
 

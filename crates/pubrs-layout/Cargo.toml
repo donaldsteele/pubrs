@@ -1,0 +1,18 @@
+[package]
+name = "pubrs-layout"
+description = "Text shaping and flow for pubrs: linked frame chains, overflow, wrap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+pubrs-core.workspace = true
+parley.workspace = true
+fontique.workspace = true
+fontdb.workspace = true
+skrifa.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

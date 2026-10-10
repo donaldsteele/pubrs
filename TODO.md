@@ -10,3 +10,8 @@ Deferred and partial work. Each entry says what is missing and why.
 - Tables.
 - WordArt-style text effects.
 - Avery label sheet presets.
+
+## Not yet implemented (scheduled)
+
+- `pubrs` CLI binary prints "not implemented" until M5.
+- `pubrs-mcp` binary prints "not implemented" until M6.

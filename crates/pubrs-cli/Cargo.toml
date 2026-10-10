@@ -1,0 +1,21 @@
+[package]
+name = "pubrs-cli"
+description = "Headless command line for pubrs: render, export, validate, script"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "pubrs"
+path = "src/main.rs"
+
+[dependencies]
+pubrs-api.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

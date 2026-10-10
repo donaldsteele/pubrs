@@ -1,0 +1,32 @@
+//! `pubrs-core`: the document model, commands, undo/redo and validation.
+//!
+//! This crate has no I/O, no UI and no rendering dependencies, and compiles
+//! with `--no-default-features`. Every mutation of a [`Document`] is a
+//! [`Command`]; the [`Editor`] applies commands atomically and records each
+//! as a forward/backward [`Patch`] pair for undo and redo.
+
+pub mod bytes;
+pub mod color;
+pub mod command;
+pub mod geom;
+pub mod history;
+pub mod id;
+pub mod model;
+pub mod patch;
+pub mod style;
+pub mod text;
+
+pub use bytes::Bytes;
+pub use color::Color;
+pub use command::{CmdResult, Command, CommandError, TextFrameProps};
+pub use geom::{Margins, Point, Rect, Size};
+pub use history::{Change, Editor, HistoryItem};
+#[cfg(feature = "random-ids")]
+pub use id::RandomIds;
+pub use id::{
+    AssetId, DocumentId, FrameId, GuideId, IdSource, MasterId, PageId, SeqIds, StoryId, StyleId,
+};
+pub use model::*;
+pub use patch::{Patch, Touched};
+pub use style::{Align, CharAttrs, CharProps, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet};
+pub use text::RunFormat;

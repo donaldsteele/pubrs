@@ -1,0 +1,26 @@
+[package]
+name = "pubrs-render"
+description = "Scene rendering for pubrs: PNG via tiny-skia (or vello on GPU) and PDF via krilla"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+# GPU raster path (vello on wgpu). Falls back to tiny-skia when no adapter exists.
+gpu = ["dep:vello", "dep:pollster"]
+
+[dependencies]
+pubrs-core.workspace = true
+pubrs-layout.workspace = true
+resvg.workspace = true
+usvg.workspace = true
+krilla.workspace = true
+krilla-svg.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+vello = { workspace = true, optional = true }
+pollster = { version = "0.4", optional = true }

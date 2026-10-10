@@ -1,0 +1,22 @@
+[package]
+name = "pubrs-io"
+description = "File format, image decode, templates and export orchestration for pubrs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+pubrs-core.workspace = true
+pubrs-layout.workspace = true
+pubrs-render.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+image.workspace = true
+usvg.workspace = true
+camino.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

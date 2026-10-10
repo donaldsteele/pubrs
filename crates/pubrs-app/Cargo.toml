@@ -1,0 +1,32 @@
+[package]
+name = "pubrs-app"
+description = "pubrs desktop publishing GUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "pubrs-app"
+path = "src/main.rs"
+
+[dependencies]
+pubrs-api.workspace = true
+eframe = { workspace = true, features = ["wgpu", "glow", "default_fonts", "wayland", "x11", "accesskit"] }
+rfd.workspace = true
+dirs.workspace = true
+arboard.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
+objc2-pdf-kit.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "pubrs-core"
+description = "Document model, commands, undo/redo and validation for pubrs (no I/O, no UI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["schema", "random-ids"]
+# JSON Schema derives for MCP/tool schemas.
+schema = ["dep:schemars"]
+# Random v4 UUIDs. Without it, callers supply ids through `IdSource`.
+random-ids = ["uuid/v4"]
+
+[dependencies]
+serde.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+schemars = { workspace = true, optional = true, features = ["uuid1"] }
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,78 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/pubrs-core",
+    "crates/pubrs-layout",
+    "crates/pubrs-render",
+    "crates/pubrs-io",
+    "crates/pubrs-api",
+    "crates/pubrs-mcp",
+    "crates/pubrs-cli",
+    "crates/pubrs-app",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/donaldsteele/pubrs"
+authors = ["Don Steele"]
+
+[workspace.dependencies]
+pubrs-core = { path = "crates/pubrs-core" }
+pubrs-layout = { path = "crates/pubrs-layout" }
+pubrs-render = { path = "crates/pubrs-render" }
+pubrs-io = { path = "crates/pubrs-io" }
+pubrs-api = { path = "crates/pubrs-api" }
+pubrs-mcp = { path = "crates/pubrs-mcp" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1.2"
+uuid = { version = "1.28", default-features = false, features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+camino = { version = "1.2", features = ["serde1"] }
+
+parley = "0.12"
+fontique = "0.12"
+swash = "0.2"
+fontdb = "0.23"
+skrifa = "0.44"
+
+tiny-skia = "0.12"
+vello = "0.11"
+krilla = "0.8"
+krilla-svg = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+resvg = "0.47"
+usvg = "0.47"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+
+rmcp = "3.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "net", "sync", "time"] }
+
+eframe = { version = "0.36", default-features = false }
+egui = "0.36"
+rfd = "0.17"
+dirs = "7"
+arboard = "3.6"
+windows = "0.62"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+objc2-pdf-kit = "0.3"
+
+clap = { version = "4.6", features = ["derive"] }
+lopdf = "0.45"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
