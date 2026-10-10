@@ -5,6 +5,7 @@
 //! [`Command`]; the [`Editor`] applies commands atomically and records each
 //! as a forward/backward [`Patch`] pair for undo and redo.
 
+pub mod align;
 pub mod bytes;
 pub mod color;
 pub mod command;
@@ -13,8 +14,10 @@ pub mod history;
 pub mod id;
 pub mod model;
 pub mod patch;
+pub mod snap;
 pub mod style;
 pub mod text;
+pub mod validate;
 
 pub use bytes::Bytes;
 pub use color::Color;
@@ -30,3 +33,4 @@ pub use model::*;
 pub use patch::{Patch, Touched};
 pub use style::{Align, CharAttrs, CharProps, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet};
 pub use text::RunFormat;
+pub use validate::{Warning, WarningCode};

@@ -3205,7 +3205,6 @@ dependencies = [
 name = "pubrs-io"
 version = "0.1.0"
 dependencies = [
- "camino",
  "image",
  "pubrs-core",
  "pubrs-layout",

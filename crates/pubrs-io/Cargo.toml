@@ -17,6 +17,8 @@ serde_json.workspace = true
 zip.workspace = true
 image.workspace = true
 usvg.workspace = true
-camino.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+image = { workspace = true, features = ["png", "jpeg"] }

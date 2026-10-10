@@ -1,6 +1,6 @@
 # The `.pubrs` file format
 
-Status: draft (M0). The model is defined by the Rust types in
+Status: version 1 (M1). The model is defined by the Rust types in
 `crates/pubrs-core/src/model.rs`; a JSON Schema generated from them is
 published with the MCP docs.
 
