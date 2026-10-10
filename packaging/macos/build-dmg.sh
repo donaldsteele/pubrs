@@ -14,7 +14,8 @@ for t in aarch64-apple-darwin x86_64-apple-darwin; do
     rustup target add "$t" >/dev/null
     cargo build --release --locked --target "$t" -p pubrs-app -p pubrs-cli -p pubrs-mcp
 done
-cargo bundle --release -p pubrs-app --target aarch64-apple-darwin --format osx
+# cargo-bundle resolves the icon paths in Cargo.toml against the current directory.
+(cd crates/pubrs-app && cargo bundle --release --target aarch64-apple-darwin --format osx)
 APP="target/aarch64-apple-darwin/release/bundle/osx/pubrs.app"
 test -d "$APP"
 for b in pubrs-app pubrs pubrs-mcp; do
@@ -22,6 +23,7 @@ for b in pubrs-app pubrs pubrs-mcp; do
         "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
 done
 lipo -info "$APP/Contents/MacOS/pubrs-app"
+test -f "$APP/Contents/Resources/pubrs.icns" || { echo "app icon missing from the bundle" >&2; exit 1; }
 cp packaging/icons/pubrs-document.icns "$APP/Contents/Resources/"
 mkdir -p "$APP/Contents/Resources/samples"
 cp examples/samples/bakery-trifold.pubrs "$APP/Contents/Resources/samples/"
