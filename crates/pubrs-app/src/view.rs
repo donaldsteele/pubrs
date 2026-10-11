@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use eframe::egui::{self, Pos2, Vec2};
-use pubrs_api::core::{Document, FrameId, Owner, Parent, Point, Rect};
+use pubrs_api::core::{Axis, Document, FrameId, GuideId, Owner, Parent, Point, Rect};
 
 use crate::render_worker::ViewKey;
 use crate::textedit::TextEdit;
@@ -254,6 +254,18 @@ pub enum Drag {
         current: Point,
     },
     TextSelect,
+    /// Placing a new guide (`id` is None) or moving an existing one.
+    Guide {
+        owner: Owner,
+        id: Option<GuideId>,
+        axis: Axis,
+        /// Where the guide was, when moving.
+        orig: Option<f64>,
+        /// Current position in points on the axis.
+        pos: f64,
+        /// Is the pointer over the page (not off it or on a ruler)?
+        inside: bool,
+    },
 }
 
 /// The canvas texture: a viewport-sized region of the page raster at
@@ -311,6 +323,10 @@ pub struct DocView {
     /// `MAX_RENDER_RETRIES` times).
     pub render_failures: u32,
     pub xf: Option<PageXf>,
+    /// The canvas area (without the rulers) in screen points.
+    pub canvas_rect: Option<egui::Rect>,
+    /// A page-space rectangle to scroll into view on the next frame.
+    pub scroll_to: Option<Rect>,
 }
 
 impl DocView {
@@ -330,6 +346,8 @@ impl DocView {
             thumbs_requested: HashMap::new(),
             render_failures: 0,
             xf: None,
+            canvas_rect: None,
+            scroll_to: None,
         }
     }
 

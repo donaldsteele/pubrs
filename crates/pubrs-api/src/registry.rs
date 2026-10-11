@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
-    doc, export, frames, history, images, pages, query, sheets, styles, templates, text,
+    doc, export, find, frames, history, images, pages, query, sheets, styles, templates, text,
 };
 
 /// One tool.
@@ -140,6 +140,8 @@ pub static TOOLS: &[ToolDef] = &[
         "Delete a master page and its frames; pages using it lose their master. Requires confirm: true."),
     tool!("guide_add", "Pages", guide_add, pages::GuideAdd => pages::GuideAddOut, ro = false, destructive = false, image = None,
         "Add a ruler guide to a page or master: axis horizontal (position = y) or vertical (position = x), in points."),
+    tool!("guide_move", "Pages", guide_move, pages::GuideMove => Changed, ro = false, destructive = false, image = None,
+        "Move a ruler guide to a new position in points (found by guide_id; page_id or master_id optional)."),
     tool!("guide_remove", "Pages", guide_remove, pages::GuideRemove => Changed, ro = false, destructive = false, image = None,
         "Remove a ruler guide."),
     // ---------------------------------------------------------------- frames
@@ -196,6 +198,10 @@ pub static TOOLS: &[ToolDef] = &[
         "Link two text frames so text overflowing from_frame_id continues in to_frame_id (which must not already be linked). Reports whether the chain still overflows."),
     tool!("text_unlink_frames", "Text", text_unlink_frames, text::TextUnlinkFrames => text::TextUnlinkOut, ro = false, destructive = false, image = None,
         "Break the link after a frame. The text stays in the first part of the chain; later frames get a new empty story."),
+    tool!("text_find", "Text", text_find, find::TextFind => find::TextFindOut, ro = true, destructive = false, image = None,
+        "Find text in the whole document (every story) or one story. Options: case_sensitive, whole_word, and a start/end character range for one story. Returns story_id, the frame showing the match start, character offsets and a context snippet. An empty query is an error."),
+    tool!("text_replace_all", "Text", text_replace_all, find::TextReplaceAll => find::TextReplaceAllOut, ro = false, destructive = false, image = None,
+        "Replace every match of query with replacement across the document or one story (same options as text_find). One undo step. Returns the count; zero matches changes nothing. An empty query is an error."),
     tool!("text_get", "Text", text_get, text::TextRef => text::TextGetOut, ro = true, destructive = false, image = None,
         "Get a story's text with character offsets per paragraph and run, styles, effective fonts, the range each linked frame shows and how many characters overflow."),
     tool!("text_overflow_status", "Text", text_overflow_status, doc::DocRef => text::OverflowOut, ro = true, destructive = false, image = None,

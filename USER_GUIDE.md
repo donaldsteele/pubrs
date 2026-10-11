@@ -86,6 +86,42 @@ onto the window to place it in the selected picture frame.
   **Text → Link to Next Text Box** so the text continues there.
 - The **Pages** panel on the left adds, deletes and reorders pages.
 
+### Rulers and guides
+
+- **View → Rulers** shows a ruler along the top and left of the page, in the
+  units chosen in the properties panel (inches, millimetres or points). Zero is
+  the page's top-left corner. Tick spacing follows the zoom, and a blue band on
+  each ruler marks the selected items. The setting is remembered.
+- **Make a guide** by dragging from the top ruler (a horizontal guide) or the
+  left ruler (a vertical one) onto the page. A preview follows the pointer.
+- **Move a guide** by dragging it. **Delete a guide** by dragging it off the
+  page or back onto a ruler; it turns red while it will be deleted. Press Esc
+  during a drag to cancel. Each of these is one undo step (Ctrl+Z / ⌘Z).
+- Items snap to guides when **View → Snap to Guides** is on. **View → Show
+  Guides** hides or shows guides. Guides that come from a master page are drawn
+  on the pages using it and can't be dragged there.
+
+### Find and replace
+
+| Action | Windows / Linux | macOS |
+|---|---|---|
+| Find (opens the find bar) | Ctrl+F | ⌘F |
+| Next / previous match | Enter / Shift+Enter in the bar, F3 / Shift+F3 | Enter / Shift+Enter, F3 / ⇧F3 |
+| Find and Replace window | Ctrl+H | ⌘H |
+| Close the bar or window | Esc | Esc |
+
+- Type in the find bar. The count shows how many matches there are in the whole
+  publication. **Match case** and **Whole word** narrow the search. Next and
+  Previous go to the match's page, scroll to it and select it, ready to retype.
+- If text is selected when you press Ctrl+F or Ctrl+H, it becomes the search.
+- In the **Find and Replace** window, **Replace** swaps the selected match and
+  moves to the next; **Replace All** changes every match in one step, so one
+  undo restores them all. **Selection only** limits it to the text that was
+  selected when you ticked it. Buttons that can't be used say why when you point
+  at them.
+- Matches never cross a paragraph break. Text hidden by overflow is searched
+  and replaced, but can't be selected until it fits in a box.
+
 ### Keyboard shortcuts
 
 | Action | Windows / Linux | macOS |
@@ -102,6 +138,7 @@ onto the window to place it in the selected picture frame.
 | Zoom in / out / fit / 100% | Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+1 | ⌘= / ⌘- / ⌘0 / ⌘1 |
 | Next / previous page | Page Down / Page Up | Page Down / Page Up |
 | Lock / unlock | Ctrl+L | ⌘L |
+| Find, Replace | Ctrl+F, Ctrl+H | ⌘F, ⌘H |
 
 ### Saving, autosave and recovery
 

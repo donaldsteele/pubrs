@@ -166,6 +166,22 @@ pub struct GuideAddOut {
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct GuideMove {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    /// Page or master owning the guide (optional: found by guide_id).
+    #[serde(default)]
+    pub page_id: Option<PageId>,
+    #[serde(default)]
+    pub master_id: Option<MasterId>,
+    pub guide_id: GuideId,
+    /// New position in points from the page's top (horizontal) or left (vertical) edge.
+    pub position: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GuideRemove {
     /// Document id (default: the most recently used document).
     #[serde(default)]
@@ -331,6 +347,46 @@ impl Session {
             guide_id: id,
             change,
         })
+    }
+
+    fn guide_owner(
+        &self,
+        doc_id: Option<DocumentId>,
+        page_id: Option<PageId>,
+        master_id: Option<MasterId>,
+        guide_id: GuideId,
+    ) -> ApiResult<Owner> {
+        match (page_id, master_id) {
+            (None, None) => {
+                let doc = self.get(doc_id)?.doc();
+                let p = doc
+                    .pages
+                    .iter()
+                    .find(|p| p.guides.iter().any(|g| g.id == guide_id))
+                    .map(|p| Owner::Page(p.id));
+                let m = doc
+                    .masters
+                    .iter()
+                    .find(|m| m.guides.iter().any(|g| g.id == guide_id))
+                    .map(|m| Owner::Master(m.id));
+                p.or(m).ok_or_else(|| {
+                    ApiError::not_found("guide", &guide_id.to_string(), "see page_info for guides")
+                })
+            }
+            (p, m) => self.owner_for(doc_id, p, m),
+        }
+    }
+
+    pub fn guide_move(&mut self, req: GuideMove) -> ApiResult<Changed> {
+        let owner = self.guide_owner(req.doc_id, req.page_id, req.master_id, req.guide_id)?;
+        self.exec(
+            req.doc_id,
+            Command::MoveGuide {
+                owner,
+                guide: req.guide_id,
+                position: req.position,
+            },
+        )
     }
 
     pub fn guide_remove(&mut self, req: GuideRemove) -> ApiResult<Changed> {

@@ -288,8 +288,130 @@ impl Story {
     }
 }
 
+/// Options for [`find_matches`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FindOptions {
+    /// Match letter case exactly.
+    pub case_sensitive: bool,
+    /// Only match whole words (neighbours are not Unicode alphanumerics).
+    pub whole_word: bool,
+}
+
+fn fold(c: char, case_sensitive: bool) -> char {
+    if case_sensitive {
+        return c;
+    }
+    let mut it = c.to_lowercase();
+    match (it.next(), it.next()) {
+        (Some(l), None) => l,
+        _ => c,
+    }
+}
+
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Find `query` in `text`; returns half-open char-offset ranges, in order,
+/// non-overlapping. `limit` restricts matches to lie inside `start..end`.
+/// Paragraph breaks are `\n`, so a match only spans paragraphs when the query
+/// contains `\n`. An empty query matches nothing.
+pub fn find_matches(
+    text: &str,
+    query: &str,
+    opts: FindOptions,
+    limit: Option<(usize, usize)>,
+) -> Vec<(usize, usize)> {
+    let hay: Vec<char> = text.chars().collect();
+    let needle: Vec<char> = query
+        .chars()
+        .map(|c| fold(c, opts.case_sensitive))
+        .collect();
+    let n = needle.len();
+    let mut out = Vec::new();
+    if n == 0 || n > hay.len() {
+        return out;
+    }
+    let (lo, hi) = limit.map_or((0, hay.len()), |(a, b)| {
+        (a.min(b).min(hay.len()), a.max(b).min(hay.len()))
+    });
+    let mut i = lo;
+    while i + n <= hi {
+        let hit = (0..n).all(|k| fold(hay[i + k], opts.case_sensitive) == needle[k]);
+        let ok = hit
+            && (!opts.whole_word || {
+                let before = i > 0 && is_word(hay[i - 1]);
+                let after = i + n < hay.len() && is_word(hay[i + n]);
+                !(before && is_word(hay[i])) && !(after && is_word(hay[i + n - 1]))
+            });
+        if ok {
+            out.push((i, i + n));
+            i += n;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+impl Story {
+    /// Matches of `query` in this story's plain text (see [`find_matches`]).
+    pub fn find(
+        &self,
+        query: &str,
+        opts: FindOptions,
+        limit: Option<(usize, usize)>,
+    ) -> Vec<(usize, usize)> {
+        find_matches(&self.plain_text(), query, opts, limit)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn find_basic_and_case() {
+        let t = "Straße straße STRASSE\nÉcole école";
+        let o = FindOptions::default();
+        assert_eq!(find_matches(t, "straße", o, None), vec![(0, 6), (7, 13)]);
+        let cs = FindOptions {
+            case_sensitive: true,
+            ..o
+        };
+        assert_eq!(find_matches(t, "straße", cs, None), vec![(7, 13)]);
+        assert_eq!(find_matches(t, "école", o, None), vec![(22, 27), (28, 33)]);
+        assert!(find_matches(t, "", o, None).is_empty());
+    }
+
+    #[test]
+    fn find_whole_word_and_paragraphs() {
+        let t = "cat concat cat.\ncat\ncats";
+        let w = FindOptions {
+            whole_word: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            find_matches(t, "cat", w, None),
+            vec![(0, 3), (11, 14), (16, 19)]
+        );
+        assert_eq!(
+            find_matches(t, "cat", FindOptions::default(), None).len(),
+            5
+        );
+        let d = FindOptions::default();
+        assert!(find_matches("ab\ncd", "bc", d, None).is_empty());
+        assert_eq!(find_matches("ab\ncd", "b\nc", d, None), vec![(1, 4)]);
+    }
+
+    #[test]
+    fn find_limit_range() {
+        let t = "aa aa aa";
+        let o = FindOptions::default();
+        assert_eq!(find_matches(t, "aa", o, Some((3, 8))), vec![(3, 5), (6, 8)]);
+        assert_eq!(find_matches(t, "aa", o, Some((4, 8))), vec![(6, 8)]);
+        let s = story("x foo\nfoo y");
+        assert_eq!(s.find("foo", o, None), vec![(2, 5), (6, 9)]);
+    }
+
     use super::*;
     use crate::id::{FrameId, SeqIds, StoryId};
 

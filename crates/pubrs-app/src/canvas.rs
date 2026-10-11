@@ -23,6 +23,7 @@ const ROTATE_OFFSET_PX: f32 = 22.0;
 const SELECT: Color32 = Color32::from_rgb(37, 99, 235);
 const GUIDE: Color32 = Color32::from_rgb(6, 182, 212);
 const MARGIN: Color32 = Color32::from_rgb(217, 70, 239);
+const REMOVE: Color32 = Color32::from_rgb(220, 38, 38);
 
 fn quad(points: [Pos2; 4], fill: Color32, stroke: Stroke) -> egui::Shape {
     egui::Shape::convex_polygon(points.to_vec(), fill, stroke)
@@ -44,7 +45,18 @@ pub fn central(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 welcome(app, ui);
                 return;
             }
-            page_view(app, ui);
+            let full = ui.available_rect_before_wrap();
+            let show = app.show_rulers;
+            let inner = crate::rulers::canvas_rect(full, show);
+            if let Some(v) = app.view_mut() {
+                v.canvas_rect = Some(inner);
+            }
+            ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
+                page_view(app, ui);
+            });
+            if show {
+                crate::rulers::show(app, ui, full);
+            }
         });
 }
 
@@ -227,6 +239,11 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
             };
             if let Some(v) = app.view_mut() {
                 v.xf = Some(xf);
+                // Bring a find match into view.
+                if let Some(r) = v.scroll_to.take() {
+                    let r = xf.rect_to_screen(r).expand(24.0);
+                    ui.scroll_to_rect(r, Some(egui::Align::Center));
+                }
             }
             let bleed_rect = egui::Rect::from_min_size(
                 bleed_min,
@@ -326,29 +343,33 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 {
                     guides.extend(m.guides.iter().copied());
                 }
+                let gdrag = app.view().and_then(|v| v.drag.clone());
                 for g in guides {
-                    match g.axis {
-                        pubrs_api::core::Axis::Vertical => {
-                            let x = xf.to_screen(Point::new(g.position, 0.0)).x;
-                            painter.line_segment(
-                                [
-                                    Pos2::new(x, bleed_rect.top()),
-                                    Pos2::new(x, bleed_rect.bottom()),
-                                ],
-                                Stroke::new(1.0, GUIDE),
-                            );
-                        }
-                        pubrs_api::core::Axis::Horizontal => {
-                            let y = xf.to_screen(Point::new(0.0, g.position)).y;
-                            painter.line_segment(
-                                [
-                                    Pos2::new(bleed_rect.left(), y),
-                                    Pos2::new(bleed_rect.right(), y),
-                                ],
-                                Stroke::new(1.0, GUIDE),
-                            );
+                    let (mut pos, mut color) = (g.position, GUIDE);
+                    if let Some(Drag::Guide {
+                        id: Some(gid),
+                        pos: p,
+                        inside,
+                        ..
+                    }) = &gdrag
+                        && *gid == g.id
+                    {
+                        pos = *p;
+                        if !*inside {
+                            color = REMOVE;
                         }
                     }
+                    draw_guide(&painter, xf, bleed_rect, g.axis, pos, color);
+                }
+                if let Some(Drag::Guide {
+                    id: None,
+                    axis,
+                    pos,
+                    inside: true,
+                    ..
+                }) = &gdrag
+                {
+                    draw_guide(&painter, xf, bleed_rect, *axis, *pos, GUIDE);
                 }
             }
             let layout = Some(snap.layout.clone());
@@ -593,6 +614,14 @@ fn handle_input(
             ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
         } else if let Some((_, h)) = handle_at(doc, &selection, xf, pos, rotate_offset) {
             ctx.set_cursor_icon(h.cursor());
+        } else if app.show_guides
+            && let Some((_, g)) = crate::rulers::guide_at(&doc.pages[0].guides, xf, pos, owner)
+        {
+            ctx.set_cursor_icon(if g.axis == pubrs_api::core::Axis::Vertical {
+                egui::CursorIcon::ResizeHorizontal
+            } else {
+                egui::CursorIcon::ResizeVertical
+            });
         } else if app.view().is_some_and(|v| v.edit.is_some())
             && hit_leaf(doc, owner, xf.to_page(pos), pad)
                 .is_some_and(|f| doc.frame(f).is_some_and(|f| f.kind() == FrameKind::Text))
@@ -706,6 +735,18 @@ fn handle_input(
                     rect: f.rect,
                 }
             })
+        } else if app.show_guides
+            && hit_leaf(doc, owner, p, pad).is_none()
+            && let Some((o, g)) = crate::rulers::guide_at(&doc.pages[0].guides, xf, origin, owner)
+        {
+            Some(Drag::Guide {
+                owner: o,
+                id: Some(g.id),
+                axis: g.axis,
+                orig: Some(g.position),
+                pos: g.position,
+                inside: true,
+            })
         } else if editing
             && hit_leaf(doc, owner, p, pad).and_then(|f| doc.story_of(f))
                 == app.view().and_then(|v| v.edit.as_ref().map(|e| e.story))
@@ -748,6 +789,15 @@ fn handle_input(
             }
             v.drag = drag;
         }
+    }
+    if resp.dragged()
+        && let Some(pos) = resp.interact_pointer_pos()
+        && matches!(
+            app.view().and_then(|v| v.drag.as_ref()),
+            Some(Drag::Guide { .. })
+        )
+    {
+        crate::rulers::drag_update(app, pos);
     }
     if resp.dragged()
         && let Some(pos) = resp.interact_pointer_pos()
@@ -806,6 +856,7 @@ fn handle_input(
             Some(Drag::Create { current, .. }) | Some(Drag::Marquee { current, .. }) => {
                 *current = p
             }
+            Some(Drag::Guide { .. }) => {}
             Some(Drag::TextSelect) => {
                 if let (Some(layout), Some(e)) = (layout, app.view().and_then(|v| v.edit.clone()))
                     && let Some(leaf) = hit_leaf(doc, owner, p, pad)
@@ -822,6 +873,14 @@ fn handle_input(
         if let Some(v) = app.view_mut() {
             v.drag = drag;
         }
+    }
+    if resp.drag_stopped()
+        && matches!(
+            app.view().and_then(|v| v.drag.as_ref()),
+            Some(Drag::Guide { .. })
+        )
+    {
+        crate::rulers::finish_drag(app);
     }
     if resp.drag_stopped() {
         let drag = app.view_mut().and_then(|v| v.drag.take());
@@ -1283,6 +1342,39 @@ pub fn story_text(app: &mut PubrsApp, frame: FrameId) -> Option<String> {
         })
         .ok()
         .map(|t| t.text)
+}
+
+/// One ruler guide across the page, with its position in points on `axis`.
+fn draw_guide(
+    painter: &egui::Painter,
+    xf: PageXf,
+    bleed_rect: egui::Rect,
+    axis: pubrs_api::core::Axis,
+    position: f64,
+    color: Color32,
+) {
+    match axis {
+        pubrs_api::core::Axis::Vertical => {
+            let x = xf.to_screen(Point::new(position, 0.0)).x;
+            painter.line_segment(
+                [
+                    Pos2::new(x, bleed_rect.top()),
+                    Pos2::new(x, bleed_rect.bottom()),
+                ],
+                Stroke::new(1.0, color),
+            );
+        }
+        pubrs_api::core::Axis::Horizontal => {
+            let y = xf.to_screen(Point::new(0.0, position)).y;
+            painter.line_segment(
+                [
+                    Pos2::new(bleed_rect.left(), y),
+                    Pos2::new(bleed_rect.right(), y),
+                ],
+                Stroke::new(1.0, color),
+            );
+        }
+    }
 }
 
 #[cfg(test)]

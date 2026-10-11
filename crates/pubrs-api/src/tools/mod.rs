@@ -9,6 +9,7 @@
 
 pub mod doc;
 pub mod export;
+pub mod find;
 pub mod frames;
 pub mod history;
 pub mod images;

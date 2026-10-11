@@ -9,6 +9,7 @@ mod app;
 mod autosave;
 mod canvas;
 mod dialogs;
+mod find;
 mod keymap;
 mod mesa;
 mod panels;
@@ -16,6 +17,7 @@ mod perf;
 #[allow(unsafe_code)]
 mod platform;
 mod render_worker;
+mod rulers;
 mod selftest;
 mod textedit;
 mod view;

@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 158264,
+  "bytes": 158209,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 158264,
+  "bytes": 158209,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 51
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 50
+  "revision": 52
 }
 ```
 
@@ -1093,6 +1093,46 @@ Result:
 }
 ```
 
+### `guide_move`
+
+Move a ruler guide to a new position in points (found by guide_id; page_id or master_id optional).
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `guide_id` | uuid | yes | Identifies a ruler guide. |
+| `master_id` | string |  | Identifies a master page. |
+| `page_id` | string |  | Page or master owning the guide (optional: found by guide_id). |
+| `position` | number | yes | New position in points from the page's top (horizontal) or left (vertical) edge. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "guide_id": "00000000-0000-87ea-8000-00000000000e",
+    "position": 310
+  },
+  "name": "guide_move"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000002"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 12
+}
+```
+
 ### `guide_remove`
 
 Remove a ruler guide.
@@ -1127,7 +1167,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 12
+  "revision": 13
 }
 ```
 
@@ -1189,7 +1229,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-00000000000f",
-  "revision": 13,
+  "revision": 14,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -1222,7 +1262,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000015",
-  "revision": 17,
+  "revision": 18,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -1279,7 +1319,7 @@ Result:
   "asset_id": "00000000-0000-87ea-8000-000000000012",
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000013",
-  "revision": 15
+  "revision": 16
 }
 ```
 
@@ -1308,7 +1348,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000014",
-  "revision": 16
+  "revision": 17
 }
 ```
 
@@ -1396,7 +1436,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000011",
-  "revision": 14
+  "revision": 15
 }
 ```
 
@@ -1437,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 46
+  "revision": 48
 }
 ```
 
@@ -1479,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 33
+  "revision": 35
 }
 ```
 
@@ -1520,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 34
+  "revision": 36
 }
 ```
 
@@ -1558,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 35
+  "revision": 37
 }
 ```
 
@@ -1597,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 36
+  "revision": 38
 }
 ```
 
@@ -1638,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001d",
-  "revision": 43
+  "revision": 45
 }
 ```
 
@@ -1679,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 44
+  "revision": 46
 }
 ```
 
@@ -1717,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 41
 }
 ```
 
@@ -1741,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 42
 }
 ```
 
@@ -1783,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 43
 }
 ```
 
@@ -1826,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42
+  "revision": 44
 }
 ```
 
@@ -1871,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 39
 }
 ```
 
@@ -1909,7 +1949,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 39
 }
 ```
 
@@ -1949,7 +1989,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 38
+  "revision": 40
 }
 ```
 
@@ -2017,7 +2057,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 46
+  "revision": 48
 }
 ```
 
@@ -2082,7 +2122,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 46,
+  "revision": 48,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2142,7 +2182,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-00000000001e",
-  "revision": 45
+  "revision": 47
 }
 ```
 
@@ -2187,7 +2227,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": true,
-  "revision": 25,
+  "revision": 27,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2231,7 +2271,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 47,
   "overflowing": false,
-  "revision": 20,
+  "revision": 21,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2277,7 +2317,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": false,
-  "revision": 21,
+  "revision": 23,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2332,7 +2372,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": false,
-  "revision": 22,
+  "revision": 24,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2382,9 +2422,9 @@ Result:
     "00000000-0000-87ea-8000-000000000016"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "length": 227,
+  "length": 219,
   "overflowing": false,
-  "revision": 23,
+  "revision": 25,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2427,7 +2467,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 227,
   "overflowing": false,
-  "revision": 19,
+  "revision": 20,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2467,7 +2507,103 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "new_story_id": "00000000-0000-87ea-8000-000000000019",
-  "revision": 26
+  "revision": 28
+}
+```
+
+### `text_find`
+
+Find text in the whole document (every story) or one story. Options: case_sensitive, whole_word, and a start/end character range for one story. Returns story_id, the frame showing the match start, character offsets and a context snippet. An empty query is an error.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `case_sensitive` | boolean |  | Match letter case exactly (default false). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `end` | integer |  | Only match before this character offset. Needs frame_id or story_id. |
+| `frame_id` | string |  | Limit the search to this text frame's story. Omit both frame_id and story_id to search every story in the document. |
+| `query` | string | yes | Text to find. A "\n" matches a paragraph break. |
+| `start` | integer |  | Only match at or after this character offset. Needs frame_id or story_id. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+| `whole_word` | boolean |  | Match whole words only (default false). |
+
+**Result fields:** `count`, `matches`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "case_sensitive": false,
+    "query": "family",
+    "whole_word": true
+  },
+  "name": "text_find"
+}
+```
+
+Result:
+
+```json
+{
+  "count": 1,
+  "matches": [
+    {
+      "context": "on. Bring the whole family for a day on the gr",
+      "end": 69,
+      "frame_id": "00000000-0000-87ea-8000-000000000015",
+      "start": 63,
+      "…": "1 more keys"
+    }
+  ]
+}
+```
+
+### `text_replace_all`
+
+Replace every match of query with replacement across the document or one story (same options as text_find). One undo step. Returns the count; zero matches changes nothing. An empty query is an error.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `case_sensitive` | boolean |  |  |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `end` | integer |  | Only replace before this character offset. Needs frame_id or story_id. |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `query` | string | yes |  |
+| `replacement` | string | yes | Replacement text (empty deletes the matches). |
+| `start` | integer |  | Only replace at or after this character offset. Needs frame_id or story_id. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+| `whole_word` | boolean |  |  |
+
+**Result fields:** `affected_ids`, `count`, `doc_id`, `revision`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "query": "Bring the whole family",
+    "replacement": "Bring everyone"
+  },
+  "name": "text_replace_all"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "count": 1,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 22
 }
 ```
 
@@ -2527,7 +2663,7 @@ Result:
       "…": "3 more keys"
     }
   ],
-  "revision": 19,
+  "revision": 20,
   "story_id": "00000000-0000-87ea-8000-000000000010",
   "text": "Spring Fair\nSaturday 12 May · Village Green"
 }
@@ -2561,7 +2697,7 @@ Result:
 ```json
 {
   "any_overflow": false,
-  "revision": 19,
+  "revision": 20,
   "stories": [
     {
       "frame_ids": [
@@ -2624,7 +2760,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 24
+  "revision": 26
 }
 ```
 
@@ -2660,7 +2796,7 @@ Result:
 
 ```json
 {
-  "revision": 26,
+  "revision": 28,
   "styles": [
     {
       "character": {
@@ -2751,7 +2887,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 27,
+  "revision": 29,
   "style_id": "00000000-0000-87ea-8000-00000000001a"
 }
 ```
@@ -2795,7 +2931,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 28
+  "revision": 30
 }
 ```
 
@@ -2835,7 +2971,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 29
+  "revision": 31
 }
 ```
 
@@ -2884,7 +3020,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 32
+  "revision": 34
 }
 ```
 
@@ -2926,7 +3062,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 30
+  "revision": 32
 }
 ```
 
@@ -2963,7 +3099,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 30
+  "revision": 32
 }
 ```
 
@@ -3011,7 +3147,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000013",
   "pixel_height": 1200,
   "pixel_width": 1800,
-  "revision": 31
+  "revision": 33
 }
 ```
 
@@ -3381,11 +3517,11 @@ Result:
 
 ```json
 {
-  "bytes": 94001,
+  "bytes": 94134,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -3449,12 +3585,12 @@ Result:
 
 ```json
 {
-  "bytes": 21955,
+  "bytes": 21677,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 48,
+  "revision": 50,
   "width": 596
 }
 ```
@@ -3495,8 +3631,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAdcUlEQVR4nO2d… (10128 characters)",
-  "revision": 48,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAdKklEQVR4nO3d… (10032 characters)",
+  "revision": 50,
   "width": 249
 }
 ```
@@ -3537,7 +3673,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 47
+  "revision": 49
 }
 ```
 
@@ -3575,7 +3711,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -3628,9 +3764,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 41 more"
+    "… 43 more"
   ],
-  "revision": 46
+  "revision": 48
 }
 ```
 
@@ -3871,7 +4007,7 @@ Result:
             "align": "justify",
             "runs": [
               {
-                "text": "Stalls, games and the famous cake competition. Bring the whole family for a day on the green."
+                "text": "Stalls, games and the famous cake competition. Bring everyone for a day on the green."
               }
             ],
             "space_after": 6.0,
@@ -3938,7 +4074,7 @@ Result:
       ]
     }
   },
-  "revision": 48
+  "revision": 50
 }
 ```
 
@@ -3971,7 +4107,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 48,
+  "revision": 50,
   "warnings": [
     {
       "code": "overflow",

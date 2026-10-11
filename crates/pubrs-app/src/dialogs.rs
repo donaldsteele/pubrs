@@ -434,7 +434,7 @@ pub fn target_rect(ctx: &egui::Context, name: &str) -> Option<egui::Rect> {
     })
 }
 
-fn mark(ui: &egui::Ui, name: &str, r: &egui::Response) {
+pub fn mark(ui: &egui::Ui, name: &str, r: &egui::Response) {
     let rect = r.rect;
     ui.ctx().data_mut(|d| {
         d.get_temp_mut_or_default::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS))

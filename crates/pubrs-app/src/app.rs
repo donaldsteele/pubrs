@@ -108,6 +108,8 @@ pub struct PubrsApp {
     pub tool: Tool,
     pub units: Units,
     pub show_guides: bool,
+    pub show_rulers: bool,
+    pub find: crate::find::FindState,
     pub status: Option<(String, Instant)>,
     pub dialog: Option<Dialog>,
     native_menu: Option<NativeMenu>,
@@ -166,6 +168,8 @@ impl PubrsApp {
             tool: Tool::Select,
             units: Units::Inches,
             show_guides: true,
+            show_rulers: true,
+            find: crate::find::FindState::default(),
             status: None,
             dialog: None,
             native_menu: None,
@@ -1126,6 +1130,11 @@ impl PubrsApp {
                 }
             }
             ToggleGuides => self.show_guides = !self.show_guides,
+            ToggleRulers => self.show_rulers = !self.show_rulers,
+            Find => crate::find::open(self, crate::find::Mode::Bar),
+            Replace => crate::find::open(self, crate::find::Mode::Replace),
+            FindNext => crate::find::step(self, true),
+            FindPrevious => crate::find::step(self, false),
             ToggleSnap => {
                 if let Some(doc) = self.doc() {
                     let mut g = doc.grid;
@@ -1286,12 +1295,14 @@ impl eframe::App for PubrsApp {
         }
         crate::panels::toolbar(self, ui);
         crate::panels::status_bar(self, ui);
+        crate::find::bar(self, ui);
         if self.view().is_some() {
             crate::panels::pages_panel(self, ui);
             crate::panels::properties_panel(self, ui);
         }
         crate::canvas::central(self, ui);
         crate::dialogs::show(self, &ctx);
+        crate::find::replace_window(self, &ctx);
         self.autosave.tick(&self.session, &self.views);
         if self.selftest.is_none() && !self.args.smoke_test {
             self.save_settings();
@@ -1339,6 +1350,8 @@ impl eframe::App for PubrsApp {
 struct Settings {
     units: String,
     show_guides: bool,
+    #[serde(default = "default_true")]
+    show_rulers: bool,
 }
 
 impl PubrsApp {
@@ -1355,6 +1368,7 @@ impl PubrsApp {
             }
             .into(),
             show_guides: self.show_guides,
+            show_rulers: self.show_rulers,
         }
     }
 
@@ -1371,6 +1385,7 @@ impl PubrsApp {
             _ => Units::Inches,
         };
         self.show_guides = s.show_guides;
+        self.show_rulers = s.show_rulers;
         self.saved_settings = Some(s);
     }
 
@@ -1398,4 +1413,8 @@ fn session_path(path: &Path) -> String {
         .unwrap_or_else(|_| path.to_path_buf())
         .display()
         .to_string()
+}
+
+fn default_true() -> bool {
+    true
 }

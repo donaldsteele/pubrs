@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use pubrs_api::core::{Align, Color, FrameKind, ImageFit, PageSizePreset, WarningCode};
 use pubrs_api::tools::doc::*;
 use pubrs_api::tools::export::*;
+use pubrs_api::tools::find::*;
 use pubrs_api::tools::frames::*;
 use pubrs_api::tools::images::*;
 use pubrs_api::tools::styles::*;
@@ -501,4 +502,103 @@ fn validate_reports_overflow_and_empty_placeholder() {
     })
     .unwrap();
     assert!(s.validate(DocRef::default()).unwrap().ok);
+}
+
+#[test]
+fn find_and_replace_all_across_stories() {
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let a = text_frame(
+        &mut s,
+        d.page_ids[0],
+        10.0,
+        10.0,
+        300.0,
+        100.0,
+        "Café au lait, cafe noir\nA cat concat",
+    );
+    let b = text_frame(&mut s, d.page_ids[0], 10.0, 200.0, 300.0, 100.0, "CAT cats");
+    let find = |s: &mut Session, q: &str, cs: bool, ww: bool| {
+        s.text_find(TextFind {
+            doc_id: None,
+            frame_id: None,
+            story_id: None,
+            query: q.into(),
+            case_sensitive: cs,
+            whole_word: ww,
+            start: None,
+            end: None,
+        })
+        .unwrap()
+    };
+    // Across both stories, in reading order.
+    let r = find(&mut s, "cat", false, false);
+    assert_eq!(r.count, 4);
+    assert_eq!(r.matches[0].story_id, a.story_id.unwrap());
+    assert_eq!(r.matches[0].frame_id, Some(a.frame_id));
+    assert_eq!(r.matches[3].story_id, b.story_id.unwrap());
+    assert_eq!(r.matches[3].frame_id, Some(b.frame_id));
+    assert!(r.matches[0].context.contains("cat"));
+    assert_eq!(find(&mut s, "cat", true, false).count, 3);
+    assert_eq!(find(&mut s, "cat", false, true).count, 2);
+    assert_eq!(find(&mut s, "café", false, false).count, 1);
+    assert_eq!(find(&mut s, "zzz", false, false).count, 0);
+
+    // Selection-only range on one story.
+    let sel = s
+        .text_find(TextFind {
+            doc_id: None,
+            frame_id: Some(a.frame_id),
+            story_id: None,
+            query: "c".into(),
+            case_sensitive: false,
+            whole_word: false,
+            start: Some(0),
+            end: Some(4),
+        })
+        .unwrap();
+    assert_eq!(sel.count, 1);
+    assert_eq!((sel.matches[0].start, sel.matches[0].end), (0, 1));
+
+    // Replace all: one undo step restores everything.
+    let before = s.history_list(DocRef::default()).unwrap().entries.len();
+    let rep = |s: &mut Session, q: &str, with: &str, range: Option<(usize, usize)>| {
+        s.text_replace_all(TextReplaceAll {
+            doc_id: None,
+            frame_id: range.map(|_| a.frame_id),
+            story_id: None,
+            query: q.into(),
+            replacement: with.into(),
+            case_sensitive: false,
+            whole_word: false,
+            start: range.map(|r| r.0),
+            end: range.map(|r| r.1),
+        })
+        .unwrap()
+    };
+    let out = rep(&mut s, "cat", "dog", None);
+    assert_eq!(out.count, 4);
+    assert_eq!(find(&mut s, "cat", false, false).count, 0);
+    assert_eq!(find(&mut s, "dog", false, false).count, 4);
+    assert_eq!(
+        s.history_list(DocRef::default()).unwrap().entries.len(),
+        before + 1
+    );
+    assert!(s.undo(DocRef::default()).unwrap().done);
+    assert_eq!(find(&mut s, "cat", false, false).count, 4);
+    assert_eq!(find(&mut s, "dog", false, false).count, 0);
+
+    // A zero-match call is a no-op.
+    let rev = s.history_list(DocRef::default()).unwrap().entries.len();
+    let none = rep(&mut s, "zzz", "y", None);
+    assert_eq!(none.count, 0);
+    assert_eq!(
+        s.history_list(DocRef::default()).unwrap().entries.len(),
+        rev
+    );
+
+    // Selection-only replacement touches only the range.
+    let out = rep(&mut s, "ca", "X", Some((0, 6)));
+    assert_eq!(out.count, 1);
+    assert_eq!(find(&mut s, "ca", false, false).count, 5);
 }

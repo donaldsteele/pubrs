@@ -23,7 +23,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
 - Characters no bundled or installed font covers render as .notdef boxes; `validate` does not yet name them (layout counts them in `missing_glyphs`).
 - GUI: copy/paste of frames works within one publication only (no cross-document or OS-clipboard frame paste).
-- GUI: no rulers or guide dragging from rulers yet (guides are added through the API/MCP `guide_add`).
 - GUI: text editing has no IME composition support (direct key/text input only) and no spell checking.
 - Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
 - macOS: double-clicking a `.pubrs` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events. Workaround: File → Open, or drag the file onto the pubrs window (ADR 0010).
@@ -32,3 +31,5 @@ Deferred and partial work. Each entry says what is missing and why.
 - The Windows ARM64 MSI is built but not install-checked in CI (no ARM64 Windows runner in the release workflow).
 - The Windows ARM64 MSI has no bundled Mesa (mesa-dist-win publishes x64 and x86 only), so ARM64 Windows without a GPU driver still draws with WARP: about 0.5 CPU-seconds per frame (ADR 0011).
 - Bundled Mesa is pinned to mesa-dist-win 26.2.4. Updating it means a new version and SHA-256 in `packaging/windows/fetch-mesa.ps1` and `packaging/windows/mesa/THIRD-PARTY-NOTICES.txt`.
+- Find and replace does not search WordArt text yet (M25 must add it in `crates/pubrs-api/src/tools/find.rs`); table cells are covered because they are stories.
+- Guides on master pages are drawn on the pages using them but can only be moved through `guide_move` (there is no master-editing view in the GUI).

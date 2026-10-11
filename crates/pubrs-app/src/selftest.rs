@@ -23,10 +23,14 @@ use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2};
 use pubrs_api::core::{Command, Crop, FrameId, Point};
 use pubrs_api::render::{RasterOptions, tiny_skia};
 use pubrs_api::tools::doc::DocRef;
-use pubrs_api::tools::text::TextRef;
+use pubrs_api::tools::find::{FindMatch, TextFind};
+use pubrs_api::tools::text::{TextLinkFrames, TextRef, TextSet};
 
 use crate::app::PubrsApp;
 use crate::keymap::Action;
+
+/// Page x (points) in the gap between the brochure's first two columns: nothing but a guide is there.
+const GX: f64 = 252.0;
 
 const STORY: &str = "Golden Crust has been baking in the same stone oven on Mill Lane since 1987. \
 We mill our own rye, feed a sourdough starter older than the shop, and shape every loaf by hand.\n\
@@ -79,6 +83,10 @@ struct Data {
     big_doc: Option<pubrs_api::core::DocumentId>,
     typed_frame: Option<FrameId>,
     typed_from: u64,
+    guides_before: usize,
+    hist: usize,
+    matches: usize,
+    first_match: Option<(usize, usize)>,
 }
 
 pub struct SelfTest {
@@ -207,6 +215,61 @@ impl SelfTest {
                 && v.requested.is_none_or(|(k, r)| k == t.key && r == rev)
         });
         canvas && (0..pages.min(8)).all(|i| v.thumbs.get(&i).is_some_and(|t| t.revision == rev))
+    }
+
+    fn page_size(app: &PubrsApp) -> Result<(f64, f64), String> {
+        let s = app.doc().ok_or("no doc")?.setup.size;
+        Ok((s.width, s.height))
+    }
+
+    /// The guides on the page being shown.
+    fn page_guides(app: &PubrsApp) -> Vec<pubrs_api::core::Guide> {
+        let page = app.view().map_or(0, |v| v.page);
+        app.doc()
+            .and_then(|d| d.pages.get(page))
+            .map(|p| p.guides.clone())
+            .unwrap_or_default()
+    }
+
+    fn history_len(app: &mut PubrsApp) -> usize {
+        app.session
+            .history_list(DocRef::default())
+            .map_or(0, |h| h.entries.len())
+    }
+
+    /// The middle of a ruler strip, level with page position `at` (points).
+    fn ruler_point(app: &PubrsApp, top: bool, at: f64) -> Result<Pos2, String> {
+        let v = app.view().ok_or("no view")?;
+        let canvas = v.canvas_rect.ok_or("no canvas")?;
+        let half = crate::rulers::RULER / 2.0;
+        let on_page = Self::screen_of(app, Point::new(at, at)).ok_or("no canvas")?;
+        Ok(if top {
+            Pos2::new(on_page.x, canvas.top() - half)
+        } else {
+            Pos2::new(canvas.left() - half, on_page.y)
+        })
+    }
+
+    /// Matches of `query` that sit in a frame on a page.
+    fn navigable_matches(app: &mut PubrsApp, query: &str) -> Result<Vec<FindMatch>, String> {
+        let out = app
+            .session
+            .text_find(TextFind {
+                doc_id: None,
+                frame_id: None,
+                story_id: None,
+                query: query.to_string(),
+                case_sensitive: false,
+                whole_word: false,
+                start: None,
+                end: None,
+            })
+            .map_err(|e| e.message)?;
+        Ok(out
+            .matches
+            .into_iter()
+            .filter(|m| m.frame_id.is_some())
+            .collect())
     }
 
     fn screen_of(app: &PubrsApp, p: Point) -> Option<Pos2> {
@@ -912,6 +975,246 @@ impl SelfTest {
                     return Err(format!("expected one Letter sheet, got {boxes}: {media}"));
                 }
                 self.ok("Page Setup (keyboard + mouse): Avery 5160 chosen, exported PDF has a sheet-sized page");
+            }
+            // ---- rulers, guides from rulers, find and replace (M26)
+            30 => {
+                app.new_from_template("trifold_brochure")
+                    .ok_or("template_apply failed")?;
+                let (body, cont) = (
+                    find(app, "inside_body").ok_or("no inside_body")?,
+                    find(app, "inside_body_continued").ok_or("no continuation")?,
+                );
+                app.session
+                    .text_set(TextSet {
+                        doc_id: None,
+                        frame_id: Some(body),
+                        story_id: None,
+                        text: STORY.to_string(),
+                        markup: false,
+                    })
+                    .map_err(|e| e.message)?;
+                app.session
+                    .text_link_frames(TextLinkFrames {
+                        doc_id: None,
+                        from_frame_id: body,
+                        to_frame_id: cont,
+                    })
+                    .map_err(|e| e.message)?;
+                if !app.show_rulers {
+                    return Err("rulers are off by default".into());
+                }
+                if let Some(v) = app.view_mut() {
+                    v.page = 1;
+                    v.selection.clear();
+                    v.edit = None;
+                }
+            }
+            31 => {
+                // Drag from the top ruler onto the page: a horizontal guide.
+                let (pw, _) = Self::page_size(app)?;
+                self.data.guides_before = Self::page_guides(app).len();
+                self.data.hist = Self::history_len(app);
+                let from = Self::ruler_point(app, true, pw / 2.0)?;
+                let to = Self::screen_of(app, Point::new(pw / 2.0, 200.0)).ok_or("no canvas")?;
+                self.drag(from, to);
+            }
+            32 => {
+                let guides = Self::page_guides(app);
+                if guides.len() != self.data.guides_before + 1 {
+                    return Err(format!(
+                        "dragging from the ruler made {} guide(s)",
+                        guides.len() - self.data.guides_before
+                    ));
+                }
+                let g = guides.last().expect("one");
+                if g.axis != pubrs_api::core::Axis::Horizontal || (g.position - 200.0).abs() > 0.5 {
+                    return Err(format!("unexpected guide {g:?}"));
+                }
+                if Self::history_len(app) != self.data.hist + 1 {
+                    return Err("creating a guide was not one undo step".into());
+                }
+                self.ok(format!(
+                    "dragged from the top ruler: horizontal guide at {:.2} pt (one undo step)",
+                    g.position
+                ));
+                self.screenshot(ctx);
+                // Drag the guide itself.
+                let from = Self::screen_of(app, Point::new(GX, 200.0)).ok_or("no canvas")?;
+                let to = Self::screen_of(app, Point::new(GX, 260.0)).ok_or("no canvas")?;
+                self.drag(from, to);
+            }
+            33 => {
+                let guides = Self::page_guides(app);
+                let g = guides.last().ok_or("guide vanished")?;
+                if guides.len() != self.data.guides_before + 1 || (g.position - 260.0).abs() > 0.5 {
+                    return Err(format!("the guide did not move to 260 pt: {guides:?}"));
+                }
+                if Self::history_len(app) != self.data.hist + 2 {
+                    return Err("moving a guide was not one undo step".into());
+                }
+                self.ok(format!("dragged the guide to {:.2} pt", g.position));
+                // Back onto the ruler deletes it.
+                let (pw, _) = Self::page_size(app)?;
+                let from = Self::screen_of(app, Point::new(GX, 260.0)).ok_or("no canvas")?;
+                let to = Self::ruler_point(app, true, pw / 2.0)?;
+                self.drag(from, to);
+            }
+            34 => {
+                if Self::page_guides(app).len() != self.data.guides_before {
+                    return Err("dragging the guide onto the ruler did not delete it".into());
+                }
+                self.ok("dragged the guide back onto the ruler: deleted");
+                self.key(Key::Z, Modifiers::COMMAND);
+            }
+            35 => {
+                let guides = Self::page_guides(app);
+                let g = guides.last().ok_or("undo did not bring the guide back")?;
+                if guides.len() != self.data.guides_before + 1 || (g.position - 260.0).abs() > 0.5 {
+                    return Err(format!("undo restored {guides:?}"));
+                }
+                self.ok("Cmd+Z brought the deleted guide back");
+                // Off the page, to the left, deletes it too.
+                let from = Self::screen_of(app, Point::new(GX, 260.0)).ok_or("no canvas")?;
+                let to = Self::screen_of(app, Point::new(-14.0, 260.0)).ok_or("no canvas")?;
+                self.drag(from, to);
+            }
+            36 => {
+                if Self::page_guides(app).len() != self.data.guides_before {
+                    return Err("dragging the guide off the page did not delete it".into());
+                }
+                self.ok("dragged the guide off the page: deleted");
+                self.key(Key::Z, Modifiers::COMMAND);
+            }
+            37 => {
+                if Self::page_guides(app).len() != self.data.guides_before + 1 {
+                    return Err("undo did not bring the guide back".into());
+                }
+                // The left ruler makes a vertical guide.
+                let (_, ph) = Self::page_size(app)?;
+                let from = Self::ruler_point(app, false, ph / 2.0)?;
+                let to = Self::screen_of(app, Point::new(150.0, ph / 2.0)).ok_or("no canvas")?;
+                self.drag(from, to);
+            }
+            38 => {
+                let guides = Self::page_guides(app);
+                let g = guides.last().ok_or("no guides")?;
+                if guides.len() != self.data.guides_before + 2
+                    || g.axis != pubrs_api::core::Axis::Vertical
+                    || (g.position - 150.0).abs() > 0.5
+                {
+                    return Err(format!("left ruler drag made {guides:?}"));
+                }
+                self.ok(format!(
+                    "dragged from the left ruler: vertical guide at {:.2} pt",
+                    g.position
+                ));
+                self.screenshot(ctx);
+                self.key(Key::Z, Modifiers::COMMAND);
+            }
+            39 => {
+                if Self::page_guides(app).len() != self.data.guides_before + 1 {
+                    return Err("undo did not remove the vertical guide".into());
+                }
+                // Find: Cmd+F, type, Enter.
+                self.key(Key::F, Modifiers::COMMAND);
+            }
+            40 => {
+                if app.find.mode != crate::find::Mode::Bar {
+                    return Err("Cmd+F did not open the find bar".into());
+                }
+                self.pending
+                    .push_back(vec![Event::Text("sourdough".to_string())]);
+            }
+            41 => {
+                if app.find.query != "sourdough" {
+                    return Err(format!("find query is {:?}", app.find.query));
+                }
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            42 => {
+                let m = Self::navigable_matches(app, "sourdough")?;
+                if m.len() < 2 {
+                    return Err(format!(
+                        "expected two matches in the story, got {}",
+                        m.len()
+                    ));
+                }
+                let e = app
+                    .view()
+                    .and_then(|v| v.edit.clone())
+                    .ok_or("Enter did not select a match")?;
+                if e.range() != (m[0].start, m[0].end) || e.story != m[0].story_id {
+                    return Err(format!("selection {:?} is not the first match", e.range()));
+                }
+                self.data.first_match = Some(e.range());
+                self.ok(format!(
+                    "Cmd+F, typed a word, Enter: selected match 1 of {} at {:?}",
+                    app.find.match_count(),
+                    e.range()
+                ));
+                self.screenshot(ctx);
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            43 => {
+                let m = Self::navigable_matches(app, "sourdough")?;
+                let e = app
+                    .view()
+                    .and_then(|v| v.edit.clone())
+                    .ok_or("no selection")?;
+                if e.range() != (m[1].start, m[1].end) || Some(e.range()) == self.data.first_match {
+                    return Err(format!("Enter again selected {:?}, not match 2", e.range()));
+                }
+                self.ok("Enter again selected the next match");
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            44 => {
+                if app.find.mode != crate::find::Mode::Closed {
+                    return Err("Escape did not close the find bar".into());
+                }
+                self.ok("Escape closed the find bar");
+                self.key(Key::H, Modifiers::COMMAND);
+            }
+            45 => {
+                if app.find.mode != crate::find::Mode::Replace {
+                    return Err("Cmd+H did not open Find and Replace".into());
+                }
+                self.click_target(ctx, "find-replacement")?;
+            }
+            46 => self
+                .pending
+                .push_back(vec![Event::Text("levain".to_string())]),
+            47 => {
+                if app.find.replacement != "levain" {
+                    return Err(format!("replacement is {:?}", app.find.replacement));
+                }
+                self.data.matches = Self::navigable_matches(app, "sourdough")?.len();
+                self.data.hist = Self::history_len(app);
+                self.click_target(ctx, "find-replace-all")?;
+            }
+            48 => {
+                let n = self.data.matches;
+                if app.find.last_replaced != Some(n) || n < 2 {
+                    return Err(format!(
+                        "Replace All reported {:?} for {n} matches",
+                        app.find.last_replaced
+                    ));
+                }
+                if !Self::navigable_matches(app, "sourdough")?.is_empty()
+                    || Self::navigable_matches(app, "levain")?.len() < n
+                {
+                    return Err("Replace All left the old word or lost the new one".into());
+                }
+                self.ok(format!("Cmd+H, Replace All: {n} replaced"));
+                self.screenshot(ctx);
+                self.key(Key::Z, Modifiers::COMMAND);
+            }
+            49 => {
+                let n = self.data.matches;
+                if Self::navigable_matches(app, "sourdough")?.len() != n {
+                    return Err("one Cmd+Z did not restore every replacement".into());
+                }
+                crate::find::close(app);
+                self.ok("a single Cmd+Z restored every replaced match (one undo step)");
                 return Ok(true);
             }
             _ => return Ok(true),
