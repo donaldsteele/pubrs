@@ -38,10 +38,45 @@ pub(crate) struct StoryKey {
     text_frames: Vec<bool>,
     /// The flow regions, exactly as the layout receives them.
     regions: Vec<Region>,
+    /// What the story's merge fields show (ADR 0023): `None` for a story
+    /// without fields or a document without merge data.
+    merge: Option<MergeKey>,
     /// The story: chain (frame ids in order), paragraphs, runs, text,
     /// style references and local overrides. Compared last: it is the
     /// largest field.
     story: SharedStory,
+}
+
+/// The document-level merge input of a story that contains fields: whether
+/// the preview is on, and for each distinct field name the value the
+/// previewed record gives it (`None`: it shows as its «Name»). This is the
+/// part of `Document.merge` that the flow reads, so changing the preview
+/// record, the preview switch, the data or the field names recomposes
+/// exactly the stories that use fields.
+#[derive(Debug, Clone, PartialEq)]
+struct MergeKey {
+    preview: bool,
+    fields: Vec<(String, Option<String>)>,
+}
+
+fn merge_key(doc: &Document, story: &Story) -> Option<MergeKey> {
+    let m = doc.merge.as_ref()?;
+    let mut names: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for r in story.paragraphs.iter().flat_map(|p| p.runs.iter()) {
+        if let Some(n) = &r.field {
+            names.insert(n);
+        }
+    }
+    if names.is_empty() {
+        return None;
+    }
+    Some(MergeKey {
+        preview: m.preview,
+        fields: names
+            .into_iter()
+            .map(|n| (n.to_string(), m.shown_value(n).map(str::to_string)))
+            .collect(),
+    })
 }
 
 /// A story snapshot compared by pointer first: an unchanged story keeps its
@@ -87,6 +122,12 @@ impl PartialEq for SharedStory {
 ///   frame's page among the chain's pages (page breaks compare it), so
 ///   reordering the chain's pages recomposes the story and adding or moving
 ///   other pages does not.
+/// - **Merge fields** (M24): a story containing U+FFFC field runs gets
+///   `merge`: the preview switch and, for each distinct field name, the
+///   value the previewed record gives it (or none: it shows as «Name»).
+///   Field display reads document-level data, not the story, so without
+///   this input a preview step would leave stale text. Stories without
+///   fields, and documents without merge data, cost nothing here.
 /// - **Keeps, drop caps and breaks** (M15) read only the story's paragraph
 ///   properties and text and the regions above, so they need no field of
 ///   their own.
@@ -109,6 +150,7 @@ pub(crate) fn story_key(
             .map(|f| doc.frame(*f).is_some_and(crate::flow::shows_story_text))
             .collect(),
         regions: regions_for(doc, index, story.id, &story.frames),
+        merge: merge_key(doc, story),
         story: SharedStory(Arc::clone(story)),
     }
 }

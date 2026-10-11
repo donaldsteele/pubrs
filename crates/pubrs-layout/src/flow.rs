@@ -1083,7 +1083,7 @@ impl Layouter {
         let cap_chars = pa.drop_cap.map_or(0, |d| {
             orig.chars()
                 .take(usize::from(d.chars))
-                .take_while(|c| !ends_line(*c))
+                .take_while(|c| !ends_line(*c) && *c != pubrs_core::FIELD_CHAR)
                 .count()
         });
         let cap_b = if cap_chars == 0 {
@@ -1141,6 +1141,48 @@ impl Layouter {
             Vec::new()
         };
         let has_tabs = !tab_chars.is_empty();
+        // Merge fields: what each shows, as story byte ranges of `body`
+        // with the text that replaces them (ADR 0023). A collapsed space
+        // never reaches into a drop cap.
+        let field_subs: Vec<(Range<usize>, String)> = {
+            let plan = pubrs_core::merge::plan_paragraph(doc.merge.as_ref(), para);
+            if plan.is_empty() {
+                Vec::new()
+            } else {
+                let bytes: Vec<usize> = orig
+                    .char_indices()
+                    .map(|(i, _)| i)
+                    .chain(std::iter::once(orig.len()))
+                    .collect();
+                plan.into_iter()
+                    .filter(|s| s.field_at >= cap_chars)
+                    .map(|s| {
+                        let start = if s.start < cap_chars {
+                            s.field_at
+                        } else {
+                            s.start
+                        };
+                        (bytes[start] - cap_b..bytes[s.end] - cap_b, s.display)
+                    })
+                    .collect()
+            }
+        };
+        // The text glyph ranges index (and PDF text is taken from): the
+        // story text with fields shown, without inserted soft hyphens.
+        let run_text: Arc<str> = if field_subs.is_empty() {
+            text_arc.clone()
+        } else {
+            let mut t = String::with_capacity(orig.len() + 32);
+            t.push_str(&orig[..cap_b]);
+            let mut at = 0usize;
+            for (r, shown) in &field_subs {
+                t.push_str(&body[at..r.start]);
+                t.push_str(shown);
+                at = r.end;
+            }
+            t.push_str(&body[at..]);
+            Arc::from(t)
+        };
         // A drop cap takes the first lines: no label beside it.
         let label = label.filter(|_| cap.is_none());
         let list = pa.list.filter(|_| label.is_some());
@@ -1181,6 +1223,7 @@ impl Layouter {
             if has_tabs {
                 shadow.text = std::borrow::Cow::Owned(shadow.text.replace('\t', " "));
             }
+            shadow.substitute(&field_subs);
             let breaks = if has_breaks {
                 newline_kinds(&shadow.text, body, &shadow)
             } else {
@@ -1227,7 +1270,7 @@ impl Layouter {
             let limited = justified && pa.justify_limits.is_some();
             let mut lcx =
                 (limited || text.contains(hyphen::SHY)).then(|| LineCx::new(&mut layout, text));
-            if !plain && !shadow.inserted.is_empty() && lcx.as_ref().is_some_and(|c| !c.ok()) {
+            if !plain && shadow.shy_count() > 0 && lcx.as_ref().is_some_and(|c| !c.ok()) {
                 plain = true;
                 continue 'attempt;
             }
@@ -1474,7 +1517,7 @@ impl Layouter {
                 }
                 bl.finish();
             }
-            if !plain && !shadow.inserted.is_empty() && lcx.as_ref().is_some_and(|c| !c.ok()) {
+            if !plain && shadow.shy_count() > 0 && lcx.as_ref().is_some_and(|c| !c.ok()) {
                 plain = true;
                 continue 'attempt;
             }
@@ -1504,7 +1547,7 @@ impl Layouter {
         });
         let mut groups_cache: HashMap<usize, (Vec<ClusterGroup>, usize)> = HashMap::new();
         let mut last_end_byte = 0usize;
-        let mut counter = CharCounter::new(text);
+        let mut counter = CharCounter::new(body);
         let offsets = ClusterOffsets::new(&layout, text.len());
         for (li, line) in layout.lines().enumerate() {
             let Some(&(region, y, h)) = placements.get(li) else {
@@ -1523,8 +1566,8 @@ impl Layouter {
                 tb1
             };
             let (c0, c1) = (
-                counter.at(tb0) - shadow.inserted_before(tb0),
-                counter.at(te) - shadow.inserted_before(te),
+                counter.at(shadow.to_orig(tb0)),
+                counter.at(shadow.to_orig(te)),
             );
             let info = line_infos.get(li).copied().unwrap_or_default();
             let letter = info.letter;
@@ -1614,7 +1657,7 @@ impl Layouter {
                     color: style.brush,
                     synthetic_bold: synth.embolden(),
                     synthetic_skew: synth.skew().map(f64::from),
-                    text: text_arc.clone(),
+                    text: run_text.clone(),
                     glyphs: positioned
                         .iter()
                         .zip(ranges)
@@ -1625,7 +1668,8 @@ impl Layouter {
                             x: f64::from(g.x) + before(r.start),
                             y: f64::from(g.y),
                             advance: f64::from(g.advance),
-                            text: cap_b + shadow.to_orig(r.start)..cap_b + shadow.to_orig(r.end),
+                            text: cap_b + shadow.to_display(r.start)
+                                ..cap_b + shadow.to_display(r.end),
                         })
                         .collect(),
                 });
@@ -1671,7 +1715,7 @@ impl Layouter {
                 let mut hr: GlyphRun = last.clone();
                 let (gy, o) = (
                     last.glyphs.last().map_or(0.0, |g| g.y),
-                    cap_b + shadow.to_orig(tb1),
+                    cap_b + shadow.to_display(tb1),
                 );
                 hr.font = font;
                 hr.font_size = f64::from(size);
@@ -1688,6 +1732,7 @@ impl Layouter {
                 &layout,
                 &offsets,
                 text,
+                body,
                 &shadow,
                 tb0..te,
                 body0 + c0,
@@ -1715,6 +1760,15 @@ impl Layouter {
                 let region_x = regions[region].x;
                 let offs: Vec<usize> = line_tabs.iter().map(|t| t.0).collect();
                 let bytes: Vec<usize> = line_tabs.iter().map(|t| t.1).collect();
+                // The same bytes in glyph-range (displayed text) coordinates.
+                let dbytes: Vec<usize> = if field_subs.is_empty() {
+                    bytes.clone()
+                } else {
+                    bytes
+                        .iter()
+                        .map(|b| cap_b + shadow.to_display(shadow.from_orig(b - cap_b)))
+                        .collect()
+                };
                 let sep = decimal_sep(&pa.language);
                 let segs = plan_tabs(
                     &offs,
@@ -1747,10 +1801,10 @@ impl Layouter {
                     } = r;
                     let mut groups: Vec<(usize, Vec<PositionedGlyph>)> = Vec::new();
                     for mut g in glyphs {
-                        if g.text.len() == 1 && bytes.binary_search(&g.text.start).is_ok() {
+                        if g.text.len() == 1 && dbytes.binary_search(&g.text.start).is_ok() {
                             continue;
                         }
-                        let k = bytes.partition_point(|&b| b < g.text.start);
+                        let k = dbytes.partition_point(|&b| b < g.text.start);
                         g.x += shift_of(k);
                         match groups.last_mut() {
                             Some((gk, v)) if *gk == k => v.push(g),
@@ -1932,7 +1986,7 @@ impl Layouter {
                 return Some(para_start);
             }
             let byte = last_end_byte;
-            return Some(para_start + cap_chars + counter.at(byte) - shadow.inserted_before(byte));
+            return Some(para_start + cap_chars + counter.at(shadow.to_orig(byte)));
         }
         // A paragraph shorter than its drop cap keeps the cap's lines.
         if let (Some(c), Some((cr, _)), Some(&(_, y0, _))) = (&cap, cap_at, placements.first())
@@ -2418,6 +2472,7 @@ fn caret_positions(
     layout: &Layout<Ink>,
     offsets: &ClusterOffsets,
     text: &str,
+    body: &str,
     shadow: &Shadow,
     bytes: Range<usize>,
     first: usize,
@@ -2425,6 +2480,23 @@ fn caret_positions(
     line_x: f64,
 ) -> (Vec<(usize, f64)>, Vec<CharSpan>) {
     let (b0, b1) = (bytes.start, bytes.end);
+    if shadow.has_fields() {
+        // No per-character boxes for a line with fields (TODO.md).
+        return (
+            field_caret_positions(
+                layout,
+                offsets,
+                text,
+                body,
+                shadow,
+                (b0, b1),
+                first,
+                letter,
+                line_x,
+            ),
+            Vec::new(),
+        );
+    }
     // Boxes of the characters are only kept for lines that can reorder.
     let bidi = layout.is_rtl() || text.get(b0..b1).is_some_and(|l| l.chars().any(is_rtl_char));
     let mut spans: Vec<CharSpan> = Vec::new();
@@ -2494,6 +2566,64 @@ fn char_span(layout: &Layout<Ink>, text: &str, b: usize, end: bool) -> CharSpan 
     } else {
         (k * w, (k + 1.0) * w)
     }
+}
+
+/// [`caret_positions`] for a line that shows merge fields: one caret per
+/// story character, so a field is one caret unit whatever it shows. The
+/// boundaries are the story's; each is placed where it lands in the shadow
+/// text (the start of the field's value, or just after it).
+#[allow(clippy::too_many_arguments)]
+fn field_caret_positions(
+    layout: &Layout<Ink>,
+    offsets: &ClusterOffsets,
+    text: &str,
+    body: &str,
+    shadow: &Shadow,
+    (b0, b1): (usize, usize),
+    first: usize,
+    letter: f64,
+    line_x: f64,
+) -> Vec<(usize, f64)> {
+    let (o0, o1) = (
+        shadow.to_orig(b0).min(body.len()),
+        shadow.to_orig(b1).min(body.len()),
+    );
+    let mut stops: Vec<usize> = body
+        .get(o0..o1)
+        .map(|s| s.char_indices().map(|(i, _)| o0 + i).collect())
+        .unwrap_or_default();
+    stops.push(o1);
+    let n = stops.len();
+    let mut out = Vec::with_capacity(n);
+    for (k, ob) in stops.iter().enumerate() {
+        let last = k + 1 == n;
+        let sb = if last {
+            b1
+        } else {
+            shadow.from_orig(*ob).clamp(b0, b1)
+        };
+        let upstream = last && sb != b0;
+        let cursor = Cursor::from_byte_index(
+            layout,
+            sb,
+            if upstream {
+                Affinity::Upstream
+            } else {
+                Affinity::Downstream
+            },
+        );
+        // Displayed characters before this caret, not counting inserted
+        // soft hyphens: what letter spacing is added per.
+        let shown = text
+            .get(b0..sb)
+            .map_or(0, |s| s.chars().count())
+            .saturating_sub(shadow.inserted_before(sb) - shadow.inserted_before(b0));
+        out.push((
+            first + k,
+            line_x + caret_x(layout, offsets, cursor) + shown as f64 * letter,
+        ));
+    }
+    out
 }
 
 /// Leading-edge x of every cluster of a laid-out paragraph, indexed by the

@@ -995,6 +995,7 @@ impl PubrsApp {
             text: String::new(),
             style: run_fmt.style,
             props: run_fmt.props,
+            field: None,
         };
         let a = doc.styles.resolve_char(para, &run);
         let mut props = pubrs_api::core::CharProps::default();
@@ -1079,8 +1080,27 @@ impl PubrsApp {
             Action::ToggleShadow | Action::BorderArt if self.selection().is_empty() => {
                 Some("Select a frame first")
             }
-            Action::InsertWordArt | Action::InsertTable if self.doc().is_none() => {
+            Action::InsertWordArt | Action::InsertTable | Action::MailMerge
+                if self.doc().is_none() =>
+            {
                 Some("Open or create a publication first")
+            }
+            Action::InsertMergeField | Action::RefreshMergeData if self.doc().is_none() => {
+                Some("Open or create a publication first")
+            }
+            Action::InsertMergeField | Action::RefreshMergeData
+                if self.doc().is_some_and(|d| d.merge.is_none()) =>
+            {
+                Some("No merge data yet: choose a list with Mailings {25b8} Mail Merge…")
+            }
+            Action::InsertMergeField if !editing => Some(NO_CARET),
+            Action::RefreshMergeData
+                if self
+                    .doc_id()
+                    .and_then(|d| self.session.get(Some(d)).ok())
+                    .is_some_and(|o| o.merge_path.is_none()) =>
+            {
+                Some("The list was loaded in an earlier session: choose the file again")
             }
             _ => None,
         }
@@ -1324,6 +1344,17 @@ impl PubrsApp {
                     )));
                 }
             }
+            MailMerge => {
+                if self.doc().is_some() {
+                    self.dialog = Some(Dialog::MergeWizard(Box::new(
+                        crate::dialogs::MergeWizardState::new(self),
+                    )));
+                }
+            }
+            InsertMergeField => {
+                self.dialog = Some(Dialog::MergeField(crate::dialogs::MergeFieldState::new()));
+            }
+            RefreshMergeData => self.refresh_merge_data(),
             ToggleShadow => self.toggle_shadow(),
             BorderArt => match crate::dialogs::BorderArtState::for_selection(self, ctx) {
                 Some(state) => self.dialog = Some(Dialog::BorderArt(Box::new(state))),

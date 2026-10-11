@@ -386,6 +386,7 @@ pub fn stories_of_command(cmd: &Command) -> Vec<StoryId> {
         match cmd {
             Command::SetStory { story, .. }
             | Command::InsertText { story, .. }
+            | Command::InsertMergeField { story, .. }
             | Command::DeleteText { story, .. }
             | Command::ReplaceText { story, .. }
             | Command::ApplyCharProps { story, .. }

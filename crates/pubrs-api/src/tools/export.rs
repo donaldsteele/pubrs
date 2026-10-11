@@ -191,11 +191,11 @@ pub struct RenderPreviewOut {
     pub revision: u64,
 }
 
-fn b64(bytes: &[u8]) -> String {
+pub(crate) fn b64(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-fn write_file(path: &str, bytes: &[u8]) -> ApiResult<()> {
+pub(crate) fn write_file(path: &str, bytes: &[u8]) -> ApiResult<()> {
     let p = std::path::Path::new(path);
     if let Some(dir) = p.parent()
         && !dir.as_os_str().is_empty()
@@ -720,6 +720,7 @@ pub fn page_document(
         blobs: BTreeMap::new(),
         swatches: doc.swatches.clone(),
         scheme: doc.scheme.clone(),
+        merge: doc.merge.clone(),
     };
     let Some(page) = doc.pages.get(index).cloned() else {
         return shell(

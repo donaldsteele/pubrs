@@ -5,7 +5,6 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Later phases (designed for, not built)
 
 - Mail merge from CSV.
-- The `address_labels` template (M30) has plain text placeholders where merge fields belong; M24's rebase turns them into merge fields (record per label, `SheetFill::Sequence`).
 - `.pub` import beyond M31 part 1 (reference: libmspub).
 - CMYK / spot colours, PDF/X output.
 - Tables.
@@ -148,7 +147,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - Clipboard (M27): `paste_image` encodes, scales and places a clipboard picture on the UI thread (up to 8,000 px a side, so a visible pause for a big picture); it belongs on a worker.
 - Clipboard (M27): copying renders the whole page at 96 dpi to crop a preview of the selection; a small selection on a big page, or a very long copy, pays for the full page.
 - Clipboard (M27): a pasted group keeps its name, style and wrap but not its rotation (setting a group's rotation rotates its members again).
-- Design Checker (M29, ADR 0027): `merge_field_missing` is not emitted; mail merge (M24) is paused in another branch, and its rebase must add its warning to `validate_page`.
 - Design Checker (M29): `missing_alt_text` covers pictures only; WordArt and shapes have no alt-text field (and tagged PDF writes them as artifacts).
 - Design Checker (M29): frames stacked beneath a text frame are judged one level deep by their own fill (the topmost one holding the text frame's centre); text over a picture, a gradient or several partly covering fills is not judged exactly, and rotated frames use their bounds.
 - Design Checker (M29): `object_in_unprintable_area` assumes 0.25 in on every side and skips label sheets; real printer margins (and each label's own) are not modelled. The built-in newsletter's full-width masthead band is flagged for a desktop job, by design.
@@ -156,3 +154,17 @@ Deferred and partial work. Each entry says what is missing and why.
 - Design Checker (M29): the pre-export check covers missing fonts, RGB colour and low-resolution pictures only; ink coverage, overprint and trapping are not checked.
 - Clipboard (M29): a picture over 200 megapixels is refused before it is copied, but arboard has already decoded it by then.
 - Tab leaders (M30 menu template): the leader fill can start flush against the text (dots sit on a fixed grid), so the menu template appends a space before each tab; the layout should leave a minimum gap after the text itself.
+
+## Mail merge (M24)
+
+- Catalog merge and e-mail merge are out of scope.
+- A field's value is one line: line breaks and tabs in a cell become spaces, so a multi-line address needs one field per line.
+- Copying text that contains a field through the clipboard gives plain text: the pasted U+FFFC is an ordinary character (a missing-glyph box) until the field is inserted again. Duplicating a frame or page keeps its fields.
+- Fields on a master page merge in a PDF (each record is previewed) but stay «Name» in a merged publication (masters are shared).
+- A booklet is imposed over the whole merged run; records are not padded to a multiple of 4 each. Merge to PDF holds every page scene in memory until the file is written (100,000 records is large).
+- XLSX: only `.xlsx` and `.xlsm` (by extension), one sheet at a time, cached formula results as displayed; no `.xls`/`.ods`. CSV must be UTF-8.
+- The wizard is a modal dialog: the text cursor has to be placed before it is opened (the Fields step says so), and Print sends the merged PDF to the default destination without a per-job dialog beyond what the platform shows.
+- The preview index and switch are undoable commands (the GUI coalesces a walk through the records into one step); `Refresh data` only works for a list loaded in the same session (the path is not stored).
+- The merge fields tint is drawn by the app over the page image, so it is not in exported PNG or PDF (intended); there is no setting to hide it.
+- Merge limits (ADR 0023): 64 MiB per file, 100,000 records, 512 fields, 5,000,000 cells and 20,000 output pages; larger lists must be split. A workbook cell beyond column 512 or row 100,001 below the header is an error, not ignored.
+- Mail merge (M24): a text line that holds a merge field has no per-character boxes for right-to-left hit testing (`caret_positions` returns no `CharSpan`s for it); carets themselves are right. Fields in table cells preview and merge (cell stories are ordinary stories), but the GUI's row growth runs only for edits, not for preview steps.

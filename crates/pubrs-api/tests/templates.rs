@@ -37,6 +37,10 @@ fn fill(s: &mut Session, out: &TemplateApplyOut) {
                     let open = s.get(Some(out.doc_id)).unwrap();
                     open.doc().story(p.story_id.unwrap()).unwrap().plain_text()
                 };
+                // Merge fields are the content: nothing to type over them.
+                if sample.contains('\u{fffc}') {
+                    continue;
+                }
                 let text = format!("{}.", sample.trim_end());
                 s.text_set(
                     serde_json::from_value(json!({
@@ -93,12 +97,23 @@ fn every_builtin_applies_with_only_placeholder_warnings_and_validates_clean_once
                 t.name
             );
         }
+        // The label template is a finished design: its fields need a list.
+        let merge_template = t.name == "address_labels";
         assert!(
-            !v.warnings.is_empty(),
+            merge_template || !v.warnings.is_empty(),
             "{}: unfilled template should warn",
             t.name
         );
         fill(&mut s, &out);
+        if merge_template {
+            s.merge_set_source(
+                serde_json::from_value(
+                    json!({"doc_id": out.doc_id, "inline_csv": thirty_records()}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
         let v = s.validate(DocRef::default()).unwrap();
         let names: Vec<_> = v
             .warnings
@@ -232,4 +247,69 @@ fn user_templates_round_trip() {
         })
         .unwrap_err();
     assert_eq!(e.code, "not_found");
+}
+
+fn thirty_records() -> String {
+    let mut csv = String::from("Name,Address,City,State,Zip\n");
+    for i in 1..=30 {
+        csv.push_str(&format!(
+            "Person {i},{i} Main Street,Town {i},TX,{:05}\n",
+            75000 + i
+        ));
+    }
+    csv
+}
+
+/// The address-label template carries merge fields: it validates clean with
+/// a list that has their columns, warns `merge_field_missing` for a column the
+/// list lacks, and 30 records make 30 labels on one 5160 sheet.
+#[test]
+fn address_labels_merge_thirty_records_onto_one_sheet() {
+    let mut s = session("labels-merge");
+    let out = s
+        .template_apply(TemplateApply {
+            name: "address_labels".into(),
+            ..Default::default()
+        })
+        .unwrap();
+    let names: Vec<String> = {
+        let doc = s.get(Some(out.doc_id)).unwrap().doc();
+        pubrs_core::merge::fields_used(doc).into_iter().collect()
+    };
+    assert_eq!(names, ["Address", "City", "Name", "State", "Zip"]);
+    let set = |s: &mut Session, csv: String| {
+        s.merge_set_source(
+            serde_json::from_value(json!({"doc_id": out.doc_id, "inline_csv": csv})).unwrap(),
+        )
+        .unwrap()
+    };
+    // A list lacking Zip: the checker-level validate names it.
+    set(&mut s, "Name,Address,City,State\nA,B,C,D\n".into());
+    let v = s.validate(DocRef::default()).unwrap();
+    let missing: Vec<_> = v
+        .warnings
+        .iter()
+        .filter(|w| w.code == WarningCode::MergeFieldMissing)
+        .collect();
+    assert_eq!(missing.len(), 1, "{:?}", v.warnings);
+    assert!(missing[0].message.contains("Zip") && !missing[0].frames.is_empty());
+    // The right list: zero warnings from the real validate.
+    let r = set(&mut s, thirty_records());
+    assert_eq!(r.record_count, 30);
+    let v = s.validate(DocRef::default()).unwrap();
+    assert!(v.warnings.is_empty(), "{:?}", v.warnings);
+    // 30 labels, one sheet.
+    let e = s
+        .merge_export(
+            serde_json::from_value(json!({"doc_id": out.doc_id, "format": "pdf"})).unwrap(),
+        )
+        .unwrap();
+    assert_eq!((e.record_count, e.page_count), (30, 1));
+    assert!(e.base64.is_some());
+    let p = s
+        .merge_export(
+            serde_json::from_value(json!({"doc_id": out.doc_id, "format": "publication"})).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(p.page_count, 30);
 }

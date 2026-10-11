@@ -392,6 +392,78 @@ pub fn selection_quads(
     out
 }
 
+/// Story offsets of the merge fields in `story`.
+pub fn field_offsets(doc: &Document, story: StoryId) -> Vec<usize> {
+    let Some(s) = doc.story(story) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    for p in &s.paragraphs {
+        for r in &p.runs {
+            let n = r.text.chars().count();
+            if r.field.is_some() {
+                out.push(at);
+            }
+            at += n;
+        }
+        at += 1;
+    }
+    out
+}
+
+/// Page-space quads behind the merge fields of `story` that sit in frames
+/// accepted by `on_page`, drawn as a faint tint so fields are recognisable.
+pub fn field_quads(
+    doc: &Document,
+    layout: &DocumentLayout,
+    story: StoryId,
+    on_page: impl Fn(FrameId) -> bool,
+) -> Vec<[Point; 4]> {
+    let offsets = field_offsets(doc, story);
+    if offsets.is_empty() {
+        return Vec::new();
+    }
+    let lines = story_lines(doc, layout, story);
+    let mut out = Vec::new();
+    for at in offsets {
+        let Some((f, l)) = lines
+            .iter()
+            .find(|(_, l)| l.chars.start <= at && at < l.chars.end)
+            .or_else(|| {
+                lines
+                    .iter()
+                    .find(|(_, l)| l.chars.start <= at && at <= l.chars.end)
+            })
+        else {
+            continue;
+        };
+        if !on_page(*f) {
+            continue;
+        }
+        let x0 = l.caret_x(at);
+        let x1 = l.caret_x(at + 1).max(x0 + 2.0);
+        let pts = [
+            (x0, l.rect.y),
+            (x1, l.rect.y),
+            (x1, l.rect.bottom()),
+            (x0, l.rect.bottom()),
+        ];
+        let mut q = [Point::default(); 4];
+        let mut ok = true;
+        for (k, (x, y)) in pts.iter().enumerate() {
+            match frame_to_page(doc, *f, *x, *y) {
+                Some(p) => q[k] = p,
+                None => ok = false,
+            }
+        }
+        if ok {
+            out.push(q);
+        }
+    }
+    out
+}
+
 /// Page-space segments under the character ranges of `items` (sorted by
 /// start, not overlapping) on the lines `frame` shows: one per line and
 /// range, along the bottom of the selection quads, just under the baseline

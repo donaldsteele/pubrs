@@ -22,6 +22,7 @@ fn toggles(text: &str) -> Vec<Run> {
                     underline: u.then_some(true),
                     ..Default::default()
                 },
+                field: None,
             });
         }
     };

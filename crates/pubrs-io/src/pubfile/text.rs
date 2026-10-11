@@ -131,6 +131,7 @@ fn convert_para(raw: &RawPara, data: &PubData, colors: &Colors) -> Paragraph {
                 text: text.clone(),
                 style: None,
                 props,
+                field: None,
             }),
         }
     }
@@ -139,6 +140,7 @@ fn convert_para(raw: &RawPara, data: &PubData, colors: &Colors) -> Paragraph {
             text: String::new(),
             style: None,
             props: char_props(&CharStyle::default(), &dchar, data, colors),
+            field: None,
         });
     }
     Paragraph {

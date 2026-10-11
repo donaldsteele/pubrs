@@ -997,6 +997,7 @@ mod tests {
                 font_size: Some(30.0),
                 ..Default::default()
             },
+            field: None,
         };
         let a = sheet.resolve_char(&para, &run);
         assert!(a.bold, "from Heading 1");

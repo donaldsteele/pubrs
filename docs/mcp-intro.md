@@ -105,6 +105,8 @@ the MCP boundary.
 | `make_business_card` | `name`, `job_title`, `company`, `contact`, `logo` | Business card from `business_card`. |
 | `make_newsletter` | `topic`, `audience`, `details`, `images` | Four-page newsletter from `newsletter`: placeholders, the two tables (`table_set_cell_text`), the bulleted and numbered lists, images with alt text. |
 | `make_greeting_card` | `occasion`, `recipient`, `message`, `images` | Quarter-fold card from `greeting_card`, including its rotated inside spread. |
+| `make_mail_merge` | `piece`, `data`, `sheet`, `details` | Merge a CSV or XLSX list into a letter or card: `merge_set_source`, fields, preview, one page per record. |
+| `make_labels` | `data`, `preset`, `sheet`, `lines` | Address labels from a list on a label sheet, one record per label. |
 
 Each prompt ends with the same checks: `text_overflow_status` clean,
 `validate` ok, `render_preview` of every page, then `doc_save_as` and

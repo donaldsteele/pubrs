@@ -310,7 +310,9 @@ async fn resources_prompts_and_errors() {
             "make_trifold",
             "make_business_card",
             "make_newsletter",
-            "make_greeting_card"
+            "make_greeting_card",
+            "make_mail_merge",
+            "make_labels"
         ]
     );
     let p = h
@@ -360,6 +362,53 @@ async fn resources_prompts_and_errors() {
         );
     }
 
+    for (prompt, args, tools) in [
+        (
+            "make_mail_merge",
+            json!({"piece": "invitation postcards", "data": "guests.xlsx", "sheet": "Guests"}),
+            [
+                "doc_new",
+                "merge_set_source",
+                "merge_fields_list",
+                "frame_add_text",
+                "merge_insert_field",
+                "merge_preview",
+                "validate",
+                "merge_export",
+            ],
+        ),
+        (
+            "make_labels",
+            json!({"data": "addresses.csv"}),
+            [
+                "sheet_presets_list",
+                "doc_new",
+                "doc_set_sheet",
+                "merge_set_source",
+                "frame_add_text",
+                "merge_insert_field",
+                "merge_preview",
+                "merge_export",
+            ],
+        ),
+    ] {
+        let p = h
+            .client
+            .get_prompt(
+                GetPromptRequestParams::new(prompt)
+                    .with_arguments(args.as_object().cloned().unwrap()),
+            )
+            .await
+            .unwrap();
+        let text = serde_json::to_string(&p.messages).unwrap();
+        // The tools are named in the order the steps use them.
+        let mut at = 0;
+        for t in tools {
+            let found = text[at..].find(t);
+            assert!(found.is_some(), "{prompt}: {t} missing or out of order");
+            at += found.unwrap();
+        }
+    }
     // Tool errors are structured and readable; unknown tools are protocol errors.
     h.fail(
         "frame_delete",

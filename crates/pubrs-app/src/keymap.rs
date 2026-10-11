@@ -38,6 +38,12 @@ pub enum Action {
     /// Insert → WordArt…
     InsertWordArt,
     InsertTable,
+    /// Insert → Merge Field…
+    InsertMergeField,
+    /// Mailings → Mail Merge…
+    MailMerge,
+    /// Mailings → Refresh Data
+    RefreshMergeData,
     /// Format → Shadow: toggle a default drop shadow on the selection.
     ToggleShadow,
     /// Format → Border Art…
@@ -234,6 +240,7 @@ pub const MENUS: &[MenuSpec] = &[
             A("Line", Action::InsertLine),
             A("WordArt…", Action::InsertWordArt),
             A("Table…", Action::InsertTable),
+            A("Merge Field…", Action::InsertMergeField),
             Sub(
                 "Break",
                 &[
@@ -311,6 +318,13 @@ pub const MENUS: &[MenuSpec] = &[
         items: &[
             A("Colour Scheme…", Action::ColorScheme),
             A("Swatches", Action::ShowSwatches),
+        ],
+    },
+    MenuSpec {
+        title: "Mailings",
+        items: &[
+            A("Mail Merge…", Action::MailMerge),
+            A("Refresh Data", Action::RefreshMergeData),
         ],
     },
     MenuSpec {

@@ -79,13 +79,34 @@ pub fn points(word: &str, lang: Lang) -> Vec<usize> {
     })
 }
 
-/// A paragraph's text with soft hyphens inserted at hyphenation points.
+/// One place where the shadow text differs from the paragraph's story text
+/// (ADR 0014, ADR 0023): an inserted soft hyphen, or a merge field shown as
+/// its value (or its «Name»).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Edit {
+    /// Shadow byte where the edit starts.
+    pub at: usize,
+    /// Its length in the shadow text.
+    pub len: usize,
+    /// Byte in the story text (the paragraph body) it replaces.
+    pub orig: usize,
+    /// Length of the story text it replaces (0 for a soft hyphen).
+    pub orig_len: usize,
+    /// An inserted soft hyphen.
+    pub shy: bool,
+    /// Inserted soft hyphens up to and including this edit.
+    pub shy_after: usize,
+}
+
+/// A paragraph's text as it is shaped: the story text with soft hyphens
+/// inserted at hyphenation points and merge fields replaced by what they
+/// show. `edits` is the table that maps bytes between the two.
 #[derive(Debug, Clone)]
 pub struct Shadow<'a> {
     pub text: std::borrow::Cow<'a, str>,
-    /// Byte offsets in `text` of the inserted soft hyphens, ascending.
-    /// User-typed soft hyphens are not listed.
-    pub inserted: Vec<usize>,
+    /// Edits in ascending, non-overlapping order. User-typed soft hyphens
+    /// are not listed.
+    pub edits: Vec<Edit>,
 }
 
 impl<'a> Shadow<'a> {
@@ -93,14 +114,14 @@ impl<'a> Shadow<'a> {
     pub fn plain(text: &'a str) -> Self {
         Self {
             text: std::borrow::Cow::Borrowed(text),
-            inserted: Vec::new(),
+            edits: Vec::new(),
         }
     }
 
     /// Insert a soft hyphen at every hyphenation point of every word.
     pub fn hyphenated(orig: &'a str, lang: Lang) -> Self {
         let mut text = String::with_capacity(orig.len() + orig.len() / 4);
-        let mut inserted = Vec::new();
+        let mut edits: Vec<Edit> = Vec::new();
         let mut copied = 0usize;
         let mut word_start: Option<usize> = None;
         let mut chars = orig.char_indices().peekable();
@@ -125,48 +146,164 @@ impl<'a> Shadow<'a> {
             for p in points(word, lang) {
                 text.push_str(&orig[copied..ws + p]);
                 copied = ws + p;
-                inserted.push(text.len());
+                edits.push(Edit {
+                    at: text.len(),
+                    len: SHY_LEN,
+                    orig: ws + p,
+                    orig_len: 0,
+                    shy: true,
+                    shy_after: edits.len() + 1,
+                });
                 text.push(SHY);
             }
         }
         text.push_str(&orig[copied..]);
-        if inserted.is_empty() {
+        if edits.is_empty() {
             return Self::plain(orig);
         }
         Self {
             text: std::borrow::Cow::Owned(text),
-            inserted,
+            edits,
         }
+    }
+
+    /// Show merge fields: each `(range, shown)` replaces the story bytes
+    /// `range` (a field, plus a collapsed space) by `shown`. Ranges are
+    /// ascending and disjoint and lie between hyphenation points, never
+    /// across one. Apply this before any other in-place text mapping.
+    pub fn substitute(&mut self, subs: &[(std::ops::Range<usize>, String)]) {
+        if subs.is_empty() {
+            return;
+        }
+        let old = std::mem::take(&mut self.edits);
+        let this = Shadow {
+            text: std::borrow::Cow::Borrowed(""),
+            edits: old.clone(),
+        };
+        let src: &str = &self.text;
+        let mut text = String::with_capacity(src.len() + 32);
+        let mut copied = 0usize;
+        let mut fields: Vec<Edit> = Vec::with_capacity(subs.len());
+        // Change in length each field makes, and where its story bytes end.
+        let mut deltas: Vec<(usize, isize)> = Vec::with_capacity(subs.len());
+        for (range, shown) in subs {
+            let (s0, s1) = (this.from_orig(range.start), this.from_orig(range.end));
+            deltas.push((range.end, shown.len() as isize - (s1 - s0) as isize));
+            text.push_str(&src[copied..s0]);
+            fields.push(Edit {
+                at: text.len(),
+                len: shown.len(),
+                orig: range.start,
+                orig_len: range.end - range.start,
+                shy: false,
+                shy_after: 0,
+            });
+            text.push_str(shown);
+            copied = s1;
+        }
+        text.push_str(&src[copied..]);
+        // Soft hyphens move by the change in length of the fields before them.
+        let mut all: Vec<Edit> = old
+            .into_iter()
+            .map(|mut e| {
+                let delta: isize = deltas
+                    .iter()
+                    .filter(|(end, _)| *end <= e.orig)
+                    .map(|(_, d)| d)
+                    .sum();
+                e.at = (e.at as isize + delta) as usize;
+                e
+            })
+            .collect();
+        all.extend(fields);
+        all.sort_by_key(|e| (e.at, e.orig));
+        let mut shy = 0;
+        for e in &mut all {
+            if e.shy {
+                shy += 1;
+            }
+            e.shy_after = shy;
+        }
+        self.text = std::borrow::Cow::Owned(text);
+        self.edits = all;
+    }
+
+    /// Whether any merge field was substituted.
+    pub fn has_fields(&self) -> bool {
+        self.edits.iter().any(|e| !e.shy)
+    }
+
+    /// Inserted soft hyphens.
+    pub fn shy_count(&self) -> usize {
+        self.edits.last().map_or(0, |e| e.shy_after)
+    }
+
+    /// Shadow byte offsets of the inserted soft hyphens.
+    pub fn shy_positions(&self) -> impl Iterator<Item = usize> + '_ {
+        self.edits.iter().filter(|e| e.shy).map(|e| e.at)
     }
 
     /// Whether the soft hyphen at shadow byte `at` was inserted.
     pub fn is_inserted(&self, at: usize) -> bool {
-        self.inserted.binary_search(&at).is_ok()
+        let i = self.edits.partition_point(|e| e.at < at);
+        self.edits.get(i).is_some_and(|e| e.shy && e.at == at)
     }
 
     /// Inserted soft hyphens that start before shadow byte `b`.
     pub fn inserted_before(&self, b: usize) -> usize {
-        self.inserted.partition_point(|&p| p < b)
+        let i = self.edits.partition_point(|e| e.at < b);
+        if i == 0 {
+            0
+        } else {
+            self.edits[i - 1].shy_after
+        }
     }
 
-    /// Shadow byte offset to byte offset in the original paragraph text.
+    /// Shadow byte offset to byte offset in the paragraph's story text. A
+    /// byte inside a field's shown value maps to the field's start; one just
+    /// after it, to just after the field.
     pub fn to_orig(&self, b: usize) -> usize {
-        b - SHY_LEN * self.inserted_before(b)
+        let n = self.edits.partition_point(|e| e.at + e.len <= b);
+        if let Some(e) = self.edits.get(n)
+            && e.at < b
+        {
+            return e.orig;
+        }
+        match n.checked_sub(1).map(|i| &self.edits[i]) {
+            Some(e) => e.orig + e.orig_len + (b - (e.at + e.len)),
+            None => b,
+        }
     }
 
-    /// Original byte offset to shadow byte offset. A soft hyphen inserted
+    /// Story byte offset to shadow byte offset. A soft hyphen inserted
     /// exactly at `b` belongs to the text before it, so it is skipped when
-    /// `b` starts a range and included when `b` ends one.
+    /// `b` starts a range and included when `b` ends one. A byte inside a
+    /// replaced field (the collapsed space) maps to the start of its shown
+    /// text.
     pub fn from_orig(&self, b: usize) -> usize {
-        // Marker k sits at shadow byte p_k = orig position + 2k, so its
-        // original position is p_k - 2k. Count markers at or before `b`.
-        let n = self
-            .inserted
-            .iter()
-            .enumerate()
-            .take_while(|(k, p)| **p - SHY_LEN * k <= b)
-            .count();
-        b + SHY_LEN * n
+        let n = self.edits.partition_point(|e| e.orig + e.orig_len <= b);
+        if let Some(e) = self.edits.get(n)
+            && e.orig < b
+        {
+            return e.at;
+        }
+        match n.checked_sub(1).map(|i| &self.edits[i]) {
+            Some(e) => e.at + e.len + (b - (e.orig + e.orig_len)),
+            None => b,
+        }
+    }
+
+    /// Shadow byte offset to byte offset in the displayed text: the shadow
+    /// text without its inserted soft hyphens (the story text with fields
+    /// shown). Equal to [`Shadow::to_orig`] when no field was substituted.
+    pub fn to_display(&self, b: usize) -> usize {
+        let n = self.edits.partition_point(|e| e.at + e.len <= b);
+        let shy = if n == 0 {
+            0
+        } else {
+            self.edits[n - 1].shy_after
+        };
+        b - SHY_LEN * shy
     }
 }
 
@@ -551,9 +688,9 @@ mod tests {
     fn shadow_maps_back() {
         let orig = "An extensive list.";
         let s = Shadow::hyphenated(orig, Lang::English);
-        assert_eq!(s.inserted.len(), 2);
+        assert_eq!(s.shy_count(), 2);
         assert_eq!(s.text.replace(SHY, ""), orig);
-        for &p in &s.inserted {
+        for p in s.shy_positions() {
             assert!(s.is_inserted(p));
             assert_eq!(s.to_orig(p), s.to_orig(p + SHY_LEN));
         }
@@ -565,9 +702,45 @@ mod tests {
     }
 
     #[test]
+    fn field_edits_map_both_ways() {
+        // "ab " + field (3 bytes) + " extensive": hyphenation points sit
+        // after the field, so they move when the field's text changes length.
+        let orig = "ab \u{fffc} extensive";
+        let mut s = Shadow::hyphenated(orig, Lang::English);
+        let shy: Vec<usize> = s.shy_positions().collect();
+        s.substitute(&[(3..6, "LONGER".to_string())]);
+        assert_eq!(s.text.replace(SHY, ""), "ab LONGER extensive");
+        assert!(s.has_fields());
+        let moved: Vec<usize> = s.shy_positions().collect();
+        assert_eq!(moved.len(), shy.len());
+        assert!(moved.iter().zip(&shy).all(|(m, o)| *m == o + 3));
+        // Inside the value maps to the field's start, just after it to its end.
+        assert_eq!(s.to_orig(3), 3);
+        assert_eq!(s.to_orig(5), 3);
+        assert_eq!(s.to_orig(9), 6);
+        assert_eq!(s.from_orig(3), 3);
+        assert_eq!(s.from_orig(6), 9);
+        for (i, _) in orig.char_indices().filter(|(i, _)| *i != 4 && *i != 5) {
+            assert_eq!(s.to_orig(s.from_orig(i)), i, "orig byte {i}");
+        }
+        // Displayed bytes ignore inserted soft hyphens only.
+        assert_eq!(s.to_display(9), 9);
+        assert_eq!(s.to_display(s.text.len()), "ab LONGER extensive".len());
+        // An empty value that takes the space after it: the range covers both.
+        let mut e = Shadow::plain("ab \u{fffc} cd");
+        e.substitute(&[(3..7, String::new())]);
+        assert_eq!(e.text, "ab cd");
+        assert_eq!(e.to_orig(3), 7);
+        assert_eq!(e.from_orig(3), 3);
+        assert_eq!(e.from_orig(6), 3, "inside the replaced range");
+        assert_eq!(e.from_orig(7), 3);
+        assert_eq!(e.to_orig(e.text.len()), "ab \u{fffc} cd".len());
+    }
+
+    #[test]
     fn typed_soft_hyphen_words_are_left_alone() {
         let s = Shadow::hyphenated("exten\u{ad}sive", Lang::English);
-        assert!(s.inserted.is_empty());
+        assert_eq!(s.shy_count(), 0);
     }
 
     #[test]

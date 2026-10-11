@@ -38,6 +38,13 @@ impl FileDialogs for NativeDialogs {
             .pick_file()
     }
 
+    fn pick_data(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title("Choose the mail merge list")
+            .add_filter("Lists", &["csv", "xlsx", "xlsm"])
+            .pick_file()
+    }
+
     fn save_export(
         &self,
         suggested_name: &str,

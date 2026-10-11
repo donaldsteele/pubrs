@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::bytes::Bytes;
 use crate::id::{AssetId, FrameId, PageId, StoryId};
 use crate::model::{
-    Asset, DocMeta, Document, Frame, GridSettings, MasterPage, Page, PageSetup, Story,
+    Asset, DocMeta, Document, Frame, GridSettings, MasterPage, MergeSource, Page, PageSetup, Story,
 };
 use crate::style::StyleSheet;
 use crate::swatch::Palette;
@@ -43,6 +43,8 @@ pub struct Patch {
     pub styles: Option<StyleSheet>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub palette: Option<Palette>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge: Option<MergeSlot>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub frames: BTreeMap<FrameId, Option<Arc<Frame>>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -50,6 +52,11 @@ pub struct Patch {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assets: BTreeMap<AssetId, Option<AssetEntry>>,
 }
+
+/// The merge data of a document (none = no data), so a patch can also clear it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MergeSlot(pub Option<MergeSource>);
 
 type ArcMap<K, V> = BTreeMap<K, Option<Arc<V>>>;
 
@@ -223,6 +230,14 @@ impl Patch {
             };
             (Some(pal(to)), Some(pal(from)))
         };
+        let (gmf, gmb) = if from.merge == to.merge {
+            (None, None)
+        } else {
+            (
+                Some(MergeSlot(to.merge.clone())),
+                Some(MergeSlot(from.merge.clone())),
+            )
+        };
         let (ff, fb) = diff_map_pair(&from.frames, &to.frames);
         let (tf, tb) = diff_map_pair(&from.stories, &to.stories);
         (
@@ -234,6 +249,7 @@ impl Patch {
                 masters: xf,
                 styles: yf,
                 palette: cf,
+                merge: gmf,
                 frames: ff,
                 stories: tf,
                 assets: fa,
@@ -246,6 +262,7 @@ impl Patch {
                 masters: xb,
                 styles: yb,
                 palette: cb,
+                merge: gmb,
                 frames: fb,
                 stories: tb,
                 assets: ba,
@@ -309,6 +326,13 @@ impl Patch {
             step_bwd.palette,
             |a, b| a == b,
         );
+        compose_opt(
+            &mut fwd.merge,
+            &mut bwd.merge,
+            step_fwd.merge,
+            step_bwd.merge,
+            |a, b| a == b,
+        );
         compose_map(
             &mut fwd.frames,
             &mut bwd.frames,
@@ -360,6 +384,9 @@ impl Patch {
             doc.swatches = v.swatches.clone();
             doc.scheme = v.scheme.clone();
         }
+        if let Some(v) = &self.merge {
+            doc.merge.clone_from(&v.0);
+        }
         for (k, v) in &self.frames {
             match v {
                 Some(f) => doc.frames.insert(*k, f.clone()),
@@ -399,6 +426,7 @@ impl Patch {
             assets: self.assets.keys().copied().collect(),
             styles: self.styles.is_some(),
             swatches: self.palette.is_some(),
+            merge: self.merge.is_some(),
             setup: self.setup.is_some() || self.meta.is_some() || self.grid.is_some(),
         }
     }
@@ -417,5 +445,8 @@ pub struct Touched {
     /// The swatch list or colour scheme changed (every page repaints).
     #[serde(default)]
     pub swatches: bool,
+    /// The merge data or its preview state changed.
+    #[serde(default)]
+    pub merge: bool,
     pub setup: bool,
 }

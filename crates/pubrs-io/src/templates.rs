@@ -161,7 +161,7 @@ fn description_of(name: &str) -> &'static str {
             "Twelve Letter landscape pages, one per month: a picture, the month and year, and a Sunday-first table of days with the neighbouring months' days in grey. Set the year with the year option."
         }
         "address_labels" => {
-            "Avery 5160 address labels (30 per sheet, 2.625 x 1 in): one label with a recipient address block, repeated down the sheet."
+            "Avery 5160 address labels (30 per sheet, 2.625 x 1 in): one label whose address block is merge fields (Name, Address, City, State, Zip): load a list with merge_set_source and merge to put one record on each label."
         }
         "business_cards" => {
             "Avery 5371 business cards (10 per sheet, 3.5 x 2 in): name, job title, company, contact lines and a logo, repeated down the sheet."
@@ -335,6 +335,7 @@ impl T {
                     text: line.into(),
                     style: None,
                     props: chars.clone(),
+                    field: None,
                 }],
             })
             .collect();
@@ -1733,17 +1734,54 @@ fn address_labels() -> Document {
     t.styles();
     let p = t.b.page(0);
     t.rect(p, Rect::new(0.0, 0.0, 5.0, 72.0), ORANGE);
-    // Merge fields are deferred (mail merge, M24); until then these are
-    // ordinary placeholders.
-    t.text(
+    // The address block is merge fields (M24, ADR 0023): Name, Address, then
+    // City, State Zip. Load a list with merge_set_source (columns named like
+    // these) and merge: one record per label on the 5160 sheet.
+    let f = t.text(
         p,
         Rect::new(14.0, 10.0, 165.0, 52.0),
-        "Recipient name\nStreet address\nCity, ST 00000",
+        "Name\nAddress\nCity, State Zip",
         props(SANS, 10.0, false, false, INK),
         para(Align::Left, 1.2, 0.0),
         Some("address"),
         VerticalAlign::Middle,
     );
+    let story = t.b.story_of(f);
+    let base = t.b.doc().story(story).expect("story").paragraphs[0].clone();
+    let chars = base.runs[0].props.clone();
+    let line = |parts: &[(&str, bool)]| Paragraph {
+        style: base.style,
+        props: base.props.clone(),
+        runs: parts
+            .iter()
+            .map(|(s, field)| {
+                if *field {
+                    Run::field(s, None, chars.clone())
+                } else {
+                    Run {
+                        text: (*s).into(),
+                        props: chars.clone(),
+                        ..Run::default()
+                    }
+                }
+            })
+            .collect(),
+    };
+    t.b.exec(Command::SetStory {
+        story,
+        paragraphs: vec![
+            line(&[("Name", true)]),
+            line(&[("Address", true)]),
+            line(&[
+                ("City", true),
+                (", ", false),
+                ("State", true),
+                (" ", false),
+                ("Zip", true),
+            ]),
+        ],
+    })
+    .expect("fields");
     t.finish()
 }
 

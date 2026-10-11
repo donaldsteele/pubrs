@@ -1236,6 +1236,41 @@ fn patch_json_matches_the_golden_corpus() {
         at: 0,
         count: 1,
     });
+    // ---- mail merge (M24; appended, earlier entries are unchanged) ----
+    let mut mid = SeqIds::new(2424);
+    let (mf, ms) = (FrameId::new(&mut mid), StoryId::new(&mut mid));
+    let (frame, story) = text_frame(mf, ms, Rect::new(20.0, 20.0, 100.0, 40.0));
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame,
+        story: Some(story),
+    });
+    r.run(Command::InsertText {
+        story: ms,
+        at: 0,
+        text: "Dear ,".into(),
+        format: None,
+    });
+    r.run(Command::SetMergeSource {
+        merge: Some(MergeSource::new(
+            "c.csv",
+            MergeKind::Csv,
+            None,
+            vec!["Name".into()],
+            vec![vec!["Ann".into()], vec!["Bo".into()]],
+        )),
+    });
+    r.run(Command::InsertMergeField {
+        story: ms,
+        at: 5,
+        field: "Name".into(),
+    });
+    r.run(Command::SetMergePreview {
+        index: Some(1),
+        preview: Some(true),
+    });
+    r.run(Command::SetMergeSource { merge: None });
 
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =
@@ -1697,6 +1732,7 @@ mod design {
                     color,
                     ..CharProps::default()
                 },
+                field: None,
             }],
         };
         b.text_paragraphs(Parent::Page(page), rect, vec![para])
@@ -2264,4 +2300,58 @@ mod design {
         doc.styles.styles[0].character.color = Some(Paint::swatch(ghost));
         assert_eq!(check_integrity(&doc).len(), 2);
     }
+}
+
+// ---------------------------------------------------------------- merge fields (M24)
+
+#[test]
+fn field_runs_are_never_merged_and_cost_one_character() {
+    let mut s = Story::new(
+        StoryId::new(&mut SeqIds::new(1)),
+        FrameId::new(&mut SeqIds::new(2)),
+    );
+    s.insert_text(0, "ab", None);
+    s.insert_field(1, "N");
+    s.insert_field(2, "N");
+    // "a" field field "b": two equal-looking fields stay two runs.
+    assert_eq!(s.char_len(), 4);
+    let runs = &s.paragraphs[0].runs;
+    assert_eq!(runs.len(), 4);
+    assert!(!runs[1].same_format(&runs[2]));
+    assert!(!runs[0].same_format(&runs[1]));
+    // Formatting the whole range keeps the fields; deleting one removes one.
+    s.apply_char_props(
+        0,
+        4,
+        &CharProps {
+            bold: Some(true),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        s.paragraphs[0]
+            .runs
+            .iter()
+            .filter(|r| r.field.is_some())
+            .count(),
+        2
+    );
+    s.delete_range(1, 2);
+    assert_eq!(s.char_len(), 3);
+    assert_eq!(
+        s.paragraphs[0]
+            .runs
+            .iter()
+            .filter(|r| r.field.is_some())
+            .count(),
+        1
+    );
+    // Typed text beside a field never becomes part of it.
+    s.insert_text(2, "xy", None);
+    let fields: Vec<_> = s.paragraphs[0]
+        .runs
+        .iter()
+        .filter(|r| r.field.is_some())
+        .collect();
+    assert_eq!(fields[0].text, "\u{fffc}");
 }

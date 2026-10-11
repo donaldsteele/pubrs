@@ -59,6 +59,9 @@ pub enum WarningCode {
     EmptyTableCells,
     /// A picture with no alternative text (needed for tagged PDF).
     MissingAltText,
+    /// A merge field names a column the merge data does not have; it shows
+    /// as «Name» and merges as «Name».
+    MergeFieldMissing,
 }
 
 /// A validation warning.
@@ -116,6 +119,11 @@ pub fn check_integrity(doc: &Document) -> Vec<String> {
             Some(n) if *n > 1 => errs.push(format!("frame {id} is listed {n} times")),
             _ => {}
         }
+    }
+    if let Some(m) = &doc.merge
+        && let Err(e) = crate::merge::check_source(m)
+    {
+        errs.push(format!("merge data: {e}"));
     }
     let page_ids: BTreeSet<PageId> = doc.pages.iter().map(|p| p.id).collect();
     if page_ids.len() != doc.pages.len() {
@@ -464,6 +472,39 @@ pub fn validate_document(doc: &Document, _opts: &ValidateOptions) -> Vec<Warning
                 frame,
                 frames: Vec::new(),
             });
+        }
+    }
+    // Merge fields that name a column the data does not have.
+    if let Some(m) = &doc.merge {
+        for story in doc.stories.values() {
+            let mut seen: Vec<&str> = Vec::new();
+            for r in story.paragraphs.iter().flat_map(|p| p.runs.iter()) {
+                let Some(name) = r.field.as_deref() else {
+                    continue;
+                };
+                if m.field_index(name).is_some() || seen.contains(&name) {
+                    continue;
+                }
+                seen.push(name);
+                let frame = story.frames.first().copied();
+                let page = frame.and_then(|f| match doc.owner_of(f) {
+                    Some(Owner::Page(p)) => Some(p),
+                    _ => None,
+                });
+                out.push(Warning {
+                    code: WarningCode::MergeFieldMissing,
+                    message: format!(
+                        "merge field {name:?} is not in the merge data; it shows and merges as \u{ab}{name}\u{bb}"
+                    ),
+                    hint: format!(
+                        "use one of the data's fields ({}) or add the column to the data and set the source again",
+                        m.fields.join(", ")
+                    ),
+                    page,
+                    frame,
+                    frames: story.frames.clone(),
+                });
+            }
         }
     }
     out

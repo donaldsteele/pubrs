@@ -15,7 +15,7 @@ use crate::geom::{Margins, PT_PER_INCH, Point, Rect, Size};
 use crate::id::{AssetId, FrameId, GuideId, MasterId, PageId, StoryId, StyleId, SwatchId};
 use crate::model::{
     Asset, BORDER_ART_PATTERNS, BORDER_ART_WIDTH, Crop, Document, Frame, FrameContent, FrameStyle,
-    GridSettings, Guide, ImageFit, MasterPage, Page, Paragraph, Parent, Placeholder,
+    GridSettings, Guide, ImageFit, MasterPage, MergeSource, Page, Paragraph, Parent, Placeholder,
     PlaceholderKind, SHADOW_MAX_BLUR, SHADOW_MAX_OFFSET, Shadow, Shape, SheetLayout, Story,
     TextWrap, VerticalAlign, WordArtFrame,
 };
@@ -120,6 +120,18 @@ pub enum Command {
     },
     SetBooklet {
         booklet: bool,
+    },
+    /// Set (or clear, with none) the mail-merge data. Also used to refresh it.
+    SetMergeSource {
+        merge: Option<MergeSource>,
+    },
+    /// Choose the previewed record and turn the preview on or off. Omitted
+    /// values stay as they are.
+    SetMergePreview {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preview: Option<bool>,
     },
     SetGrid {
         grid: GridSettings,
@@ -328,6 +340,12 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         format: Option<RunFormat>,
     },
+    /// Insert a merge field (one U+FFFC character) at a story offset.
+    InsertMergeField {
+        story: StoryId,
+        at: usize,
+        field: String,
+    },
     DeleteText {
         story: StoryId,
         start: usize,
@@ -435,6 +453,8 @@ impl Command {
             Self::SetBleed { .. } => "set_bleed",
             Self::SetSheet { .. } => "set_sheet",
             Self::SetBooklet { .. } => "set_booklet",
+            Self::SetMergeSource { .. } => "set_merge_source",
+            Self::SetMergePreview { .. } => "set_merge_preview",
             Self::SetGrid { .. } => "set_grid",
             Self::AddSwatch { .. } => "add_swatch",
             Self::UpdateSwatch { .. } => "update_swatch",
@@ -477,6 +497,7 @@ impl Command {
             Self::TableSetRowHeight { .. } => "table_set_row_height",
             Self::SetStory { .. } => "set_story",
             Self::InsertText { .. } => "insert_text",
+            Self::InsertMergeField { .. } => "insert_merge_field",
             Self::DeleteText { .. } => "delete_text",
             Self::ReplaceText { .. } => "replace_text",
             Self::ApplyCharProps { .. } => "apply_char_props",
@@ -570,6 +591,52 @@ impl Command {
                     ));
                 }
                 doc.setup.booklet = *booklet;
+                Ok(())
+            }
+            Self::SetMergeSource { merge } => {
+                if let Some(m) = merge {
+                    check_merge(m)?;
+                }
+                doc.merge.clone_from(merge);
+                Ok(())
+            }
+            Self::SetMergePreview { index, preview } => {
+                let Some(m) = doc.merge.as_mut() else {
+                    return Err(CommandError::invalid(
+                        "the document has no merge data; load it with merge_set_source first",
+                    ));
+                };
+                if let Some(i) = index {
+                    if *i >= m.records.len().max(1) {
+                        return Err(CommandError::invalid(format!(
+                            "record {i} does not exist (the data has {} records)",
+                            m.records.len()
+                        )));
+                    }
+                    m.preview_index = *i;
+                }
+                if let Some(p) = preview {
+                    m.preview = *p;
+                }
+                Ok(())
+            }
+            Self::InsertMergeField { story, at, field } => {
+                if field.is_empty() || field.chars().count() > 200 {
+                    return Err(CommandError::invalid(
+                        "a field name needs 1 to 200 characters",
+                    ));
+                }
+                if let Some(m) = &doc.merge
+                    && m.field_index(field).is_none()
+                {
+                    return Err(CommandError::invalid(format!(
+                        "the merge data has no field {field:?}; its fields are: {}",
+                        m.fields.join(", ")
+                    )));
+                }
+                let s = story_mut(doc, *story)?;
+                check_offset(s, *at)?;
+                s.insert_field(*at, field);
                 Ok(())
             }
             Self::SetGrid { grid } => {
@@ -1365,6 +1432,10 @@ fn image_mut(doc: &mut Document, id: FrameId) -> CmdResult<&mut crate::model::Im
     frame_mut(doc, id)?
         .as_image_mut()
         .ok_or_else(|| CommandError::invalid("frame is not an image frame"))
+}
+
+fn check_merge(m: &MergeSource) -> CmdResult {
+    crate::merge::check_source(m).map_err(CommandError::invalid)
 }
 
 fn check_offset(s: &Story, at: usize) -> CmdResult {

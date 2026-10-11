@@ -246,3 +246,153 @@ fn import_pub_then_export_and_validate() {
     assert!(!r.status.success());
     assert!(String::from_utf8_lossy(&r.stderr).contains("file_not_found"));
 }
+
+/// `pubrs merge`: a design with two fields and a CSV give a PDF with a page
+/// per record, and a new publication with the same pages.
+#[test]
+fn merge_writes_a_page_per_record_as_pdf_or_publication() {
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-merge");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let script = out.join("design.json");
+    std::fs::write(
+        &script,
+        r#"[
+  {"tool": "doc_new", "args": {"page_size": {"width": 300, "height": 120}, "title": "Card"}, "as": "doc"},
+  {"tool": "frame_add_text", "args": {"x": 10, "y": 10, "width": 280, "height": 100, "text": "Dear , from ."}, "as": "t"},
+  {"tool": "merge_set_source", "args": {"inline_csv": "Name,City\nx,y\n"}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${t.frame_id}", "offset": 5, "field": "Name"}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${t.frame_id}", "offset": 13, "field": "City"}},
+  {"tool": "merge_clear", "args": {"confirm": true}},
+  {"tool": "doc_save_as", "args": {"path": "${out_dir}/design.pubrs"}}
+]"#,
+    )
+    .unwrap();
+    assert!(
+        bin()
+            .arg("script")
+            .arg(&script)
+            .arg("--out")
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let design = out.join("design.pubrs");
+    // Semicolon separated, quoted fields with a comma and a newline.
+    let csv = out.join("people.csv");
+    std::fs::write(
+        &csv,
+        "\u{feff}Name;City\nAnn Lee;Oslo\n\"Kim; Bo\";\"Rome\nItaly\"\nCy Fox;Paris\n",
+    )
+    .unwrap();
+
+    let pdf = out.join("merged.pdf");
+    let r = bin()
+        .args(["merge"])
+        .arg(&design)
+        .arg("--data")
+        .arg(&csv)
+        .arg("-o")
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let say = String::from_utf8_lossy(&r.stdout);
+    assert!(
+        say.contains("3 records") && say.contains("3 pages"),
+        "{say}"
+    );
+    let bytes = std::fs::read(&pdf).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    let publication = out.join("merged.pubrs");
+    let r = bin()
+        .args(["merge"])
+        .arg(&design)
+        .arg("--data")
+        .arg(&csv)
+        .args(["--as", "publication", "-o"])
+        .arg(&publication)
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let v = bin()
+        .args(["validate", "--json"])
+        .arg(&publication)
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&v.stdout).unwrap();
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w["code"] != "merge_field_missing" && w["code"] != "overflow"),
+        "{report}"
+    );
+    let render = bin()
+        .args(["render", "--dpi", "36", "--page", "3", "-o"])
+        .arg(out.join("p3.png"))
+        .arg(&publication)
+        .status()
+        .unwrap();
+    assert!(render.success(), "the publication has a third page");
+
+    // No data anywhere: an error with a hint, and a non-zero exit.
+    let r = bin().args(["merge"]).arg(&design).output().unwrap();
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stderr).contains("merge_set_source"));
+}
+
+/// The address_labels template merged with 30 records: one 5160 sheet.
+#[test]
+fn merge_address_labels_template_gives_thirty_labels_on_one_sheet() {
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("cli-labels");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let script = out.join("labels.json");
+    std::fs::write(
+        &script,
+        r#"[
+  {"tool": "template_apply", "args": {"name": "address_labels"}},
+  {"tool": "doc_save_as", "args": {"path": "${out_dir}/labels.pubrs"}}
+]"#,
+    )
+    .unwrap();
+    assert!(
+        bin()
+            .arg("script")
+            .arg(&script)
+            .arg("--out")
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let mut csv = String::from("Name,Address,City,State,Zip\n");
+    for i in 1..=30 {
+        csv.push_str(&format!(
+            "Person {i},{i} Main St,Town {i},TX,{}\n",
+            75000 + i
+        ));
+    }
+    let list = out.join("list.csv");
+    std::fs::write(&list, csv).unwrap();
+    let pdf = out.join("labels.pdf");
+    let r = bin()
+        .arg("merge")
+        .arg(out.join("labels.pubrs"))
+        .arg("--data")
+        .arg(&list)
+        .arg("-o")
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let say = String::from_utf8_lossy(&r.stdout);
+    assert!(
+        say.contains("30 records") && say.contains("1 pages"),
+        "{say}"
+    );
+}

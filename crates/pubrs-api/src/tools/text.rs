@@ -438,7 +438,7 @@ pub struct TextSetFrameOptions {
 }
 
 impl Session {
-    fn text_out(&mut self, story: StoryId, change: Changed) -> ApiResult<TextChangeOut> {
+    pub(crate) fn text_out(&mut self, story: StoryId, change: Changed) -> ApiResult<TextChangeOut> {
         let layout = self.layout(Some(change.doc_id))?;
         let doc = self.get(Some(change.doc_id))?.doc();
         Ok(TextChangeOut {

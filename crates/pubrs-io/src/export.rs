@@ -21,6 +21,8 @@ pub enum ExportError {
     Render(#[from] RenderError),
     #[error("PDF export failed: {0}")]
     Pdf(String),
+    #[error("{0}")]
+    Merge(#[from] pubrs_core::merge::MergeError),
 }
 
 impl ExportError {
@@ -28,6 +30,7 @@ impl ExportError {
         match self {
             ExportError::NoSuchPage(..) => "not_found",
             ExportError::Render(RenderError::TooLarge(..)) => "invalid_argument",
+            ExportError::Merge(_) => "merge_failed",
             _ => "export_failed",
         }
     }
@@ -115,6 +118,45 @@ impl ExportContext {
     ) -> Result<Vec<u8>, ExportError> {
         // Sheets and booklets are imposed by default; `flat` opts out.
         let scenes = self.output_scenes(doc, layout, !opts.flat)?;
+        let mut opts = opts.clone();
+        if opts.title.is_none() && !doc.meta.title.is_empty() {
+            opts.title = Some(doc.meta.title.clone());
+        }
+        if opts.author.is_none() && !doc.meta.author.is_empty() {
+            opts.author = Some(doc.meta.author.clone());
+        }
+        if opts.tagged && opts.alt_text.is_empty() {
+            opts.alt_text = alt_texts(doc);
+        }
+        render_pdf(&scenes, &self.images, &opts).map_err(|e| ExportError::Pdf(e.to_string()))
+    }
+
+    /// Merge to PDF: the pages of `doc` once per record of its merge data,
+    /// in record order, each laid out with that record previewed (so fields
+    /// show its values). Sheets and booklets are imposed over the whole
+    /// run: on a `Sequence` sheet every record is one label, on a `Repeat`
+    /// sheet every record is its own sheet (ADR 0023). Stories without
+    /// fields come from the layout cache and are shaped once.
+    pub fn export_merged_pdf(
+        &mut self,
+        doc: &Document,
+        opts: &PdfOptions,
+    ) -> Result<Vec<u8>, ExportError> {
+        let data = pubrs_core::merge::merge_data(doc)?.clone();
+        self.images.sync(doc);
+        let mut cache = pubrs_layout::StoryLayoutCache::new();
+        let mut scenes: Vec<PageScene> = Vec::with_capacity(doc.pages.len() * data.record_count());
+        for rec in 0..data.record_count() {
+            let mut d = doc.clone();
+            d.merge = Some(pubrs_core::merge::previewing(&data, rec));
+            let layout = cache.layout(&mut self.layouter, &d);
+            scenes.extend((0..d.pages.len()).filter_map(|i| build_page_scene(&d, &layout, i)));
+        }
+        let scenes = if opts.flat {
+            scenes
+        } else {
+            impose(&scenes, &doc.setup).map_err(|e| ExportError::Pdf(e.to_string()))?
+        };
         let mut opts = opts.clone();
         if opts.title.is_none() && !doc.meta.title.is_empty() {
             opts.title = Some(doc.meta.title.clone());

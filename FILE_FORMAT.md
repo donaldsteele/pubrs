@@ -23,7 +23,7 @@ Top-level object:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | integer | Currently `7`. Older versions are migrated on load. Newer versions are rejected. |
+| `schema_version` | integer | Currently `12`. Older versions are migrated on load. Newer versions are rejected. |
 | `id` | uuid | Document id. |
 | `meta` | object | `title`, `author`, optional `template`. |
 | `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points); optional `sheet` (see below) and `booklet` (bool, omitted when false). |
@@ -36,6 +36,7 @@ Top-level object:
 | `assets` | object | Asset id → `{id, name, format, pixel_width, pixel_height}`. |
 | `swatches` | array | Optional (omitted when empty). Named colours: `{id, name, value}` (version 4). |
 | `scheme` | string | Optional. Id of the colour scheme last applied (version 4). |
+| `merge` | object | Optional. The mail-merge data snapshot: `source_name`, `kind` (`csv`|`xlsx`), optional `sheet`, `fields`, `records`, `preview_index`, `preview` (version 12; see below). |
 
 Units are points (1/72 inch). Coordinates have their origin at the top-left
 of the page trim box, x to the right, y down. Colours are `#RRGGBB` or
@@ -87,7 +88,8 @@ Run text may contain the column, frame and page break characters (see below).
 Run objects may carry
 `style` (character style id) and overrides `font_family`, `font_size`, `bold`,
 `italic`, `underline`, `color`, `letter_spacing`, `baseline`, `caps`, `strikethrough`,
-`ligatures`, `kerning` (the last five are described below).
+`ligatures`, `kerning` (the last five are described below) and `field` (a merge
+field, see below).
 
 ### Style
 
@@ -122,6 +124,7 @@ version.
 | 9 | `type: "word_art"` frame content, and the frame style fields `shadow` and `border_art`. All are optional and omitted when unset, so older files are valid version 9 files; migration only stamps the version (ADR 0020). |
 | 10 | Wrap modes `tight` and `through`, and `wrap.both_sides` on frames. All optional (`both_sides` is omitted when false), so older files are valid version 9 files; migration only stamps the version. |
 | 11 | `type: "table"` frame content (`cols`, `rows`, `cells`; cell text is stories whose chain is the table frame). A new variant, so older files hold none; migration only stamps the version (ADR 0024). |
+| 12 | `merge` (the mail-merge data snapshot) and the run field `field` (a merge field). Both are optional and omitted when unset, so older files are valid version 12 files; migration only stamps the version (ADR 0023). |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -324,3 +327,35 @@ stored: a row is as tall as its tallest cell, at least `min_height`, and rows
 stop at the frame's bottom.
 
 See ADR 0024.
+
+### Mail merge (version 12)
+
+Two optional additions. **Absent means the version 11 document, unchanged.**
+
+- A **merge field** is one U+FFFC (object replacement) character in a run of
+  its own, whose object carries `field`, the name of a column of the data:
+  `{"text": "\ufffc", "field": "Name", "bold": true}`. The run keeps the
+  formatting of the text around it. Story offsets stay in characters, so a
+  field counts as exactly one character everywhere (carets, selections, find,
+  spelling). Field runs are never merged with their neighbours or with each
+  other. A U+FFFC in a run without `field` is just a character.
+- `merge` is the data, copied into the document so it reopens without the
+  file it came from:
+
+  ```json
+  {"source_name": "guests.csv", "kind": "csv",
+   "fields": ["First", "City"],
+   "records": [["Ann", "Oslo"], ["Bo", "Rome"]],
+   "preview_index": 1, "preview": true}
+  ```
+
+  `kind` is `csv` or `xlsx` (then `sheet` names the sheet read). `fields` are
+  the header row (blank names become `Column N`, repeats get ` 2`, ` 3`);
+  every record has exactly one cell per field. Limits: 100,000 records,
+  1 MB per cell, 512 fields. `preview_index` is the record fields show while
+  `preview` is true (clamped to the data); with `preview` false fields show
+  as {ab}Name{bb}.
+
+The text a field shows is a display matter: the story keeps the U+FFFC. An
+empty value takes one adjacent space with it (the one after the field, else
+the one before). The path a list was read from is not stored. See ADR 0023.

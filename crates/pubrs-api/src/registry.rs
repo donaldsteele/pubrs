@@ -8,9 +8,10 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
+use crate::tools::text::TextChangeOut;
 use crate::tools::{
-    color, doc, export, find, frames, history, images, import, pages, query, sheets, spell, styles,
-    tables, templates, text, wordart,
+    color, doc, export, find, frames, history, images, import, merge, pages, query, sheets, spell,
+    styles, tables, templates, text, wordart,
 };
 
 /// One tool.
@@ -306,6 +307,19 @@ pub static TOOLS: &[ToolDef] = &[
         "Print the document as a label or card sheet: PDF export and print put the page N-up on the sheet. Give a preset id from sheet_presets_list or a custom grid (points); omit both to clear. fill: repeat (the page in every cell, default) or sequence (one page per label, in order). The page size must equal the label size, otherwise the call is refused with a hint."),
     tool!("doc_set_booklet", "Labels", doc_set_booklet, sheets::DocSetBooklet => Changed, ro = false, destructive = false, image = None,
         "Print the document as a saddle-stitched booklet: pages are padded to a multiple of 4, reordered and put 2-up on sheets twice the page width (front and back are separate PDF pages). Not combinable with a label sheet."),
+    // ---------------------------------------------------------------- mail merge
+    tool!("merge_set_source", "Merge", merge_set_source, merge::MergeSetSource => merge::MergeSourceOut, ro = false, destructive = false, image = None,
+        "Load the mail-merge data into the document (replacing any earlier data): a CSV or XLSX file by path, or CSV text as inline_csv. CSV is UTF-8 (a BOM is fine), comma or semicolon separated, with quoted fields; XLSX reads the first sheet or the one named in sheet (cells as displayed, dates as ISO). The first row names the fields. The data is stored in the document, so it reopens without the file; refresh: true reads the last file again. Limits: 100000 records, 1 MB per cell, 512 fields, 5000000 cells, 64 MiB per file."),
+    tool!("merge_fields_list", "Merge", merge_fields_list, merge::MergeFieldsList => merge::MergeFieldsOut, ro = true, destructive = false, image = None,
+        "List the merge fields of the loaded data with the previewed record's value and how often the document uses each, the record count, the preview record and switch, and the field names the document uses that the data lacks."),
+    tool!("merge_insert_field", "Merge", merge_insert_field, merge::MergeInsertField => TextChangeOut, ro = false, destructive = false, image = None,
+        "Insert a merge field (one placeholder character that counts as one character in offsets) into a text frame or story at an offset (default: the end). It shows as «Name», or as the previewed record's value after merge_preview. It takes the formatting of the text before it. When data is loaded the field must be one of its fields."),
+    tool!("merge_preview", "Merge", merge_preview, merge::MergePreview => merge::MergePreviewOut, ro = false, destructive = false, image = None,
+        "Choose which record (0-based index) the fields show and switch the preview on or off (off shows «Field» names). Render with render_preview to look at it. An empty value collapses one adjacent space (the one after the field, else the one before)."),
+    tool!("merge_export", "Merge", merge_export, merge::MergeExport => merge::MergeExportOut, ro = true, destructive = false, image = None,
+        "Run the merge: format pdf (one PDF with the pages once per record) or publication (a new .pubrs with the pages once per record and the fields replaced by text; open: true also opens it). On a label sheet (doc_set_sheet) a sequence sheet gets one record per label, a repeat sheet one sheet per record. Writes to path, or returns base64 when no path is given. Fails with a hint when there is no data, no records or no fields."),
+    tool!("merge_clear", "Merge", merge_clear, merge::MergeClear => Changed, ro = false, destructive = true, image = None,
+        "Remove the merge data from the document. Requires confirm: true. Fields already in the text stay and show as «Name»."),
     // ---------------------------------------------------------------- export
     tool!("export_pdf", "Export", export_pdf, export::ExportPdf => export::ExportPdfOut, ro = true, destructive = false, image = None,
         "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed), standard none|pdfx4|pdfa2b (pdfx4 = commercial printing: PDF 1.6, CMYK output intent, checked before it is returned; pdfa2b = archive), output_intent_icc (path of a CMYK output profile for pdfx4), tagged (tagged PDF with image alt text). CMYK and spot swatches are written as DeviceCMYK and Separation colours. Writes to path, or returns base64 when no path is given."),
@@ -326,7 +340,7 @@ pub static TOOLS: &[ToolDef] = &[
     tool!("doc_to_json", "Query", doc_to_json, doc::DocRef => query::DocToJsonOut, ro = true, destructive = false, image = None,
         "Return the complete document model as JSON (pages, frames, stories, styles, asset metadata). This is the document.json stored in .pubrs files."),
     tool!("validate", "Query", validate, query::ValidateIn => query::ValidateOut, ro = true, destructive = false, image = None,
-        "Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge."),
+        "Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), merge_field_missing (a field that names a column the loaded merge data lacks), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge."),
     tool!("fonts_list", "Query", fonts_list, doc::DocRef => query::FontsListOut, ro = true, destructive = false, image = None,
         "List available font families (bundled ones are always available and embed in PDFs)."),
 ];

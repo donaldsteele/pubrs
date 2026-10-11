@@ -86,6 +86,7 @@ impl RunFormat {
             text: text.to_string(),
             style: self.style,
             props: self.props.clone(),
+            field: None,
         }
     }
 }
@@ -231,6 +232,21 @@ impl Story {
         self.paragraphs[last].runs.extend(tail);
         normalize_paragraph(&mut self.paragraphs[pi]);
         normalize_paragraph(&mut self.paragraphs[last]);
+    }
+
+    /// Insert a merge field at `at`: one U+FFFC character in a run of its own,
+    /// formatted like the text before it.
+    pub fn insert_field(&mut self, at: usize, name: &str) {
+        if self.paragraphs.is_empty() {
+            self.paragraphs.push(Paragraph::default());
+        }
+        let fmt = self.format_at(at);
+        let (pi, c) = self.locate(at);
+        let i = split_at(&mut self.paragraphs[pi], c);
+        self.paragraphs[pi]
+            .runs
+            .insert(i, Run::field(name, fmt.style, fmt.props));
+        normalize_paragraph(&mut self.paragraphs[pi]);
     }
 
     /// Delete the characters in `start..end`. Joining paragraphs keeps the

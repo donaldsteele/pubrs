@@ -13,6 +13,7 @@ pub mod command;
 pub mod geom;
 pub mod history;
 pub mod id;
+pub mod merge;
 pub mod model;
 pub mod patch;
 pub mod snap;

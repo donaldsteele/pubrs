@@ -18,7 +18,7 @@ use crate::swatch::{Paint, SchemeId, Swatch};
 pub use crate::table::{Cell, CellStyle, Row, TableFrame};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -60,6 +60,43 @@ pub struct Document {
     /// The colour scheme last applied, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheme: Option<SchemeId>,
+    /// Mail-merge data snapshotted from a CSV or XLSX file, so the
+    /// document reopens without the source (ADR 0023).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge: Option<MergeSource>,
+}
+
+/// Where the merge data came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MergeKind {
+    Csv,
+    Xlsx,
+}
+
+/// The merge data: a header row and the records, plus the preview state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MergeSource {
+    /// File name the data was read from (display only; "inline" for data
+    /// passed as text).
+    pub source_name: String,
+    pub kind: MergeKind,
+    /// The sheet read from an XLSX file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<String>,
+    /// Field names: the header row, in column order.
+    pub fields: Vec<String>,
+    /// One row per record; every row has exactly `fields.len()` cells.
+    /// Shared, so document clones stay cheap.
+    pub records: Arc<Vec<Vec<String>>>,
+    /// The record fields show while `preview` is on (clamped to the data).
+    #[serde(default)]
+    pub preview_index: usize,
+    /// Show the previewed record's values instead of the «Field» names.
+    #[serde(default)]
+    pub preview: bool,
 }
 
 fn swatches_empty(s: &Arc<Vec<Swatch>>) -> bool {
@@ -1011,7 +1048,14 @@ pub struct Run {
     /// Local character overrides.
     #[serde(flatten)]
     pub props: CharProps,
+    /// A merge field: the run is exactly one U+FFFC character and this is
+    /// the field's name. Field runs are never merged with their neighbours.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
+
+/// The character that stands for a merge field in story text.
+pub const FIELD_CHAR: char = '\u{FFFC}';
 
 impl Run {
     pub fn plain(text: &str) -> Self {
@@ -1019,12 +1063,27 @@ impl Run {
             text: text.to_string(),
             style: None,
             props: CharProps::default(),
+            field: None,
         }
     }
 
-    /// Same formatting as `other` (ignoring text).
+    /// A merge field run with the given character format.
+    pub fn field(name: &str, style: Option<StyleId>, props: CharProps) -> Self {
+        Self {
+            text: FIELD_CHAR.to_string(),
+            style,
+            props,
+            field: Some(name.to_string()),
+        }
+    }
+
+    /// Same formatting as `other` (ignoring text). A merge field is never
+    /// the same format as anything, so it is never merged into a run.
     pub fn same_format(&self, other: &Run) -> bool {
-        self.style == other.style && self.props == other.props
+        self.field.is_none()
+            && other.field.is_none()
+            && self.style == other.style
+            && self.props == other.props
     }
 }
 
@@ -1088,6 +1147,7 @@ impl Document {
             blobs: BTreeMap::new(),
             swatches: Arc::default(),
             scheme: None,
+            merge: None,
         }
     }
 

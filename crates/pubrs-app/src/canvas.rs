@@ -474,6 +474,27 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     ui.visuals().error_fg_color,
                 );
             }
+            // ---- merge fields: a faint tint behind each field
+            if let Some(layout) = &layout {
+                let mut seen = std::collections::BTreeSet::new();
+                for fid in doc.all_frames_of(owner) {
+                    let Some(sid) = doc.story_of(fid) else {
+                        continue;
+                    };
+                    if !seen.insert(sid) {
+                        continue;
+                    }
+                    for q in
+                        textedit::field_quads(doc, layout, sid, |f| doc.owner_of(f) == Some(owner))
+                    {
+                        painter.add(quad(
+                            q.map(|p| xf.to_screen(p)),
+                            Color32::from_rgba_unmultiplied(245, 158, 11, 46),
+                            Stroke::NONE,
+                        ));
+                    }
+                }
+            }
             // ---- text editing overlays
             let edit = app.view().and_then(|v| v.edit.clone());
             if let (Some(e), Some(layout)) = (&edit, &layout) {
@@ -1951,4 +1972,38 @@ fn tab_key(app: &mut PubrsApp, doc: &Document, e: &TextEdit, m: egui::Modifiers)
     if !m.shift {
         edit_insert(app, e, "\t");
     }
+}
+
+/// Insert the merge field `name` at the caret of `e`, replacing a selection,
+/// as one undo step. The caret moves after the field (one caret unit).
+pub fn edit_insert_field(app: &mut PubrsApp, e: &TextEdit, name: &str) -> bool {
+    let (s, t) = e.range();
+    let insert = Command::InsertMergeField {
+        story: e.story,
+        at: s,
+        field: name.to_string(),
+    };
+    let ok = if s != t {
+        app.exec(Command::Batch {
+            label: "insert merge field".into(),
+            commands: vec![
+                Command::DeleteText {
+                    story: e.story,
+                    start: s,
+                    end: t,
+                },
+                insert,
+            ],
+        })
+    } else {
+        app.exec(insert)
+    };
+    if ok
+        && let Some(v) = app.view_mut()
+        && let Some(ed) = &mut v.edit
+    {
+        ed.set(s + 1, false);
+        ed.goal_x = None;
+    }
+    ok
 }

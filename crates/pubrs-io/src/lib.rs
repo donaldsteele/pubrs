@@ -6,6 +6,7 @@ pub mod error;
 pub mod export;
 pub mod format;
 pub mod images;
+pub mod merge_source;
 pub mod migrate;
 pub mod presets;
 pub mod pubfile;

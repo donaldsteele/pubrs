@@ -412,7 +412,7 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
 fn ensure_current_fixture() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let fixtures: [(u32, Document); 10] = [
+        let fixtures: [(u32, Document); 11] = [
             (2, sheet_document()),
             (3, hyphenation_document()),
             (4, common::colour_document()),
@@ -423,6 +423,7 @@ fn ensure_current_fixture() {
             (9, effects_document()),
             (10, wrap_document()),
             (11, table_document()),
+            (12, merge_document()),
         ];
         for (v, doc) in &fixtures {
             let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -462,7 +463,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 11, "expected the schema_v1 to v11 fixtures");
+    assert!(n >= 12, "expected the schema_v1 to v12 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -608,6 +609,89 @@ fn schema_9_fixture_keeps_wordart_shadows_and_border_art() {
     // Older files never mention the new fields.
     let json = serde_json::to_string(&paragraph_controls_document()).unwrap();
     assert!(!json.contains("shadow") && !json.contains("border_art") && !json.contains("word_art"));
+}
+
+/// The schema 12 fixture: merge data (with an empty cell and a quoted
+/// newline), field runs, and the preview state.
+#[test]
+fn schema_12_fixture_keeps_merge_data_and_fields() {
+    ensure_current_fixture();
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v12.pubrs")).unwrap();
+    let m = doc.merge.as_ref().expect("merge data");
+    assert_eq!(
+        (m.source_name.as_str(), m.kind),
+        ("guests.csv", MergeKind::Csv)
+    );
+    assert_eq!(m.fields, ["First", "Last", "City"]);
+    assert_eq!(m.record_count(), 3);
+    assert_eq!(m.records[1], ["Bo", "", "Rome\nItaly"]);
+    assert_eq!((m.preview, m.preview_index), (true, 1));
+    let story = doc.stories.values().next().unwrap();
+    let names: Vec<_> = story
+        .paragraphs
+        .iter()
+        .flat_map(|p| p.runs.iter())
+        .filter_map(|r| r.field.as_deref())
+        .collect();
+    assert_eq!(names, ["First", "Last", "City"]);
+    assert!(
+        story
+            .paragraphs
+            .iter()
+            .flat_map(|p| p.runs.iter())
+            .filter(|r| r.field.is_some())
+            .all(|r| r.text == "\u{fffc}")
+    );
+    // Older files never mention the new fields.
+    let json = serde_json::to_string(&effects_document()).unwrap();
+    assert!(!json.contains("\"merge\"") && !json.contains("\"field\""));
+}
+
+/// The document `tests/fixtures/schema_v12.pubrs` is written from.
+fn merge_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(2401), PageSetup::default());
+    let p = b.page(0);
+    let f = b.text(p, Rect::new(72.0, 72.0, 300.0, 120.0), "").unwrap();
+    let s = b.story_of(f);
+    let bold = CharProps {
+        bold: Some(true),
+        ..Default::default()
+    };
+    b.exec(Command::SetStory {
+        story: s,
+        paragraphs: vec![
+            Paragraph {
+                style: None,
+                props: ParaProps::default(),
+                runs: vec![
+                    Run::plain("Dear "),
+                    Run::field("First", None, bold),
+                    Run::plain(" "),
+                    Run::field("Last", None, CharProps::default()),
+                    Run::plain(","),
+                ],
+            },
+            Paragraph {
+                style: None,
+                props: ParaProps::default(),
+                runs: vec![
+                    Run::plain("Welcome to "),
+                    Run::field("City", None, CharProps::default()),
+                    Run::plain("."),
+                ],
+            },
+        ],
+    })
+    .unwrap();
+    let mut m = pubrs_io::merge_source::parse_csv(
+        "First,Last,City\nAnn,Lee,Oslo\nBo,,\"Rome\nItaly\"\nCy,Fox,Paris\n",
+    )
+    .map(|t| MergeSource::new("guests.csv", MergeKind::Csv, None, t.fields, t.records))
+    .unwrap();
+    m.preview = true;
+    m.preview_index = 1;
+    b.exec(Command::SetMergeSource { merge: Some(m) }).unwrap();
+    b.finish()
 }
 
 /// The document `tests/fixtures/schema_v8.pubrs` is written from.

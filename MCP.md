@@ -105,6 +105,8 @@ the MCP boundary.
 | `make_business_card` | `name`, `job_title`, `company`, `contact`, `logo` | Business card from `business_card`. |
 | `make_newsletter` | `topic`, `audience`, `details`, `images` | Four-page newsletter from `newsletter`: placeholders, the two tables (`table_set_cell_text`), the bulleted and numbered lists, images with alt text. |
 | `make_greeting_card` | `occasion`, `recipient`, `message`, `images` | Quarter-fold card from `greeting_card`, including its rotated inside spread. |
+| `make_mail_merge` | `piece`, `data`, `sheet`, `details` | Merge a CSV or XLSX list into a letter or card: `merge_set_source`, fields, preview, one page per record. |
+| `make_labels` | `data`, `preset`, `sheet`, `lines` | Address labels from a list on a label sheet, one record per label. |
 
 Each prompt ends with the same checks: `text_overflow_status` clean,
 `validate` ok, `render_preview` of every page, then `doc_save_as` and
@@ -366,7 +368,7 @@ Result:
 
 ```json
 {
-  "bytes": 163992,
+  "bytes": 163990,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
   "revision": 92
@@ -401,7 +403,7 @@ Result:
 
 ```json
 {
-  "bytes": 163992,
+  "bytes": 163990,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
   "revision": 92
@@ -5877,6 +5879,377 @@ Result:
 }
 ```
 
+## Merge
+
+### `merge_set_source`
+
+Load the mail-merge data into the document (replacing any earlier data): a CSV or XLSX file by path, or CSV text as inline_csv. CSV is UTF-8 (a BOM is fine), comma or semicolon separated, with quoted fields; XLSX reads the first sheet or the one named in sheet (cells as displayed, dates as ISO). The first row names the fields. The data is stored in the document, so it reopens without the file; refresh: true reads the last file again. Limits: 100000 records, 1 MB per cell, 512 fields, 5000000 cells, 64 MiB per file.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `inline_csv` | string |  | CSV text instead of a file. |
+| `path` | string |  | A .csv or .xlsx file. CSV is UTF-8 (BOM allowed), comma or semicolon separated, the first row names the fields. |
+| `refresh` | boolean |  | Read the file given earlier again (Refresh data): the preview record and switch are kept. Needs no path. |
+| `sheet` | string |  | The sheet of an .xlsx file (default: the first). |
+
+**Result fields:** `affected_ids`, `doc_id`, `fields`, `kind`, `record_count`, `revision`, `sheet`, `sheets`, `source_name`
+
+**Example** — A path reads a .csv or .xlsx file (xlsx: sheet names one sheet, the first by default).
+
+```json
+{
+  "arguments": {
+    "path": "no-such-guests.csv"
+  },
+  "name": "merge_set_source"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "file_not_found",
+  "hint": "check the path and that the file is readable",
+  "message": "cannot read <output_dir>/no-such-guests.csv: No such file or directory (os error 2)"
+}
+```
+
+**Example** — Inline CSV text. The data is stored in the document, so it reopens without the file. The first row names the fields.
+
+```json
+{
+  "arguments": {
+    "inline_csv": "First,City\nAnn,Oslo\nBo,Rome\nCy,\n"
+  },
+  "name": "merge_set_source"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "fields": [
+    "First",
+    "City"
+  ],
+  "kind": "csv",
+  "record_count": 3,
+  "revision": 3,
+  "source_name": "inline"
+}
+```
+
+### `merge_fields_list`
+
+List the merge fields of the loaded data with the previewed record's value and how often the document uses each, the record count, the preview record and switch, and the field names the document uses that the data lacks.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+
+**Result fields:** `fields`, `has_data`, `missing`, `preview`, `preview_index`, `record_count`, `source_name`
+
+**Example** — Fields with the previewed record's value and how often the text uses each.
+
+```json
+{
+  "arguments": {},
+  "name": "merge_fields_list"
+}
+```
+
+Result:
+
+```json
+{
+  "fields": [
+    {
+      "name": "First",
+      "uses": 1,
+      "value": "Ann"
+    },
+    {
+      "name": "City",
+      "uses": 1,
+      "value": "Oslo"
+    }
+  ],
+  "has_data": true,
+  "missing": [],
+  "preview": false,
+  "preview_index": 0,
+  "record_count": 3,
+  "source_name": "inline"
+}
+```
+
+### `merge_insert_field`
+
+Insert a merge field (one placeholder character that counts as one character in offsets) into a text frame or story at an offset (default: the end). It shows as «Name», or as the previewed record's value after merge_preview. It takes the formatting of the text before it. When data is loaded the field must be one of its fields.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `field` | string | yes | A field name from merge_fields_list. |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `offset` | integer |  | Character offset (0 = start). Omit to append at the end. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example** — A field is one character in offsets. It shows as «First» until the preview is on.
+
+```json
+{
+  "arguments": {
+    "field": "First",
+    "frame_id": "00000000-0000-87ea-8000-000000000080",
+    "offset": 5
+  },
+  "name": "merge_insert_field"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000081"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "length": 20,
+  "overflowing": false,
+  "revision": 4,
+  "story_id": "00000000-0000-87ea-8000-000000000081"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "field": "City",
+    "frame_id": "00000000-0000-87ea-8000-000000000080",
+    "offset": 19
+  },
+  "name": "merge_insert_field"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000081"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "length": 21,
+  "overflowing": false,
+  "revision": 5,
+  "story_id": "00000000-0000-87ea-8000-000000000081"
+}
+```
+
+### `merge_preview`
+
+Choose which record (0-based index) the fields show and switch the preview on or off (off shows «Field» names). Render with render_preview to look at it. An empty value collapses one adjacent space (the one after the field, else the one before).
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `index` | integer |  | 0-based record to show. |
+| `on` | boolean |  | Show the record's values (true) or the «Field» names (false). |
+
+**Result fields:** `affected_ids`, `doc_id`, `index`, `preview`, `record_count`, `revision`
+
+**Example** — Record 1 (Bo, Rome) is shown in place of the field names.
+
+```json
+{
+  "arguments": {
+    "index": 1,
+    "on": true
+  },
+  "name": "merge_preview"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "index": 1,
+  "preview": true,
+  "record_count": 3,
+  "revision": 6
+}
+```
+
+**Example** — The data has 3 records.
+
+```json
+{
+  "arguments": {
+    "index": 9
+  },
+  "name": "merge_preview"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "check the argument ranges in the tool's input schema",
+  "message": "invalid argument: record 9 does not exist (the data has 3 records)"
+}
+```
+
+### `merge_export`
+
+Run the merge: format pdf (one PDF with the pages once per record) or publication (a new .pubrs with the pages once per record and the fields replaced by text; open: true also opens it). On a label sheet (doc_set_sheet) a sequence sheet gets one record per label, a repeat sheet one sheet per record. Writes to path, or returns base64 when no path is given. Fails with a hint when there is no data, no records or no fields.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bleed` | boolean |  | pdf only: include the document's bleed (default: when it has bleed). |
+| `crop_marks` | boolean |  | pdf only: add crop marks (default false). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `font_embedding` | "subset" \| "outlines" |  | pdf only: subset (default) or outlines. |
+| `format` | "pdf" \| "publication" |  | What a merge produces. |
+| `impose` | boolean |  | pdf only: impose onto the label sheet or booklet (default true). On a sequence label sheet every record is one label; on a repeat sheet every record is a sheet. |
+| `open` | boolean |  | publication only: also open the result as a new document. |
+| `path` | string |  | Output file path. Without a path the file is returned as base64. |
+| `return_base64` | boolean |  | Also return the bytes as base64 when a path is given. |
+
+**Result fields:** `base64`, `bytes`, `doc_id`, `format`, `opened_doc_id`, `page_count`, `path`, `record_count`, `revision`
+
+**Example** — No data is loaded yet: the merge is refused with a hint to call merge_set_source.
+
+```json
+{
+  "arguments": {
+    "format": "pdf"
+  },
+  "name": "merge_export"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "load data with merge_set_source (a CSV or XLSX file) first",
+  "message": "the document has no merge data"
+}
+```
+
+**Example** — One page per record: page_count is 3. Cy has no city: the empty field takes the space before it, so that page reads "welcome to.".
+
+```json
+{
+  "arguments": {
+    "format": "pdf",
+    "path": "postcards.pdf"
+  },
+  "name": "merge_export"
+}
+```
+
+Result:
+
+```json
+{
+  "bytes": 10813,
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "format": "pdf",
+  "page_count": 3,
+  "path": "<output_dir>/postcards.pdf",
+  "record_count": 3,
+  "revision": 6
+}
+```
+
+### `merge_clear`
+
+Remove the merge data from the document. Requires confirm: true. Fields already in the text stay and show as «Name».
+
+_destructive (needs `confirm: true`)_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `confirm` | boolean |  | Must be true: removes the merge data (fields in the text stay). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — Removing the data needs confirm: true.
+
+```json
+{
+  "arguments": {},
+  "name": "merge_clear"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "confirmation_required",
+  "hint": "repeat the call with \"confirm\": true",
+  "message": "removing the merge data is destructive"
+}
+```
+
+**Example** — The fields stay in the text and show as «Name» again.
+
+```json
+{
+  "arguments": {
+    "confirm": true
+  },
+  "name": "merge_clear"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-000000000082",
+  "revision": 0
+}
+```
+
 ## Export
 
 ### `export_pdf`
@@ -5985,7 +6358,7 @@ Result:
 
 ```json
 {
-  "bytes": 711493,
+  "bytes": 711491,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -6082,6 +6455,29 @@ Result:
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA42klEQVR4nO2d… (19484 characters)",
   "revision": 92,
   "width": 249
+}
+```
+
+**Example** — The page as the previewed record merges.
+
+```json
+{
+  "arguments": {},
+  "name": "render_preview"
+}
+```
+
+Result:
+
+```json
+{
+  "doc_id": "00000000-0000-87ea-8000-00000000007f",
+  "height": 240,
+  "mime_type": "image/png",
+  "page_id": "00000000-0000-87ea-8000-000000000077",
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAWgAAADwCAYAAAAtp/5PAAAGy0lEQVR4nO3b… (2396 characters)",
+  "revision": 6,
+  "width": 360
 }
 ```
 
@@ -6400,7 +6796,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 11,
+    "schema_version": 12,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -6585,7 +6981,7 @@ Result:
 
 ### `validate`
 
-Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge.
+Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), merge_field_missing (a field that names a column the loaded merge data lacks), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge.
 
 _read-only_
 

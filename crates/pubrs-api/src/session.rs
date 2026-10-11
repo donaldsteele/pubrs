@@ -50,6 +50,9 @@ pub struct OpenDoc {
     /// What the most recent commands touched, by the revision they made
     /// (newest last), for damage repaint (ADR 0013).
     changes: VecDeque<(u64, Touched)>,
+    /// The file and sheet the merge data was last read from, so "Refresh
+    /// data" can read it again. Not saved with the document.
+    pub merge_path: Option<(PathBuf, Option<String>)>,
 }
 
 /// Commands remembered per document for damage repaint.
@@ -94,6 +97,7 @@ pub fn touched_between(changes: &[(u64, Touched)], from: u64, to: u64) -> Option
         out.assets.extend(&t.assets);
         out.styles |= t.styles;
         out.setup |= t.setup;
+        out.merge |= t.merge;
     }
     if expect != to + 1 {
         return None;
@@ -230,6 +234,7 @@ impl Session {
                 layout: None,
                 stories: StoryLayoutCache::new(),
                 changes: VecDeque::new(),
+                merge_path: None,
             },
         );
         self.order.push(doc_id);

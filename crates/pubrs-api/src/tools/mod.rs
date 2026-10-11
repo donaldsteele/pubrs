@@ -17,6 +17,7 @@ pub mod frames;
 pub mod history;
 pub mod images;
 pub mod import;
+pub mod merge;
 pub mod pages;
 pub mod query;
 pub mod sheets;

@@ -22,6 +22,10 @@ pub trait FileDialogs {
     fn pick_publisher_file(&self) -> Option<PathBuf>;
     fn save_document(&self, suggested_name: &str) -> Option<PathBuf>;
     fn pick_image(&self) -> Option<PathBuf>;
+    /// Choose a mail-merge list (.csv or .xlsx).
+    fn pick_data(&self) -> Option<PathBuf> {
+        None
+    }
     fn save_export(
         &self,
         suggested_name: &str,

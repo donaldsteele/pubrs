@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use pubrs_api::tools::doc::{DocOpen, DocRef, DocSaveAs};
 use pubrs_api::tools::export::{ExportPdf, ExportPng, FontEmbeddingIn};
 use pubrs_api::tools::import::DocImport;
+use pubrs_api::tools::merge::{MergeExport, MergeFormat, MergeSetSource};
 use pubrs_api::tools::query::ValidateIn;
 use pubrs_api::{ScriptFile, Session, SessionConfig, run_script};
 use serde_json::json;
@@ -122,12 +123,35 @@ enum Cmd {
         #[arg(long)]
         check: bool,
     },
+    /// Mail merge: read a CSV or XLSX list and write one page set per record.
+    Merge {
+        /// The .pubrs design, with merge fields in its text.
+        file: PathBuf,
+        /// The data: a .csv or .xlsx file (default: the data stored in the document).
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// The sheet of an .xlsx file (default: the first).
+        #[arg(long)]
+        sheet: Option<String>,
+        /// Output file (default: <file>-merged.pdf or .pubrs).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// What to write: a PDF or a new publication.
+        #[arg(long = "as", value_enum, default_value_t = MergeAs::Pdf)]
+        format: MergeAs,
+    },
     /// List the available tools.
     Tools {
         /// Include input schemas.
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum MergeAs {
+    Pdf,
+    Publication,
 }
 
 fn parse_var(s: &str) -> Result<(String, String), String> {
@@ -303,6 +327,45 @@ fn run(cli: Cli) -> Result<ExitCode> {
             } else {
                 ExitCode::from(1)
             })
+        }
+        Cmd::Merge {
+            file,
+            data,
+            sheet,
+            output,
+            format,
+        } => {
+            open(&mut s, file)?;
+            if let Some(d) = data {
+                api(s.merge_set_source(MergeSetSource {
+                    path: Some(d.display().to_string()),
+                    sheet: sheet.clone(),
+                    ..Default::default()
+                }))?;
+            } else if sheet.is_some() {
+                bail!("--sheet needs --data");
+            }
+            let (ext, fmt) = match format {
+                MergeAs::Pdf => ("pdf", MergeFormat::Pdf),
+                MergeAs::Publication => ("pubrs", MergeFormat::Publication),
+            };
+            let out = output.clone().unwrap_or_else(|| {
+                let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+                file.with_file_name(format!("{stem}-merged.{ext}"))
+            });
+            let r = api(s.merge_export(MergeExport {
+                format: fmt,
+                path: Some(out.display().to_string()),
+                ..Default::default()
+            }))?;
+            say!(
+                "{} ({} records, {} pages, {} bytes)",
+                out.display(),
+                r.record_count,
+                r.page_count,
+                r.bytes
+            );
+            Ok(ExitCode::SUCCESS)
         }
         Cmd::Script {
             file,

@@ -42,6 +42,10 @@ pub enum Dialog {
     BorderArt(Box<BorderArtState>),
     /// Insert → Table…
     Table(TableState),
+    /// Mailings → Mail Merge…
+    MergeWizard(Box<MergeWizardState>),
+    /// Insert → Merge Field…
+    MergeField(MergeFieldState),
 }
 
 /// The import report as the dialog shows it.
@@ -360,6 +364,8 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         Dialog::WordArt(state) => wordart_ui(app, ui, state),
         Dialog::Table(state) => table_ui(app, ui, state),
         Dialog::BorderArt(state) => border_art_ui(app, ui, state),
+        Dialog::MergeWizard(state) => merge_wizard_ui(app, ui, state),
+        Dialog::MergeField(state) => merge_field_ui(app, ui, state),
         Dialog::Tabs(state) => tabs_ui(app, ui, state),
         Dialog::Lists(state) => list_ui(app, ui, state),
         Dialog::Print(printers, options) => {
@@ -2713,6 +2719,7 @@ impl CharState {
             text: String::new(),
             style: fmt.style,
             props: fmt.props,
+            field: None,
         };
         let a = doc.styles.resolve_char(para, &run);
         let (baseline, shift) = match a.baseline {
@@ -3633,5 +3640,629 @@ fn border_art_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut BorderArtState)
             out = Outcome::Close;
         }
     });
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Mail merge (M24, ADR 0023): Mailings ▸ Mail Merge… and Insert ▸ Merge Field…
+
+use pubrs_api::tools::merge::{MergeExport, MergeFormat, MergeSetSource};
+
+/// The steps of the Mail Merge wizard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeStep {
+    Data,
+    Fields,
+    Preview,
+    Finish,
+}
+
+impl MergeStep {
+    const ALL: [(MergeStep, &'static str); 4] = [
+        (MergeStep::Data, "1  Data"),
+        (MergeStep::Fields, "2  Fields"),
+        (MergeStep::Preview, "3  Preview"),
+        (MergeStep::Finish, "4  Finish"),
+    ];
+
+    fn next(self) -> Option<MergeStep> {
+        let i = Self::ALL.iter().position(|(s, _)| *s == self)?;
+        Self::ALL.get(i + 1).map(|(s, _)| *s)
+    }
+
+    fn previous(self) -> Option<MergeStep> {
+        let i = Self::ALL.iter().position(|(s, _)| *s == self)?;
+        i.checked_sub(1).map(|i| Self::ALL[i].0)
+    }
+}
+
+/// State of the Mail Merge wizard.
+pub struct MergeWizardState {
+    pub step: MergeStep,
+    /// The data file typed or chosen.
+    pub path: String,
+    /// Sheet names of the chosen .xlsx file.
+    pub sheets: Vec<String>,
+    pub sheet: Option<String>,
+    pub selected: usize,
+    pub error: String,
+    focused: bool,
+}
+
+impl MergeWizardState {
+    pub fn new(app: &PubrsApp) -> Self {
+        let remembered = app
+            .doc_id()
+            .and_then(|d| app.session.get(Some(d)).ok())
+            .and_then(|o| o.merge_path.clone());
+        let has_data = app.doc().is_some_and(|d| d.merge.is_some());
+        let mut st = Self {
+            step: if has_data {
+                MergeStep::Fields
+            } else {
+                MergeStep::Data
+            },
+            path: String::new(),
+            sheets: Vec::new(),
+            sheet: None,
+            selected: 0,
+            error: String::new(),
+            focused: false,
+        };
+        if let Some((p, sheet)) = remembered {
+            st.path = p.display().to_string();
+            st.sheet = sheet;
+            st.look_at_file();
+        }
+        st
+    }
+
+    /// Read the sheet names of the typed path.
+    fn look_at_file(&mut self) {
+        self.sheets =
+            pubrs_api::io::merge_source::sheet_names_of(std::path::Path::new(self.path.trim()))
+                .unwrap_or_default();
+        if self
+            .sheet
+            .as_ref()
+            .is_some_and(|s| !self.sheets.contains(s))
+        {
+            self.sheet = None;
+        }
+    }
+
+    /// Load the typed path into the document.
+    fn load(&mut self, app: &mut PubrsApp) -> bool {
+        let r = app.session.merge_set_source(MergeSetSource {
+            doc_id: app.doc_id(),
+            path: Some(self.path.trim().to_string()),
+            sheet: self.sheet.clone(),
+            ..Default::default()
+        });
+        match r {
+            Ok(out) => {
+                self.error.clear();
+                app.notify(format!(
+                    "Loaded {} records with {} fields from {}",
+                    out.record_count,
+                    out.fields.len(),
+                    out.source_name
+                ));
+                self.selected = 0;
+                true
+            }
+            Err(e) => {
+                self.error = format!("{} {}", e.message, e.hint);
+                false
+            }
+        }
+    }
+}
+
+/// What the document's merge data looks like to the dialogs.
+struct MergeInfo {
+    source: String,
+    fields: Vec<(String, String)>,
+    records: usize,
+    index: usize,
+    preview: bool,
+}
+
+fn merge_info(app: &PubrsApp) -> Option<MergeInfo> {
+    let m = app.doc()?.merge.as_ref()?;
+    let idx = m.current_index();
+    Some(MergeInfo {
+        source: match &m.sheet {
+            Some(s) => format!("{} ({s})", m.source_name),
+            None => m.source_name.clone(),
+        },
+        fields: m
+            .fields
+            .iter()
+            .map(|f| (f.clone(), m.value_in(idx, f).unwrap_or("").to_string()))
+            .collect(),
+        records: m.record_count(),
+        index: idx,
+        preview: m.preview,
+    })
+}
+
+/// The caret of the text being edited, if there is one.
+fn merge_caret(app: &PubrsApp) -> Option<crate::textedit::TextEdit> {
+    app.view().and_then(|v| v.edit.clone())
+}
+
+impl PubrsApp {
+    /// Insert the merge field `name` at the caret (replacing a selection)
+    /// in one undo step. Returns whether it was inserted.
+    pub fn insert_merge_field(&mut self, name: &str) -> bool {
+        let Some(e) = merge_caret(self) else {
+            self.notify("Click in a text box first, then insert the field");
+            return false;
+        };
+        crate::canvas::edit_insert_field(self, &e, name)
+    }
+
+    /// Mailings ▸ Refresh Data: read the data file again.
+    pub fn refresh_merge_data(&mut self) {
+        let r = self.session.merge_set_source(MergeSetSource {
+            doc_id: self.doc_id(),
+            refresh: true,
+            ..Default::default()
+        });
+        if let Some(out) = self.report(r) {
+            self.notify(format!(
+                "Refreshed {}: {} records",
+                out.source_name, out.record_count
+            ));
+        }
+    }
+
+    /// Change the previewed record and switch (one undo step while the user
+    /// keeps stepping).
+    pub fn merge_preview(&mut self, index: Option<usize>, on: Option<bool>) {
+        self.exec_merge(
+            pubrs_api::core::Command::SetMergePreview { index, preview: on },
+            "merge-preview",
+        );
+    }
+
+    /// Merge to a PDF file with a page set per record.
+    pub fn merge_to_pdf(&mut self, path: &std::path::Path) -> bool {
+        let r = self.session.merge_export(MergeExport {
+            doc_id: self.doc_id(),
+            format: MergeFormat::Pdf,
+            path: Some(
+                std::path::absolute(path)
+                    .unwrap_or_else(|_| path.to_path_buf())
+                    .display()
+                    .to_string(),
+            ),
+            ..Default::default()
+        });
+        match self.report(r) {
+            Some(out) => {
+                self.notify(format!(
+                    "Merged {} records into {} ({} pages)",
+                    out.record_count,
+                    path.display(),
+                    out.page_count
+                ));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Merge to a new, unsaved publication shown in its own tab.
+    pub fn merge_to_publication(&mut self) -> bool {
+        let Some(doc) = self.doc() else { return false };
+        match pubrs_api::core::merge::merge_to_publication(doc) {
+            Ok(merged) => {
+                let pages = merged.pages.len();
+                let id = self.session.insert(merged, None);
+                self.add_view(id);
+                self.notify(format!("Merged into a new publication of {pages} pages"));
+                true
+            }
+            Err(e) => {
+                self.notify(format!("{e} — {}", e.hint()));
+                false
+            }
+        }
+    }
+
+    /// Merge to a temporary PDF and send it to the printer.
+    pub fn merge_print(&mut self) {
+        let tmp = std::env::temp_dir().join(format!("pubrs-merge-{}.pdf", std::process::id()));
+        if !self.merge_to_pdf(&tmp) {
+            return;
+        }
+        let title = self.doc().map(|d| d.meta.title.clone()).unwrap_or_default();
+        match self
+            .platform
+            .print
+            .print_pdf(&tmp, &title, &PrintOptions::default())
+        {
+            Ok(_) => self.notify("Merged pages sent to the printer"),
+            Err(e) => self.dialog = Some(Dialog::Message("Printing failed".into(), e)),
+        }
+    }
+}
+
+fn merge_wizard_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut MergeWizardState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.set_min_width(460.0);
+    ui.heading("Mail Merge");
+    ui.horizontal(|ui| {
+        for (i, (step, label)) in MergeStep::ALL.iter().enumerate() {
+            let r = ui.selectable_label(st.step == *step, *label);
+            mark(ui, &format!("merge-step-{}", i + 1), &r);
+            if r.clicked() {
+                st.step = *step;
+            }
+        }
+    });
+    ui.separator();
+    let info = merge_info(app);
+    let mut out = Outcome::Keep;
+    match st.step {
+        MergeStep::Data => {
+            ui.label(
+                "Choose the list to merge: a .csv or .xlsx file. The first row names the fields.",
+            );
+            let mut path_enter = false;
+            ui.horizontal(|ui| {
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut st.path)
+                        .id_salt("merge-path")
+                        .hint_text("path of a .csv or .xlsx file")
+                        .desired_width(300.0),
+                );
+                mark(ui, "merge-path", &r);
+                if !st.focused {
+                    r.request_focus();
+                    st.focused = true;
+                }
+                if r.changed() {
+                    st.look_at_file();
+                }
+                path_enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let choose = ui.button("Choose file…");
+                mark(ui, "merge-choose", &choose);
+                if choose.clicked()
+                    && let Some(p) = app.platform.dialogs.pick_data()
+                {
+                    st.path = p.display().to_string();
+                    st.sheet = None;
+                    st.look_at_file();
+                }
+            });
+            if st.sheets.len() > 1 {
+                ui.horizontal(|ui| {
+                    ui.label("Sheet");
+                    let cur = st.sheet.clone().unwrap_or_else(|| st.sheets[0].clone());
+                    let cb = egui::ComboBox::from_id_salt("merge-sheet")
+                        .selected_text(&cur)
+                        .show_ui(ui, |ui| {
+                            for (i, s) in st.sheets.iter().enumerate() {
+                                let r = ui.selectable_label(cur == *s, s);
+                                mark(ui, &format!("merge-sheet-{i}"), &r);
+                                if r.clicked() {
+                                    st.sheet = Some(s.clone());
+                                }
+                            }
+                        });
+                    mark(ui, "merge-sheet", &cb.response);
+                });
+            }
+            ui.horizontal(|ui| {
+                let can = !st.path.trim().is_empty();
+                let load = ui.add_enabled(can, egui::Button::new("Load"));
+                mark(ui, "merge-load", &load);
+                if can && (load.clicked() || path_enter) && st.load(app) {
+                    st.step = MergeStep::Fields;
+                }
+                if info.is_some()
+                    && app
+                        .session
+                        .get(app.doc_id())
+                        .is_ok_and(|o| o.merge_path.is_some())
+                {
+                    let refresh = ui.button("Refresh data");
+                    mark(ui, "merge-refresh", &refresh);
+                    if refresh.clicked() {
+                        app.refresh_merge_data();
+                    }
+                }
+            });
+            if !st.error.is_empty() {
+                ui.colored_label(Color32::DARK_RED, &st.error);
+            }
+            if let Some(i) = &info {
+                ui.add_space(4.0);
+                ui.label(format!(
+                    "Loaded: {} — {} records, {} fields",
+                    i.source,
+                    i.records,
+                    i.fields.len()
+                ));
+            }
+        }
+        MergeStep::Fields => match &info {
+            None => {
+                ui.label("There is no data yet. Choose a file on the Data step.");
+            }
+            Some(i) => {
+                ui.label("Click in the text where the field goes, then choose it here. Fields look like this in the text: «Name».");
+                let caret = merge_caret(app).is_some();
+                let mut insert: Option<String> = None;
+                // Arrow keys move through the list; Enter inserts.
+                let n = i.fields.len();
+                st.selected = st.selected.min(n.saturating_sub(1));
+                if !ui.ctx().text_edit_focused() {
+                    ui.input(|inp| {
+                        if inp.key_pressed(egui::Key::ArrowDown) {
+                            st.selected = (st.selected + 1) % n.max(1);
+                        }
+                        if inp.key_pressed(egui::Key::ArrowUp) {
+                            st.selected = (st.selected + n.max(1) - 1) % n.max(1);
+                        }
+                    });
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(220.0)
+                    .show(ui, |ui| {
+                        for (k, (name, value)) in i.fields.iter().enumerate() {
+                            let text = if value.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{name}    {value}")
+                            };
+                            let r = ui.selectable_label(st.selected == k, text);
+                            mark(ui, &format!("merge-field-{k}"), &r);
+                            if r.clicked() {
+                                st.selected = k;
+                            }
+                            if r.double_clicked() {
+                                insert = Some(name.clone());
+                            }
+                        }
+                    });
+                ui.horizontal(|ui| {
+                    let b = ui.add_enabled(caret, egui::Button::new("Insert at cursor"));
+                    mark(ui, "merge-insert", &b);
+                    let b = if caret {
+                        b
+                    } else {
+                        b.on_disabled_hover_text(
+                            "Close this window, click in a text box, and open it again",
+                        )
+                    };
+                    let enter = ui.input(|inp| inp.key_pressed(egui::Key::Enter));
+                    if (b.clicked() || (enter && caret))
+                        && let Some((name, _)) = i.fields.get(st.selected)
+                    {
+                        insert = Some(name.clone());
+                    }
+                });
+                if !caret {
+                    ui.small("No text cursor: close this window, click in a text box, and open it again.");
+                }
+                if let Some(name) = insert
+                    && app.insert_merge_field(&name)
+                {
+                    app.notify(format!("Inserted the field «{name}»"));
+                }
+            }
+        },
+        MergeStep::Preview => match &info {
+            None => {
+                ui.label("There is no data yet. Choose a file on the Data step.");
+            }
+            Some(i) => {
+                let mut on = i.preview;
+                let c = ui.checkbox(&mut on, "Show the data in the text");
+                mark(ui, "merge-preview-on", &c);
+                if c.changed() {
+                    app.merge_preview(None, Some(on));
+                }
+                ui.horizontal(|ui| {
+                    let last = i.records.saturating_sub(1);
+                    let prev = ui.add_enabled(i.index > 0, egui::Button::new("◀"));
+                    mark(ui, "merge-prev", &prev);
+                    let mut shown = i.index + 1;
+                    let dv = ui.add(
+                        egui::DragValue::new(&mut shown)
+                            .range(1..=i.records.max(1))
+                            .speed(0.2),
+                    );
+                    mark(ui, "merge-index", &dv);
+                    let next = ui.add_enabled(i.index < last, egui::Button::new("▶"));
+                    mark(ui, "merge-next", &next);
+                    ui.label(format!("of {}", i.records));
+                    let arrows = !ui.ctx().text_edit_focused() && !dv.has_focus();
+                    let (left, right) = ui.input(|inp| {
+                        (
+                            arrows && inp.key_pressed(egui::Key::ArrowLeft),
+                            arrows && inp.key_pressed(egui::Key::ArrowRight),
+                        )
+                    });
+                    let mut to = None;
+                    if (prev.clicked() || left) && i.index > 0 {
+                        to = Some(i.index - 1);
+                    }
+                    if (next.clicked() || right) && i.index < last {
+                        to = Some(i.index + 1);
+                    }
+                    if dv.changed() {
+                        to = Some(shown.saturating_sub(1).min(last));
+                    }
+                    if let Some(t) = to {
+                        app.merge_preview(Some(t), Some(true));
+                    }
+                });
+                ui.small("Left and right arrow keys step through the records.");
+                ui.add_space(4.0);
+                for (name, value) in &i.fields {
+                    ui.label(format!("{name}: {value}"));
+                }
+            }
+        },
+        MergeStep::Finish => match &info {
+            None => {
+                ui.label("There is no data yet. Choose a file on the Data step.");
+            }
+            Some(i) => {
+                ui.label(format!(
+                    "{} records. Each record gets its own copy of the pages.",
+                    i.records
+                ));
+                if let Some(note) = app.doc().and_then(imposition_note) {
+                    ui.small(format!("{note} A sequence label sheet gets one record per label; otherwise each record is one sheet."));
+                }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let pdf = ui.button("Merge to PDF…");
+                    mark(ui, "merge-pdf", &pdf);
+                    if pdf.clicked() {
+                        let name = app
+                            .doc()
+                            .map(|d| format!("{}-merged", pubrs_api::session::slug(&d.meta.title)))
+                            .unwrap_or_else(|| "merged".into());
+                        if let Some(p) =
+                            app.platform.dialogs.save_export(&name, "pdf", "merged PDF")
+                            && app.merge_to_pdf(&p)
+                        {
+                            out = Outcome::Close;
+                        }
+                    }
+                    let publ = ui.button("Merge to a new publication");
+                    mark(ui, "merge-publication", &publ);
+                    if publ.clicked() && app.merge_to_publication() {
+                        out = Outcome::Close;
+                    }
+                    let print = ui.button("Print…");
+                    mark(ui, "merge-print", &print);
+                    if print.clicked() {
+                        app.merge_print();
+                        if app.dialog.is_none() {
+                            out = Outcome::Close;
+                        }
+                    }
+                });
+            }
+        },
+    }
+    ui.separator();
+    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    ui.horizontal(|ui| {
+        let back = ui.add_enabled(st.step.previous().is_some(), egui::Button::new("Back"));
+        mark(ui, "merge-back", &back);
+        if back.clicked()
+            && let Some(p) = st.step.previous()
+        {
+            st.step = p;
+        }
+        let next = ui.add_enabled(
+            st.step.next().is_some() && info.is_some(),
+            egui::Button::new("Next"),
+        );
+        mark(ui, "merge-next-step", &next);
+        if next.clicked()
+            && let Some(n) = st.step.next()
+        {
+            st.step = n;
+        }
+        let close = ui.button("Close");
+        mark(ui, "merge-close", &close);
+        if close.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+/// Insert ▸ Merge Field…: pick one of the data's fields for the caret.
+pub struct MergeFieldState {
+    selected: usize,
+}
+
+impl MergeFieldState {
+    pub fn new() -> Self {
+        Self { selected: 0 }
+    }
+}
+
+fn merge_field_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut MergeFieldState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Insert merge field");
+    let Some(i) = merge_info(app) else {
+        ui.label("There is no merge data. Use Mailings ▸ Mail Merge… to choose a list.");
+        return if ui.button("Close").clicked() {
+            Outcome::Close
+        } else {
+            Outcome::Keep
+        };
+    };
+    ui.label("Choose a field and press Enter. It is inserted at the text cursor.");
+    let n = i.fields.len().max(1);
+    st.selected = st.selected.min(n - 1);
+    let (down, up, enter, escape) = ui.input(|inp| {
+        (
+            inp.key_pressed(egui::Key::ArrowDown),
+            inp.key_pressed(egui::Key::ArrowUp),
+            inp.key_pressed(egui::Key::Enter),
+            inp.key_pressed(egui::Key::Escape),
+        )
+    });
+    if down {
+        st.selected = (st.selected + 1) % n;
+    }
+    if up {
+        st.selected = (st.selected + n - 1) % n;
+    }
+    let mut pick: Option<String> = None;
+    egui::ScrollArea::vertical()
+        .max_height(260.0)
+        .show(ui, |ui| {
+            for (k, (name, value)) in i.fields.iter().enumerate() {
+                let label = if value.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name}    {value}")
+                };
+                let r = ui.selectable_label(st.selected == k, label);
+                mark(ui, &format!("merge-field-{k}"), &r);
+                if r.clicked() {
+                    st.selected = k;
+                }
+                if r.double_clicked() {
+                    pick = Some(name.clone());
+                }
+            }
+        });
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("Insert");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || enter {
+            pick = i.fields.get(st.selected).map(|f| f.0.clone());
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    if let Some(name) = pick
+        && app.insert_merge_field(&name)
+    {
+        out = Outcome::Close;
+    }
     out
 }

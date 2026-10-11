@@ -148,6 +148,9 @@ struct Data {
     m27_frames: Option<(FrameId, FrameId)>,
     /// M29: the 4 pt frame, the light grey frame and its story.
     m29: Option<(FrameId, FrameId, pubrs_api::core::StoryId)>,
+    /// M24: the mail merge text box and the list the test wrote.
+    m24: Option<FrameId>,
+    m24_csv: Option<PathBuf>,
     /// M29: the table Replace All wraps, its height before, and the undo steps before.
     m29_table: Option<(FrameId, f64, usize)>,
 }
@@ -582,6 +585,22 @@ impl SelfTest {
             .ok_or("the word is not laid out")?;
         let c = Point::new((q[0].x + q[2].x) / 2.0, (q[0].y + q[2].y) / 2.0);
         Self::screen_of(app, c).ok_or_else(|| "canvas not laid out".to_string())
+    }
+
+    /// What a text box draws, from its layout: the glyphs' text, so a merge
+    /// field reads as the value (or «Name») it shows.
+    fn drawn_text(app: &mut PubrsApp, frame: FrameId) -> Result<String, String> {
+        let lay = app.session.layout(app.doc_id()).map_err(|e| e.message)?;
+        let ft = lay.frame(frame).ok_or("the text box has no layout")?;
+        let mut out = String::new();
+        for line in &ft.lines {
+            for r in &line.runs {
+                for g in &r.glyphs {
+                    out.push_str(&r.text[g.text.clone()]);
+                }
+            }
+        }
+        Ok(out.trim().to_string())
     }
 
     fn spell_text(app: &mut PubrsApp, frame: Option<FrameId>) -> Result<String, String> {
@@ -3863,6 +3882,336 @@ impl SelfTest {
                     return Err("the undo did not take back exactly the Replace All".into());
                 }
                 self.ok("Replace All in a table cell: the wrapped text and the taller frame are one undo step");
+                self.screenshot(ctx);
+            }
+            209 => {
+                // M24: mail merge. A text box and a three-record list that
+                // the test writes (semicolon separated, a quoted city).
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 72.0, "y": 72.0, "width": 420.0, "height": 120.0,
+                        "font_size": 20.0, "text": "Dear , welcome to .",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let f = app
+                    .session
+                    .frame_add_text(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                app.select(vec![f]);
+                self.data.m24 = Some(f);
+                let csv = std::path::absolute(self.out.join("merge-guests.csv"))
+                    .map_err(|e| e.to_string())?;
+                std::fs::write(
+                    &csv,
+                    "\u{feff}First;City\nAnn;Oslo\nBo;\"Rome\"\nCy;Paris\n",
+                )
+                .map_err(|e| e.to_string())?;
+                self.data.m24_csv = Some(csv);
+                if app.unavailable(Action::InsertMergeField).is_none() {
+                    return Err(
+                        "Insert \u{25b8} Merge Field\u{2026} is enabled without data".into(),
+                    );
+                }
+            }
+            210 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let lines = Self::m15_lines(app, f)?;
+                let pos = Self::m15_line_pos(app, f, &lines[0])?;
+                self.fresh_double_click(pos);
+            }
+            211 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                if app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame) != Some(f) {
+                    return Err("double-click did not start editing the text box".into());
+                }
+                // The caret goes to offset 5, after "Dear ".
+                self.key(Key::Home, Modifiers::NONE);
+                for _ in 0..5 {
+                    self.key(Key::ArrowRight, Modifiers::NONE);
+                }
+            }
+            212 => {
+                let at = app
+                    .view()
+                    .and_then(|v| v.edit.as_ref())
+                    .map(|e| (e.caret, e.anchor));
+                if at != Some((5, 5)) {
+                    return Err(format!("the caret is {at:?}, not 5"));
+                }
+                app.run_action(ctx, Action::MailMerge);
+            }
+            213 => {
+                match &app.dialog {
+                    Some(crate::dialogs::Dialog::MergeWizard(w))
+                        if w.step == crate::dialogs::MergeStep::Data => {}
+                    _ => return Err("Mailings \u{25b8} Mail Merge\u{2026} did not open the wizard on its Data step".into()),
+                }
+                self.screenshot(ctx);
+                self.click_target(ctx, "merge-path")?;
+            }
+            214 => {
+                let p = self.data.m24_csv.clone().ok_or("no csv")?;
+                self.pending
+                    .push_back(vec![Event::Text(p.display().to_string())]);
+            }
+            215 => {
+                self.click_target(ctx, "merge-load")?;
+            }
+            216 => {
+                let doc = app.doc().ok_or("no doc")?;
+                let m = doc.merge.as_ref().ok_or("Load did not read the list")?;
+                if m.fields != ["First", "City"]
+                    || m.record_count() != 3
+                    || m.records[1][1] != "Rome"
+                {
+                    return Err(format!(
+                        "loaded {:?} / {} records",
+                        m.fields,
+                        m.record_count()
+                    ));
+                }
+                match &app.dialog {
+                    Some(crate::dialogs::Dialog::MergeWizard(w))
+                        if w.step == crate::dialogs::MergeStep::Fields => {}
+                    _ => return Err("the wizard did not move to the Fields step".into()),
+                }
+                self.ok("Mail Merge wizard: typed the path of a semicolon-separated list and loaded 3 records with fields First and City");
+                self.screenshot(ctx);
+                self.click_target(ctx, "merge-field-0")?;
+            }
+            217 => {
+                self.data.hist = Self::done_steps(app);
+                self.click_target(ctx, "merge-insert")?;
+            }
+            218 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let s = doc
+                    .story_of(f)
+                    .and_then(|s| doc.story(s))
+                    .ok_or("no story")?;
+                let runs = &s.paragraphs[0].runs;
+                if s.char_len() != 20
+                    || runs.get(1).and_then(|r| r.field.as_deref()) != Some("First")
+                {
+                    return Err(format!("Insert at cursor gave {:?}", s.plain_text()));
+                }
+                if Self::done_steps(app) != self.data.hist + 1 {
+                    return Err("inserting a field was not one undo step".into());
+                }
+                let caret = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.caret);
+                if caret != Some(6) {
+                    return Err(format!(
+                        "the caret is {caret:?}, one unit after the field is 6"
+                    ));
+                }
+                self.ok("Wizard Fields step: Insert at cursor put the field First at the caret in one undo step; the caret moved one unit past it");
+                self.click_target(ctx, "merge-close")?;
+            }
+            219 => {
+                if app.dialog.is_some() {
+                    return Err("Close left the wizard open".into());
+                }
+                self.key(Key::End, Modifiers::NONE);
+                self.key(Key::ArrowLeft, Modifiers::NONE);
+            }
+            220 => {
+                if let Some(why) = app.unavailable(Action::InsertMergeField) {
+                    return Err(format!(
+                        "Insert \u{25b8} Merge Field\u{2026} is disabled: {why}"
+                    ));
+                }
+                app.run_action(ctx, Action::InsertMergeField);
+            }
+            221 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::MergeField(_))) {
+                    return Err(
+                        "Insert \u{25b8} Merge Field\u{2026} did not open the picker".into(),
+                    );
+                }
+                self.screenshot(ctx);
+                // Keyboard only: Down chooses City, Enter inserts it.
+                self.key(Key::ArrowDown, Modifiers::NONE);
+                self.key(Key::Enter, Modifiers::NONE);
+                self.data.hist = Self::done_steps(app);
+            }
+            222 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the field picker".into());
+                }
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let s = doc
+                    .story_of(f)
+                    .and_then(|s| doc.story(s))
+                    .ok_or("no story")?;
+                let names: Vec<_> = s.paragraphs[0]
+                    .runs
+                    .iter()
+                    .filter_map(|r| r.field.as_deref())
+                    .collect();
+                if names != ["First", "City"] || s.char_len() != 21 {
+                    return Err(format!(
+                        "the picker gave fields {names:?} in {:?}",
+                        s.plain_text()
+                    ));
+                }
+                if Self::done_steps(app) != self.data.hist + 1 {
+                    return Err("the picker's insert was not one undo step".into());
+                }
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear \u{ab}First\u{bb}, welcome to \u{ab}City\u{bb}." {
+                    return Err(format!("the fields show as {shown:?}"));
+                }
+                self.ok(format!("Insert \u{25b8} Merge Field\u{2026}: arrow keys and Enter inserted City; the text shows {shown:?}, with a tint behind each field"));
+                self.screenshot(ctx);
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            223 => {
+                self.data.hist = Self::done_steps(app);
+                app.run_action(ctx, Action::MailMerge);
+            }
+            224 => {
+                self.click_target(ctx, "merge-step-3")?;
+            }
+            225 => {
+                self.click_target(ctx, "merge-preview-on")?;
+            }
+            226 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear Ann, welcome to Oslo." {
+                    return Err(format!("preview on shows {shown:?}"));
+                }
+                self.ok(format!("Preview switched on: the text reads {shown:?}"));
+                self.screenshot(ctx);
+                self.click_target(ctx, "merge-next")?;
+            }
+            227 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear Bo, welcome to Rome." {
+                    return Err(format!("\u{25b6} shows {shown:?}"));
+                }
+                self.click_target(ctx, "merge-next")?;
+            }
+            228 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear Cy, welcome to Paris." {
+                    return Err(format!("\u{25b6} shows {shown:?}"));
+                }
+                self.click_target(ctx, "merge-prev")?;
+            }
+            229 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear Bo, welcome to Rome." {
+                    return Err(format!("\u{25c0} shows {shown:?}"));
+                }
+                // Keyboard: Left steps back to the first record.
+                self.key(Key::ArrowLeft, Modifiers::NONE);
+            }
+            230 => {
+                let f = self.data.m24.ok_or("no M24 frame")?;
+                let shown = Self::drawn_text(app, f)?;
+                if shown != "Dear Ann, welcome to Oslo." {
+                    return Err(format!("the Left arrow shows {shown:?}"));
+                }
+                if Self::done_steps(app) != self.data.hist + 1 {
+                    return Err("stepping through records took more than one undo step".into());
+                }
+                self.ok("Preview step: \u{25b6} \u{25b6} \u{25c0} and the Left arrow key walked Ann, Bo, Cy, Bo, Ann; the whole walk is one undo step");
+                self.click_target(ctx, "merge-step-4")?;
+            }
+            231 => {
+                // Merge to PDF (the file dialog cannot be driven, so the
+                // path is given directly) and to a new publication (clicked).
+                let pdf = self.out.join("merged.pdf");
+                if !app.merge_to_pdf(&pdf) {
+                    return Err("Merge to PDF failed".into());
+                }
+                let bytes = std::fs::read(&pdf).map_err(|e| e.to_string())?;
+                let text = String::from_utf8_lossy(&bytes);
+                let pages = text.matches("/Type /Page\n").count()
+                    + text.matches("/Type /Page ").count()
+                    + text.matches("/Type /Page/").count()
+                    + text.matches("/Type/Page/").count()
+                    + text.matches("/Type/Page\n").count()
+                    + text.matches("/Type/Page ").count()
+                    + text.matches("/Type /Page>").count()
+                    + text.matches("/Type/Page>").count();
+                let counted = app
+                    .session
+                    .merge_export(pubrs_api::tools::merge::MergeExport {
+                        doc_id: app.doc_id(),
+                        ..Default::default()
+                    })
+                    .map_err(|e| e.message)?;
+                if !bytes.starts_with(b"%PDF-")
+                    || counted.page_count != 3
+                    || counted.record_count != 3
+                {
+                    return Err(format!(
+                        "merged PDF: {} pages for {} records ({pages} page objects)",
+                        counted.page_count, counted.record_count
+                    ));
+                }
+                self.ok(format!(
+                    "Merge to PDF: {} bytes, {} pages for {} records",
+                    bytes.len(),
+                    counted.page_count,
+                    counted.record_count
+                ));
+                self.click_target(ctx, "merge-publication")?;
+            }
+            232 => {
+                let doc = app.doc().ok_or("no doc")?;
+                if doc.merge.is_some() || doc.pages.len() != 3 {
+                    return Err(format!(
+                        "the new publication has {} pages and merge data {}",
+                        doc.pages.len(),
+                        doc.merge.is_some()
+                    ));
+                }
+                let texts: Vec<String> = doc.stories.values().map(|s| s.plain_text()).collect();
+                if !texts.iter().any(|t| t == "Dear Cy, welcome to Paris.") {
+                    return Err(format!("the new publication reads {texts:?}"));
+                }
+                self.ok("Merge to a new publication: a tab of 3 pages with the fields replaced by each record's text");
+                self.screenshot(ctx);
+                app.close_active(true);
+            }
+            233 => {
+                // The Design Checker lists a field the data does not have.
+                if app.doc().is_none_or(|d| d.merge.is_none()) {
+                    return Err("closing the new publication did not return to the design".into());
+                }
+                app.session
+                    .merge_set_source(pubrs_api::tools::merge::MergeSetSource {
+                        doc_id: app.doc_id(),
+                        inline_csv: Some("First\nAnn\n".into()),
+                        ..Default::default()
+                    })
+                    .map_err(|e| e.message)?;
+                app.checker.show();
+            }
+            234 => {
+                let issue = app
+                    .checker
+                    .issues()
+                    .into_iter()
+                    .find(|w| w.code == WarningCode::MergeFieldMissing)
+                    .cloned();
+                let Some(w) = issue.filter(|_| !app.checker.pending()) else {
+                    return self.again("the Design Checker to list the missing merge field");
+                };
+                if !w.message.contains("City") || w.frames.is_empty() || w.page.is_none() {
+                    return Err(format!("the merge warning is incomplete: {w:?}"));
+                }
+                self.ok("Design Checker: after the list lost its City column the panel shows merge_field_missing for City with the frame and page");
                 self.screenshot(ctx);
                 return Ok(true);
             }

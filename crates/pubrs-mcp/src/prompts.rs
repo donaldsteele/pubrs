@@ -1,4 +1,5 @@
-//! Guided workflows: make_flyer, make_trifold, make_business_card, make_newsletter, make_greeting_card.
+//! Guided workflows: make_flyer, make_trifold, make_business_card, make_newsletter, make_greeting_card,
+//! make_mail_merge, make_labels.
 
 use rmcp::ErrorData;
 use rmcp::model::{GetPromptResult, JsonObject, Prompt, PromptArgument, PromptMessage, Role};
@@ -110,6 +111,56 @@ pub fn list() -> Vec<Prompt> {
                 arg(
                     "images",
                     "Comma-separated image file paths to use (optional)",
+                    false,
+                ),
+            ]),
+        ),
+        Prompt::new(
+            "make_mail_merge",
+            Some(
+                "Merge a CSV or XLSX list into a letter, invitation or card: one page per record.",
+            ),
+            Some(vec![
+                arg(
+                    "piece",
+                    "What is being mailed, e.g. \"invitation postcards\"",
+                    true,
+                ),
+                arg(
+                    "data",
+                    "Path of the .csv or .xlsx file (first row = field names)",
+                    true,
+                ),
+                arg(
+                    "sheet",
+                    "Sheet name for an .xlsx file (default: the first)",
+                    false,
+                ),
+                arg("details", "What the text should say", false),
+            ]),
+        ),
+        Prompt::new(
+            "make_labels",
+            Some("Print address or name labels from a CSV or XLSX list onto a label sheet."),
+            Some(vec![
+                arg(
+                    "data",
+                    "Path of the .csv or .xlsx file (first row = field names)",
+                    true,
+                ),
+                arg(
+                    "preset",
+                    "Label sheet id from sheet_presets_list, e.g. avery-5160 (default)",
+                    false,
+                ),
+                arg(
+                    "sheet",
+                    "Sheet name for an .xlsx file (default: the first)",
+                    false,
+                ),
+                arg(
+                    "lines",
+                    "What each label shows, e.g. \"name, street, city and zip\"",
                     false,
                 ),
             ]),
@@ -274,6 +325,66 @@ pub fn get(name: &str, args: Option<&JsonObject>) -> Result<GetPromptResult, Err
                 ),
             )
         }
+        "make_mail_merge" => {
+            let piece = get_str(args, "piece").unwrap_or("the mailing");
+            let data = get_str(args, "data").unwrap_or("<the data file>");
+            let sheet = get_str(args, "sheet")
+                .map(|s| format!(", sheet: \"{s}\""))
+                .unwrap_or_default();
+            (
+                "Mail merge workflow",
+                format!(
+                    "Create {piece} merged from the list in {data}.{details}\n\n\
+                     1. doc_new with the page size of the piece (title: <short title>); the page set is printed once \
+                     per record, so design ONE piece. For a letter use one page; for a card use its size.\n\
+                     2. merge_set_source {{path: \"{data}\"{sheet}}}. Read the fields and record_count it returns, then \
+                     merge_fields_list to see a sample value for each field. Fix a bad header in the file rather than \
+                     working around it.\n\
+                     3. frame_add_text for the text. Write it in reading order by appending: text_insert {{frame_id, \
+                     text}} for fixed words, merge_insert_field {{frame_id, field}} for each field (both add at the end \
+                     when offset is omitted; a field counts as one character). Use one space between a field and the \
+                     next word: an empty value takes one adjacent space with it. Style with text_apply_char_style and \
+                     text_apply_para_style as usual.\n\
+                     4. merge_preview {{index: 0, on: true}}, then render_preview; step through a few records, and \
+                     the longest values (index of the longest name) to check that nothing overflows. text_overflow_status \
+                     describes the previewed record only.\n\
+                     5. validate: fix every warning; merge_field_missing means a field name that is not in the data.\n\
+                     6. Save the design with doc_save_as (the data is stored inside it), then merge_export {{format: \"pdf\", \
+                     path: \"<short-name>.pdf\"}}; its page_count must equal the record count. Use format \"publication\" \
+                     to get an editable .pubrs with plain text instead. Tell the user the file paths."
+                ),
+            )
+        }
+        "make_labels" => {
+            let data = get_str(args, "data").unwrap_or("<the data file>");
+            let preset = get_str(args, "preset").unwrap_or("avery-5160");
+            let sheet = get_str(args, "sheet")
+                .map(|s| format!(", sheet: \"{s}\""))
+                .unwrap_or_default();
+            let lines = get_str(args, "lines")
+                .map(|l| format!("\nEach label shows: {l}"))
+                .unwrap_or_default();
+            (
+                "Label sheet workflow",
+                format!(
+                    "Print labels from the list in {data} on {preset} sheets.{lines}\n\n\
+                     1. sheet_presets_list; find {preset} and note label_width and label_height (points).\n\
+                     2. doc_new {{page_size: {{width: label_width, height: label_height}}, title: <short title>}}, then \
+                     doc_set_sheet {{preset: \"{preset}\", fill: \"sequence\"}}: the one page you design is a single \
+                     label, and every record becomes the next label on the sheet.\n\
+                     3. merge_set_source {{path: \"{data}\"{sheet}}}; check fields and record_count in the result.\n\
+                     4. frame_add_text inset 4pt from the label edge. Build the text in reading order with text_insert \
+                     (use \\n for a new line) and merge_insert_field, e.g. name field, newline, street field, newline, \
+                     city field, \", \", state field, \" \", zip field. Use a small font (9-11pt) so the longest \
+                     address fits the label.\n\
+                     5. merge_preview {{index: 0, on: true}}, render_preview, and look at the longest records; \
+                     text_overflow_status must report any_overflow: false. validate must return ok: true.\n\
+                     6. merge_export {{format: \"pdf\", path: \"<short-name>.pdf\"}}: page_count is the number of sheets \
+                     (30 labels per sheet for avery-5160). Save the design with doc_save_as. Tell the user the file \
+                     paths."
+                ),
+            )
+        }
         other => {
             return Err(ErrorData::invalid_params(
                 format!("unknown prompt: {other}"),
@@ -282,7 +393,9 @@ pub fn get(name: &str, args: Option<&JsonObject>) -> Result<GetPromptResult, Err
                     "make_trifold",
                     "make_business_card",
                     "make_newsletter",
-                    "make_greeting_card"
+                    "make_greeting_card",
+                    "make_mail_merge",
+                    "make_labels"
                 ]})),
             ));
         }

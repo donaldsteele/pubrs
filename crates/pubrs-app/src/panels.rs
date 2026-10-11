@@ -1784,6 +1784,7 @@ fn text_props(
         text: String::new(),
         style: fmt.style,
         props: fmt.props,
+        field: None,
     };
     let a = doc.styles.resolve_char(para, &run);
     let pa = doc.styles.resolve_para(para);
