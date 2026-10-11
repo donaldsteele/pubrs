@@ -73,9 +73,16 @@ impl PartialEq for SharedStory {
 ///   insets, column count and gap), its vertical alignment, and the wrap
 ///   obstacles over it (`obstacles_for`: frames painted above it on the same
 ///   page or master with wrap on and another story, mapped through the text
-///   frame's position and rotation and outset by the wrap margin). A
-///   frame's page position and rotation enter only through obstacles, since
-///   layout output is frame-local. Each region also carries the rank of its
+///   frame's position and rotation and outset by the wrap margin). Each
+///   obstacle carries its bounding box, mode, `both_sides` flag and, for
+///   tight and through wrap, its outline polygons (ADR 0022): the shape's
+///   own, or the traced alpha contour of a placed image as
+///   `AlphaContours` supplies it, placed by the image's fit and crop. The
+///   polygons compare by value, so a changed shape, margin, image placement
+///   or a contour that arrives after the image is decoded all change the
+///   key. A frame's page position and rotation enter only through
+///   obstacles, since layout output is frame-local. Each region also
+///   carries the rank of its
 ///   frame's page among the chain's pages (page breaks compare it), so
 ///   reordering the chain's pages recomposes the story and adding or moving
 ///   other pages does not.
@@ -214,7 +221,7 @@ impl StoryLayoutCache {
         let before = self.entries.len();
         self.entries.retain(|id, _| doc.stories.contains_key(id));
         let dropped = before - self.entries.len();
-        let mut index = DocIndex::new(doc);
+        let mut index = DocIndex::new(doc, layouter.contours.clone());
         let mut key_time = started.elapsed();
         let (mut recomposed, mut reused) = (0, 0);
         let mut out = DocumentLayout::default();

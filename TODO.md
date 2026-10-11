@@ -17,7 +17,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - Imposed sheets carry no bleed, and `crop_marks` marks the whole sheet rather than each label.
 - `SetPageSize` does not re-check an existing label sheet; a mismatch is reported at PDF export.
 - The GPU renderer ignores `Node.clip` (only imposed sheets use it, and those are never drawn on the GPU).
-- Text wrap: `square` and `top_bottom` only, around bounding boxes. Contour ("tight") wrap and text on both sides of an obstacle are not implemented (ADR 0006).
 - The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); the design checker (M29) replaces it. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.
 - Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
@@ -107,3 +106,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - The GPU backend (`gpu` feature) has no blur: `Rasterizer` draws pages with a shadow with tiny-skia. Pages with a shadowed frame also skip the parallel tile path in the GUI's viewport (the untiled render is used, so output stays exact).
 - WordArt warps are fixed shapes (no adjustable handles), the text is scaled down but never up to fit the frame, and `circle` closes at 97% of a turn.
 - The Format menu holds Shadow and Border Art… only; the plan's Format menu (Paragraph…, Tabs…, Bullets and Numbering…, Drop Cap…, Character…) lives in the Text menu for now.
+
+## Text wrap (M18)
+
+- Wrap (ADR 0022): slots in one row share a top, not a forced baseline (mixed sizes in a row differ); a word wider than its slot overflows it; widow fixes look at the first slot of a row; frames inside groups wrap by their bounding box. WordArt frames (M25) wrap by their frame rectangle in every mode (their warped path is not an obstacle outline yet).

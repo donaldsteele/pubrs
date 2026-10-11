@@ -181,7 +181,7 @@ pub static TOOLS: &[ToolDef] = &[
     tool!("border_art_list", "Frames", border_art_list, wordart::BorderArtList => wordart::BorderArtListOut, ro = true, destructive = false, image = None,
         "List the twelve BorderArt patterns and the allowed width range. Apply one with frame_set_style border_art {pattern, width}; the tiles are scaled so a whole number fits each edge and the corners get their own piece."),
     tool!("frame_set_wrap", "Frames", frame_set_wrap, frames::FrameSetWrap => Changed, ro = false, destructive = false, image = None,
-        "Set how text in frames below this one wraps around it: none, square (text flows beside it) or top_bottom, with a margin in points. Pictures default to square."),
+        "Set how text in frames below this one wraps around it: none, square (around its bounding box), tight (around its true outline: ellipses, rounded corners, lines, rotated frames and the visible pixels of PNGs with transparency), through (like tight, but into notches and holes of the outline) or top_bottom, with a margin in points. both_sides: true fills every gap beside the frame wider than three em, left to right, instead of only the widest. Pictures default to square."),
     tool!("frame_set_placeholder", "Frames", frame_set_placeholder, frames::FrameSetPlaceholder => Changed, ro = false, destructive = false, image = None,
         "Mark a text or picture frame as a named template placeholder (e.g. \"headline\"), or pass name null to clear. Used when saving templates."),
     tool!("frame_list", "Frames", frame_list, frames::FrameList => frames::FrameListOut, ro = true, destructive = false, image = None,

@@ -18,8 +18,8 @@ use pubrs_core::style::{
 };
 use pubrs_core::text::{BreakKind, is_break};
 use pubrs_core::{
-    Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, Owner, PageId, ParaAttrs,
-    Paragraph, Parent, Rect, Run, StoryId, VerticalAlign, WrapMode,
+    Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, LineDirection, Owner, PageId,
+    ParaAttrs, Paragraph, Parent, Point, Rect, Run, Shape, StoryId, VerticalAlign, WrapMode,
 };
 
 use crate::fonts::{FaceTraits, FontLibrary};
@@ -28,6 +28,7 @@ use crate::types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
     PositionedGlyph, StoryLayout,
 };
+use crate::wrap::{self, AlphaContours, Outline, band_intervals};
 
 /// Shapes and flows text. Holds the font library and parley's caches.
 pub struct Layouter {
@@ -35,6 +36,8 @@ pub struct Layouter {
     lcx: LayoutContext<Ink>,
     /// Per (family, bold, italic): OS/2 script metrics and `smcp` support.
     traits: HashMap<(String, bool, bool), FaceTraits>,
+    /// Where wrap finds the visible outline of placed images.
+    pub(crate) contours: Option<Arc<dyn AlphaContours>>,
 }
 
 impl std::fmt::Debug for Layouter {
@@ -45,10 +48,17 @@ impl std::fmt::Debug for Layouter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// A frame text wraps around, in the text frame's local space.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Obstacle {
+    /// Bounding box, already outset by the margin. All `square` wrap uses.
     rect: Rect,
     mode: WrapMode,
+    /// Text fills every slot of a line beside the frame (> 3 em).
+    both_sides: bool,
+    /// The outline `tight` and `through` follow, with its margin. `None`
+    /// follows the bounding box (frames without an outline of their own).
+    outline: Option<(Outline, f64)>,
 }
 
 /// A rectangle text can flow into: one column of one frame (frame-local).
@@ -70,10 +80,13 @@ pub(crate) struct Region {
     page: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Avail {
     /// Usable x and width for the line.
     Span(f64, f64),
+    /// Several slots, left to right, each wider than the minimum: a line
+    /// is broken into each in turn (`both_sides` or `through` wrap).
+    Slots(Vec<(f64, f64)>),
     /// Nothing fits in this band; resume at this y.
     Skip(f64),
 }
@@ -88,6 +101,7 @@ impl Region {
         let (left, right) = (self.x, self.x + self.w);
         let mut blocked: Vec<(f64, f64)> = Vec::new();
         let mut skip_to: Option<f64> = None;
+        let mut multi = false;
         for o in &self.obstacles {
             let r = o.rect;
             if r.top() >= y1 || r.bottom() <= y0 || r.right() <= left || r.left() >= right {
@@ -97,7 +111,26 @@ impl Region {
                 WrapMode::TopBottom => {
                     skip_to = Some(skip_to.map_or(r.bottom(), |s: f64| s.max(r.bottom())));
                 }
-                WrapMode::Square => blocked.push((r.left(), r.right())),
+                WrapMode::Square => {
+                    blocked.push((r.left(), r.right()));
+                    multi |= o.both_sides;
+                }
+                WrapMode::Tight | WrapMode::Through => {
+                    multi |= o.both_sides || o.mode == WrapMode::Through;
+                    match &o.outline {
+                        None => blocked.push((r.left(), r.right())),
+                        Some((outline, margin)) => {
+                            let iv = band_intervals(&outline.0, y0, y1, *margin);
+                            if o.mode == WrapMode::Tight {
+                                if let (Some(a), Some(b)) = (iv.first(), iv.last()) {
+                                    blocked.push((a.0, b.1));
+                                }
+                            } else {
+                                blocked.extend(iv);
+                            }
+                        }
+                    }
+                }
                 WrapMode::None => {}
             }
         }
@@ -108,6 +141,24 @@ impl Region {
             return Avail::Span(left, self.w);
         }
         blocked.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if multi {
+            let mut slots: Vec<(f64, f64)> = Vec::new();
+            let mut x = left;
+            for (b0, b1) in &blocked {
+                if *b0 > x && b0 - x >= min_w {
+                    slots.push((x, b0 - x));
+                }
+                x = x.max(*b1);
+            }
+            if right > x && right - x >= min_w {
+                slots.push((x, right - x));
+            }
+            return match slots.len() {
+                0 => Avail::Skip(self.skip_target(y0, y1)),
+                1 => Avail::Span(slots[0].0, slots[0].1),
+                _ => Avail::Slots(slots),
+            };
+        }
         let mut best = (left, 0.0);
         let mut x = left;
         for (b0, b1) in &blocked {
@@ -122,15 +173,83 @@ impl Region {
         if best.1 >= min_w {
             Avail::Span(best.0, best.1)
         } else {
-            let next = self
-                .obstacles
-                .iter()
-                .filter(|o| o.rect.top() < y1 && o.rect.bottom() > y0)
-                .map(|o| o.rect.bottom())
-                .fold(f64::INFINITY, f64::min);
-            Avail::Skip(next)
+            Avail::Skip(self.skip_target(y0, y1))
         }
     }
+
+    /// Where to resume when nothing fits in `y0..y1`: below the lowest
+    /// obstacle in the band, or a little lower for outlines, whose gaps can
+    /// open again before their bounding box ends.
+    fn skip_target(&self, y0: f64, y1: f64) -> f64 {
+        self.obstacles
+            .iter()
+            .filter(|o| o.rect.top() < y1 && o.rect.bottom() > y0)
+            .map(|o| {
+                if o.outline.is_some() {
+                    o.rect.bottom().min(y0 + 1.0)
+                } else {
+                    o.rect.bottom()
+                }
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+}
+
+/// Everything a row of slots changes while it is broken, so a row can be
+/// taken back as a whole.
+struct RowCheckpoint {
+    state: parley::layout::BreakerState,
+    pos: Option<usize>,
+    placed: usize,
+    infos: usize,
+    first_line: bool,
+    cap_at: Option<(usize, f64)>,
+    first_x: f64,
+    explicit: usize,
+}
+
+impl RowCheckpoint {
+    #[allow(clippy::too_many_arguments)]
+    fn restore(
+        self,
+        bl: &mut parley::layout::BreakLines<'_, Ink>,
+        lcx: Option<&mut LineCx>,
+        placements: &mut Vec<(usize, f64, f64)>,
+        line_infos: &mut Vec<LineInfo>,
+        first_line: &mut bool,
+        cap_at: &mut Option<(usize, f64)>,
+        first_x: &mut f64,
+        explicit: &mut usize,
+    ) {
+        bl.revert_to(self.state);
+        if let (Some(c), Some(p)) = (lcx, self.pos) {
+            c.pos = p;
+            c.pending = None;
+        }
+        placements.truncate(self.placed);
+        line_infos.truncate(self.infos);
+        *first_line = self.first_line;
+        *cap_at = self.cap_at;
+        *first_x = self.first_x;
+        *explicit = self.explicit;
+    }
+}
+
+/// How a row of slots ended.
+enum RowEnd {
+    /// Every slot got a line; go on to the next row.
+    Next,
+    /// The text ended in this row.
+    Done,
+    /// A line is taller than the band measured for it and the free space
+    /// differs for the taller band: lay the row out again with this height.
+    Taller(f64),
+    /// A line would not fit under the region's bottom.
+    NextRegion,
+    /// The breaker yielded something that is not a line.
+    Again,
+    /// A line ended at a frame or column break.
+    Jump(BreakKind),
 }
 
 /// Position of the flow: region index and frame-local y.
@@ -233,10 +352,11 @@ pub(crate) struct DocIndex {
     orders: HashMap<Owner, Vec<FrameId>>,
     /// Index of each page in the document.
     page_index: HashMap<PageId, usize>,
+    pub(crate) contours: Option<Arc<dyn AlphaContours>>,
 }
 
 impl DocIndex {
-    pub(crate) fn new(doc: &Document) -> Self {
+    pub(crate) fn new(doc: &Document, contours: Option<Arc<dyn AlphaContours>>) -> Self {
         let mut parent = HashMap::with_capacity(doc.frames.len());
         let mut page_index = HashMap::with_capacity(doc.pages.len());
         for (i, p) in doc.pages.iter().enumerate() {
@@ -261,6 +381,7 @@ impl DocIndex {
             parent,
             orders: HashMap::new(),
             page_index,
+            contours,
         }
     }
 
@@ -300,14 +421,21 @@ impl Layouter {
             fonts,
             lcx: LayoutContext::new(),
             traits: HashMap::new(),
+            contours: None,
         }
+    }
+
+    /// Set where `tight` and `through` wrap find the visible outline of
+    /// placed images. Without one, images wrap by their frame rectangle.
+    pub fn set_contours(&mut self, contours: Option<Arc<dyn AlphaContours>>) {
+        self.contours = contours;
     }
 
     /// Lay out every story from scratch. Interactive callers use
     /// [`crate::cache::StoryLayoutCache`], which gives the same result and
     /// recomposes only the stories whose inputs changed.
     pub fn layout_document(&mut self, doc: &Document) -> DocumentLayout {
-        let mut index = DocIndex::new(doc);
+        let mut index = DocIndex::new(doc, self.contours.clone());
         let mut out = DocumentLayout::default();
         for (id, story) in &doc.stories {
             let regions = regions_for(doc, &mut index, &story.frames);
@@ -375,7 +503,11 @@ impl Layouter {
     /// Lay out one story across its frame chain.
     pub fn layout_story(&mut self, doc: &Document, story_id: StoryId) -> StoryLayout {
         let regions = match doc.story(story_id) {
-            Some(story) => regions_for(doc, &mut DocIndex::new(doc), &story.frames),
+            Some(story) => regions_for(
+                doc,
+                &mut DocIndex::new(doc, self.contours.clone()),
+                &story.frames,
+            ),
             None => Vec::new(),
         };
         self.flow_story(doc, story_id, &regions)
@@ -1120,8 +1252,14 @@ impl Layouter {
                         advance_region(cur, regions);
                         continue;
                     }
-                    let (ax, aw) = match r.available(y, y + est_h, min_w) {
-                        Avail::Span(x, w) => (x, w),
+                    let avail = r.available(y, y + est_h, min_w);
+                    let single;
+                    let slots: &[(f64, f64)] = match &avail {
+                        Avail::Span(x, w) => {
+                            single = [(*x, *w)];
+                            &single
+                        }
+                        Avail::Slots(v) => v,
                         Avail::Skip(ny) => {
                             cur.y = ny.max(cur.y + 0.5);
                             if cur.y >= r.bottom() {
@@ -1130,76 +1268,172 @@ impl Layouter {
                             continue;
                         }
                     };
-                    let indent = if cap.is_some() {
-                        // The first `cap_lines` lines beside the cap make
-                        // room for it; no first-line indent with a cap.
-                        let beside = placements.len() < cap_lines
-                            && cap_at.is_none_or(|(cr, _)| cr == cur.region);
-                        pa.left_indent + if beside { cap_indent } else { 0.0 }
-                    } else {
-                        left_indent
-                            + if first_line && list.is_none() {
-                                pa.first_line_indent
-                            } else {
-                                0.0
-                            }
-                    };
-                    let x = ax + indent.max(0.0);
-                    if first_line {
-                        first_x = x;
-                    }
-                    let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
-                    {
-                        let st = bl.state_mut();
-                        st.set_line_x(x as f32);
-                        st.set_line_max_advance((w as f32).min(max_w));
-                        st.set_line_y(y);
-                    }
-                    let next = match lcx.as_mut() {
-                        Some(c) => c.break_line(&mut bl, &bparams, text, (w as f32).min(max_w)),
-                        None => bl.break_next(),
-                    };
-                    let Some(data) = next else { break };
-                    let YieldData::LineBreak(d) = data else {
-                        continue;
-                    };
-                    let h = d.line_y_end - d.line_y_start;
-                    if h > est_h + 0.01
-                        && !retried
-                        && !r.obstacles.is_empty()
-                        && r.available(y, y + h, min_w) != Avail::Span(ax, aw)
-                    {
-                        bl.revert();
-                        est_h = h;
-                        retried = true;
-                        continue;
-                    }
-                    retried = false;
-                    if y + h > r.bottom() + 0.01 {
-                        bl.revert();
-                        advance_region(cur, regions);
-                        continue;
-                    }
-                    if let Some(c) = lcx.as_mut() {
-                        let info = c.pending.take();
-                        if let Some(i) = &info {
-                            c.pos = i.end;
+                    // A row of several slots breaks one line into each, left
+                    // to right, at the same y. `bl.revert` undoes only the
+                    // last line, so keep a checkpoint of the whole row.
+                    let multi = slots.len() > 1;
+                    let checkpoint = multi.then(|| RowCheckpoint {
+                        state: bl.state().clone(),
+                        pos: lcx.as_ref().map(|c| c.pos),
+                        placed: placements.len(),
+                        infos: line_infos.len(),
+                        first_line,
+                        cap_at,
+                        first_x,
+                        explicit,
+                    });
+                    let mut row_h = 0.0f64;
+                    let mut end = RowEnd::Next;
+                    for &(ax, aw) in slots {
+                        let indent = if cap.is_some() {
+                            // The first `cap_lines` lines beside the cap make
+                            // room for it; no first-line indent with a cap.
+                            let beside = placements.len() < cap_lines
+                                && cap_at.is_none_or(|(cr, _)| cr == cur.region);
+                            pa.left_indent + if beside { cap_indent } else { 0.0 }
+                        } else {
+                            left_indent
+                                + if first_line && list.is_none() {
+                                    pa.first_line_indent
+                                } else {
+                                    0.0
+                                }
+                        };
+                        let x = ax + indent.max(0.0);
+                        if first_line {
+                            first_x = x;
                         }
-                        line_infos.push(info.unwrap_or_default());
+                        let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
+                        {
+                            let st = bl.state_mut();
+                            st.set_line_x(x as f32);
+                            st.set_line_max_advance((w as f32).min(max_w));
+                            st.set_line_y(y);
+                        }
+                        let next = match lcx.as_mut() {
+                            Some(c) => c.break_line(&mut bl, &bparams, text, (w as f32).min(max_w)),
+                            None => bl.break_next(),
+                        };
+                        let Some(data) = next else {
+                            end = RowEnd::Done;
+                            break;
+                        };
+                        let YieldData::LineBreak(d) = data else {
+                            end = RowEnd::Again;
+                            break;
+                        };
+                        let h = d.line_y_end - d.line_y_start;
+                        if h > est_h + 0.01
+                            && !retried
+                            && !r.obstacles.is_empty()
+                            && r.available(y, y + h.max(row_h), min_w) != avail
+                        {
+                            end = RowEnd::Taller(h);
+                            break;
+                        }
+                        if y + h > r.bottom() + 0.01 {
+                            end = RowEnd::NextRegion;
+                            break;
+                        }
+                        if let Some(c) = lcx.as_mut() {
+                            let info = c.pending.take();
+                            if let Some(i) = &info {
+                                c.pos = i.end;
+                            }
+                            line_infos.push(info.unwrap_or_default());
+                        }
+                        if first_line && cap.is_some() {
+                            cap_at = Some((cur.region, ax + pa.left_indent.max(0.0)));
+                        }
+                        placements.push((cur.region, y, h));
+                        row_h = row_h.max(h);
+                        first_line = false;
+                        // A line ending at a break character: the next line
+                        // goes where the break sends it (a soft line break
+                        // only moves on to the next slot).
+                        if d.reason == BreakReason::Explicit {
+                            let kind = breaks.get(explicit).copied().flatten();
+                            explicit += 1;
+                            if let Some(k) = kind {
+                                end = RowEnd::Jump(k);
+                                break;
+                            }
+                        }
                     }
-                    if first_line && cap.is_some() {
-                        cap_at = Some((cur.region, ax + pa.left_indent.max(0.0)));
-                    }
-                    placements.push((cur.region, y, h));
-                    cur.y = y + h;
-                    first_line = false;
-                    est_h = h;
-                    // A line ending at a break character: the next line
-                    // goes where the break sends it.
-                    if d.reason == BreakReason::Explicit {
-                        let kind = breaks.get(explicit).copied().flatten();
-                        explicit += 1;
-                        if let Some(k) = kind {
+                    match end {
+                        RowEnd::Taller(h) => {
+                            match checkpoint {
+                                Some(cp) => {
+                                    cp.restore(
+                                        &mut bl,
+                                        lcx.as_mut(),
+                                        &mut placements,
+                                        &mut line_infos,
+                                        &mut first_line,
+                                        &mut cap_at,
+                                        &mut first_x,
+                                        &mut explicit,
+                                    );
+                                }
+                                None => {
+                                    bl.revert();
+                                }
+                            }
+                            est_h = h;
+                            retried = true;
+                            continue;
+                        }
+                        RowEnd::NextRegion => {
+                            retried = false;
+                            match checkpoint {
+                                Some(cp) => {
+                                    cp.restore(
+                                        &mut bl,
+                                        lcx.as_mut(),
+                                        &mut placements,
+                                        &mut line_infos,
+                                        &mut first_line,
+                                        &mut cap_at,
+                                        &mut first_x,
+                                        &mut explicit,
+                                    );
+                                }
+                                None => {
+                                    bl.revert();
+                                }
+                            }
+                            advance_region(cur, regions);
+                            continue;
+                        }
+                        RowEnd::Again => {
+                            if let Some(cp) = checkpoint {
+                                cp.restore(
+                                    &mut bl,
+                                    lcx.as_mut(),
+                                    &mut placements,
+                                    &mut line_infos,
+                                    &mut first_line,
+                                    &mut cap_at,
+                                    &mut first_x,
+                                    &mut explicit,
+                                );
+                            }
+                            continue;
+                        }
+                        RowEnd::Done => {
+                            if row_h > 0.0 {
+                                cur.y = y + row_h;
+                            }
+                            break;
+                        }
+                        RowEnd::Next => {
+                            retried = false;
+                            cur.y = y + row_h;
+                            est_h = row_h;
+                        }
+                        RowEnd::Jump(k) => {
+                            retried = false;
+                            est_h = row_h;
                             cur.region = break_target(k, cur.region, regions);
                             cur.y = regions.get(cur.region).map_or(0.0, |r| r.y);
                         }
@@ -2306,6 +2540,7 @@ pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameI
 /// setting pushes text away.
 fn obstacles_for(doc: &Document, index: &mut DocIndex, owner: Owner, tf: &Frame) -> Vec<Obstacle> {
     let story = tf.as_text().map(|t| t.story);
+    let contours = index.contours.clone();
     let order = index.paint_order(doc, owner);
     let Some(pos) = order.iter().position(|f| *f == tf.id) else {
         return Vec::new();
@@ -2315,13 +2550,109 @@ fn obstacles_for(doc: &Document, index: &mut DocIndex, owner: Owner, tf: &Frame)
         .filter_map(|id| doc.frame(*id))
         .filter(|f| f.wrap.mode != WrapMode::None)
         .filter(|f| f.as_text().map(|t| t.story) != story || story.is_none())
-        .map(|f| Obstacle {
-            rect: obstacle_bounds_in(tf, f)
-                .outset(f.wrap.margin)
-                .translate(-tf.rect.x, -tf.rect.y),
-            mode: f.wrap.mode,
+        .map(|f| {
+            let margin = f.wrap.margin;
+            let outline = matches!(f.wrap.mode, WrapMode::Tight | WrapMode::Through)
+                .then(|| outline_in(tf, f, contours.as_deref()))
+                .flatten();
+            let rect = match outline.as_ref().and_then(|p| wrap::poly_bounds(p)) {
+                Some(b) => b.outset(margin),
+                None => obstacle_bounds_in(tf, f)
+                    .outset(margin)
+                    .translate(-tf.rect.x, -tf.rect.y),
+            };
+            Obstacle {
+                rect,
+                mode: f.wrap.mode,
+                both_sides: f.wrap.both_sides,
+                outline: outline.map(|p| (Outline(Arc::new(p)), margin)),
+            }
         })
         .collect()
+}
+
+/// The outline of `obstacle` as polygons in the text frame's local space:
+/// its shape, or the visible pixels of its image, rotated into place and
+/// through the inverse of the text frame's rotation (as
+/// [`obstacle_bounds_in`] does for the bounding box). `None` for frames
+/// without an outline of their own and for images with no contour: they
+/// wrap by their bounding box.
+///
+/// The polygons are not offset by the wrap margin; [`band_intervals`] grows
+/// each covered span by it (a square offset, so the clearance is never less
+/// than the margin).
+fn outline_in(
+    tf: &Frame,
+    obstacle: &Frame,
+    contours: Option<&dyn AlphaContours>,
+) -> Option<Vec<Vec<Point>>> {
+    let (w, h) = (obstacle.rect.width, obstacle.rect.height);
+    let local: Vec<Vec<Point>> = match &obstacle.content {
+        FrameContent::Shape(s) => vec![match s.shape {
+            Shape::Rectangle { corner_radius } => wrap::rounded_rect(w, h, corner_radius),
+            Shape::Ellipse => wrap::ellipse(w, h),
+            Shape::Line { direction } => {
+                let (a, b) = match direction {
+                    LineDirection::DownRight => (Point::new(0.0, 0.0), Point::new(w, h)),
+                    LineDirection::UpRight => (Point::new(0.0, h), Point::new(w, 0.0)),
+                };
+                let width = obstacle.style.stroke.as_ref().map_or(0.0, |s| s.width);
+                wrap::stroked_line(a, b, width)
+            }
+        }],
+        FrameContent::Image(img) => {
+            let c = contours?.contour(img.asset?)?;
+            let (t, clip) = pubrs_core::image_placement(
+                f64::from(c.width),
+                f64::from(c.height),
+                img.crop,
+                img.fit,
+                w,
+                h,
+            );
+            let polys: Vec<Vec<Point>> = c
+                .polys
+                .iter()
+                .map(|poly| {
+                    let mapped: Vec<Point> = poly
+                        .iter()
+                        .map(|p| {
+                            Point::new(
+                                t[0] * p.x + t[2] * p.y + t[4],
+                                t[1] * p.x + t[3] * p.y + t[5],
+                            )
+                        })
+                        .collect();
+                    wrap::clip_to_rect(&mapped, Rect::new(clip.x, clip.y, clip.width, clip.height))
+                })
+                .filter(|p| p.len() >= 3)
+                .collect();
+            if polys.is_empty() {
+                return None;
+            }
+            polys
+        }
+        _ => return None,
+    };
+    let (oc, tc) = (obstacle.rect.center(), tf.rect.center());
+    let upright = tf.rotation % 360.0 == 0.0;
+    Some(
+        local
+            .into_iter()
+            .map(|poly| {
+                poly.into_iter()
+                    .map(|p| {
+                        let mut q = Point::new(obstacle.rect.x + p.x, obstacle.rect.y + p.y)
+                            .rotated_about(oc, obstacle.rotation);
+                        if !upright {
+                            q = q.rotated_about(tc, -tf.rotation);
+                        }
+                        Point::new(q.x - tf.rect.x, q.y - tf.rect.y)
+                    })
+                    .collect()
+            })
+            .collect(),
+    )
 }
 
 /// The obstacle's page-space outline mapped into the text frame's unrotated

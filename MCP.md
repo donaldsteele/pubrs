@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 162984,
+  "bytes": 162982,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 162984,
+  "bytes": 162982,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 76
+  "revision": 79
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 77
+  "revision": 80
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 69
+  "revision": 72
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001f",
-  "revision": 66
+  "revision": 69
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 67
+  "revision": 70
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 62
+  "revision": 65
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 63
+  "revision": 66
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 64
+  "revision": 67
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 65
+  "revision": 68
 }
 ```
 
@@ -2023,7 +2023,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000021",
-  "revision": 70
+  "revision": 73
 }
 ```
 
@@ -2071,7 +2071,7 @@ Result:
     "00000000-0000-87ea-8000-000000000021"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 71
+  "revision": 74
 }
 ```
 
@@ -2148,27 +2148,29 @@ Result:
 
 ### `frame_set_wrap`
 
-Set how text in frames below this one wraps around it: none, square (text flows beside it) or top_bottom, with a margin in points. Pictures default to square.
+Set how text in frames below this one wraps around it: none, square (around its bounding box), tight (around its true outline: ellipses, rounded corners, lines, rotated frames and the visible pixels of PNGs with transparency), through (like tight, but into notches and holes of the outline) or top_bottom, with a margin in points. both_sides: true fills every gap beside the frame wider than three em, left to right, instead of only the widest. Pictures default to square.
 
 **Arguments**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `both_sides` | boolean |  | Fill every free slot beside the frame (wider than 3 em) with text, not only the widest (default false). |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
 | `margin` | number |  | Clearance in points (default 6). |
-| `mode` | "none" \| "square" \| "top_bottom" | yes | none, square (text flows around the frame) or top_bottom. |
+| `mode` | "none" \| "square" \| "top_bottom" \| "tight" \| "through" | yes | none, square (text flows around the frame's bounding box), tight (around its true outline), through (like tight, but into its notches and holes) or top_bottom. |
 
 **Result fields:** `affected_ids`, `doc_id`, `revision`
 
-**Example**
+**Example** — Text follows the outline (a PNG with transparency wraps around its visible pixels) and fills the gaps on both sides of it.
 
 ```json
 {
   "arguments": {
+    "both_sides": true,
     "frame_id": "00000000-0000-87ea-8000-000000000014",
-    "margin": 6,
-    "mode": "square"
+    "margin": 8,
+    "mode": "tight"
   },
   "name": "frame_set_wrap"
 }
@@ -2178,9 +2180,36 @@ Result:
 
 ```json
 {
-  "affected_ids": [],
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000014"
+  ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 60
+  "revision": 61
+}
+```
+
+**Example** — Like tight, but text can enter notches and holes of the outline.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000014",
+    "margin": 4,
+    "mode": "through"
+  },
+  "name": "frame_set_wrap"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000014"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 62
 }
 ```
 
@@ -2220,7 +2249,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 61
+  "revision": 64
 }
 ```
 
@@ -2288,7 +2317,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 73
+  "revision": 76
 }
 ```
 
@@ -2353,7 +2382,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 73,
+  "revision": 76,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2413,7 +2442,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
-  "revision": 68
+  "revision": 71
 }
 ```
 
@@ -4743,7 +4772,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -4768,7 +4797,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -4806,7 +4835,7 @@ Result:
 
 ```json
 {
-  "bytes": 702122,
+  "bytes": 702120,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4814,7 +4843,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -4859,7 +4888,7 @@ Result:
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 75,
+  "revision": 78,
   "width": 596
 }
 ```
@@ -4901,7 +4930,7 @@ Result:
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA2dElEQVR4nO2d… (18664 characters)",
-  "revision": 75,
+  "revision": 78,
   "width": 249
 }
 ```
@@ -4941,7 +4970,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "frame style",
-  "revision": 74
+  "revision": 77
 }
 ```
 
@@ -4978,7 +5007,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "frame style",
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -5031,9 +5060,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 68 more"
+    "… 71 more"
   ],
-  "revision": 73
+  "revision": 76
 }
 ```
 
@@ -5215,7 +5244,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 9,
+    "schema_version": 10,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -5378,7 +5407,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 75
+  "revision": 78
 }
 ```
 
@@ -5411,7 +5440,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 75,
+  "revision": 78,
   "warnings": [
     {
       "code": "overflow",

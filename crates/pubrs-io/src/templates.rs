@@ -244,6 +244,7 @@ impl T {
                 TextWrap {
                     mode: WrapMode::None,
                     margin: 0.0,
+                    both_sides: false,
                 },
             )
             .expect("wrap");

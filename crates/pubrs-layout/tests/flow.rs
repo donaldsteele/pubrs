@@ -143,6 +143,7 @@ fn square_wrap_pushes_lines_aside() {
         TextWrap {
             mode: WrapMode::Square,
             margin: 6.0,
+            both_sides: false,
         },
     )
     .unwrap();
@@ -174,6 +175,7 @@ fn top_bottom_wrap_skips_the_band() {
         TextWrap {
             mode: WrapMode::TopBottom,
             margin: 0.0,
+            both_sides: false,
         },
     )
     .unwrap();
@@ -198,6 +200,7 @@ fn wrap_ignores_frames_below_in_z_order() {
         TextWrap {
             mode: WrapMode::Square,
             margin: 0.0,
+            both_sides: false,
         },
     )
     .unwrap();
@@ -431,6 +434,7 @@ fn rotated_wrap_doc(obstacle: Rect) -> (Document, FrameId) {
         TextWrap {
             mode: WrapMode::Square,
             margin: 0.0,
+            both_sides: false,
         },
     )
     .unwrap();

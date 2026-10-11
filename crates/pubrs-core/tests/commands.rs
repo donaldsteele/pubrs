@@ -835,6 +835,7 @@ fn patch_json_matches_the_golden_corpus() {
         wrap: TextWrap {
             mode: WrapMode::Square,
             margin: 4.0,
+            both_sides: false,
         },
     });
     r.run(Command::SetFrameName {

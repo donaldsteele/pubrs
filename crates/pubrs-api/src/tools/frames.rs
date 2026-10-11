@@ -393,11 +393,14 @@ pub struct FrameSetWrap {
     #[serde(default)]
     pub doc_id: Option<DocumentId>,
     pub frame_id: FrameId,
-    /// none, square (text flows around the frame) or top_bottom.
+    /// none, square (text flows around the frame's bounding box), tight (around its true outline), through (like tight, but into its notches and holes) or top_bottom.
     pub mode: WrapMode,
     /// Clearance in points (default 6).
     #[serde(default)]
     pub margin: Option<f64>,
+    /// Fill every free slot beside the frame (wider than 3 em) with text, not only the widest (default false).
+    #[serde(default)]
+    pub both_sides: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -957,6 +960,7 @@ impl Session {
                 wrap: TextWrap {
                     mode: req.mode,
                     margin: req.margin.unwrap_or(6.0),
+                    both_sides: req.both_sides.unwrap_or(false),
                 },
             },
         )

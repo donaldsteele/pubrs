@@ -120,6 +120,7 @@ version.
 | 7 | Paragraph fields `tab_stops` and `list` (on paragraphs and paragraph styles); tab characters in run text now move to tab stops. Both fields are optional, so older files are valid version 7 files; migration only stamps the version. |
 | 8 | Character fields `baseline`, `caps`, `strikethrough`, `ligatures` and `kerning` (on runs and character styles). All are optional, so older files are valid version 8 files; migration only stamps the version. |
 | 9 | `type: "word_art"` frame content, and the frame style fields `shadow` and `border_art`. All are optional and omitted when unset, so older files are valid version 9 files; migration only stamps the version (ADR 0020). |
+| 10 | Wrap modes `tight` and `through`, and `wrap.both_sides` on frames. All optional (`both_sides` is omitted when false), so older files are valid version 9 files; migration only stamps the version. |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -288,3 +289,22 @@ Five optional fields on a run's `props` and a character style's `character`.
 - `strikethrough`, `ligatures` (default on), `kerning` (default on): booleans.
 
 See ADR 0021.
+
+### Text wrap (version 10)
+
+`wrap` on a frame is `{"mode", "margin", "both_sides"}`. `mode` is `none`,
+`square`, `top_bottom`, and now `tight` and `through`; `both_sides` (default
+false, omitted when false) fills every gap beside the frame that is wider than
+three em instead of only the widest. **Absent or default means the version 8
+layout, unchanged.**
+
+- `tight` follows the outline of ellipses, rounded rectangles, lines, rotated
+  frames and the visible pixels of a PNG with transparency (alpha of 50% or
+  more), blocking the outer hull of the shape on each line.
+- `through` blocks only the covered parts of each line, so text enters notches
+  and holes, and uses every slot wide enough (as with `both_sides`).
+- Outlines are never stored: they are computed from the shape, or traced from
+  the image once per asset, when the layout is made. A picture that is not
+  decoded or has no transparency wraps by its rectangle.
+
+See ADR 0022.

@@ -104,6 +104,7 @@ fn moving_a_wrapping_frame_invalidates_the_story_it_wraps() {
         wrap: TextWrap {
             mode: WrapMode::Square,
             margin: 6.0,
+            both_sides: false,
         },
     })
     .unwrap();
@@ -126,6 +127,7 @@ fn moving_a_wrapping_frame_invalidates_the_story_it_wraps() {
         wrap: TextWrap {
             mode: WrapMode::None,
             margin: 6.0,
+            both_sides: false,
         },
     })
     .unwrap();
@@ -249,6 +251,7 @@ fn world() -> (SeqIds, Editor) {
         TextWrap {
             mode: WrapMode::Square,
             margin: 4.0,
+            both_sides: false,
         },
     )
     .unwrap();
@@ -370,12 +373,15 @@ fn command(ids: &mut SeqIds, ed: &Editor, op: &Op) -> Option<Command> {
         12 => Command::SetWrap {
             frame,
             wrap: TextWrap {
-                mode: match op.c % 3 {
+                mode: match op.c % 5 {
                     0 => WrapMode::None,
                     1 => WrapMode::Square,
-                    _ => WrapMode::TopBottom,
+                    2 => WrapMode::TopBottom,
+                    3 => WrapMode::Tight,
+                    _ => WrapMode::Through,
                 },
                 margin: w / 20.0,
+                both_sides: op.c.is_multiple_of(2),
             },
         },
         13 => Command::SetTextFrame {

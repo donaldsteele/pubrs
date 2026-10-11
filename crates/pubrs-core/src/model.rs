@@ -17,7 +17,7 @@ use crate::style::{CharProps, ParaProps, StyleSheet};
 use crate::swatch::{Paint, SchemeId, Swatch};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -375,6 +375,7 @@ impl Frame {
             FrameContent::Image(_) => TextWrap {
                 mode: WrapMode::Square,
                 margin: 6.0,
+                both_sides: false,
             },
             _ => TextWrap::default(),
         };
@@ -710,6 +711,49 @@ pub struct Crop {
     pub bottom: f64,
 }
 
+/// Where a (cropped) source image of `src_w` × `src_h` units lands inside a
+/// `fw` × `fh` frame, for the given fit.
+///
+/// Returns the transform `[a, b, c, d, e, f]` from source units to
+/// frame-local points (x' = a·x + c·y + e, y' = b·x + d·y + f) and the
+/// visible destination rectangle. Shared by rendering and text wrap.
+pub fn image_placement(
+    src_w: f64,
+    src_h: f64,
+    crop: Crop,
+    fit: ImageFit,
+    fw: f64,
+    fh: f64,
+) -> ([f64; 6], Rect) {
+    let sx0 = crop.left * src_w;
+    let sy0 = crop.top * src_h;
+    let sw = (src_w * (1.0 - crop.left - crop.right)).max(1e-6);
+    let sh = (src_h * (1.0 - crop.top - crop.bottom)).max(1e-6);
+    let (kx, ky) = match fit {
+        ImageFit::Stretch => (fw / sw, fh / sh),
+        ImageFit::Fill => {
+            let s = (fw / sw).max(fh / sh);
+            (s, s)
+        }
+        ImageFit::Fit => {
+            let s = (fw / sw).min(fh / sh);
+            (s, s)
+        }
+    };
+    let dw = sw * kx;
+    let dh = sh * ky;
+    let dx = (fw - dw) / 2.0;
+    let dy = (fh - dh) / 2.0;
+    let t = [kx, 0.0, 0.0, ky, dx - sx0 * kx, dy - sy0 * ky];
+    let frame = Rect::new(0.0, 0.0, fw, fh);
+    let dest = Rect::new(dx, dy, dw, dh);
+    (
+        t,
+        dest.intersection(&frame)
+            .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+    )
+}
+
 impl Crop {
     pub fn is_valid(&self) -> bool {
         let ok = |v: f64| v.is_finite() && (0.0..1.0).contains(&v);
@@ -836,6 +880,10 @@ pub struct TextWrap {
     /// Extra clearance around the frame in points.
     #[serde(default)]
     pub margin: f64,
+    /// Text fills every free slot of a line beside the frame (wider than
+    /// three em), not only the widest.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub both_sides: bool,
 }
 
 /// Text wrap mode.
@@ -850,6 +898,13 @@ pub enum WrapMode {
     Square,
     /// Text stops above the frame and resumes below it.
     TopBottom,
+    /// Text follows the frame's outline (ellipse, rounded corners, line,
+    /// rotation, or the visible pixels of a PNG with transparency), blocking
+    /// the outer hull of the shape on each line.
+    Tight,
+    /// Like `tight`, but only the covered parts of each line are blocked,
+    /// so text can enter notches and holes of the outline.
+    Through,
 }
 
 /// Template placeholder metadata.

@@ -132,6 +132,8 @@ struct Data {
     m16: Option<(FrameId, FrameId)>,
     /// M17: the character formatting frame.
     m17: Option<FrameId>,
+    /// M18: the text frame and the ellipse it wraps around.
+    m18: Option<(FrameId, FrameId)>,
 }
 
 pub struct SelfTest {
@@ -2732,6 +2734,84 @@ impl SelfTest {
                     r.height,
                     bytes.len()
                 ));
+            }
+            156 => {
+                // M18: wrap. A blank publication with a story frame and an
+                // ellipse over its middle.
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 40.0, "width": 420.0, "height": 300.0,
+                        "font_size": 12.0,
+                        "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let text = app
+                    .session
+                    .frame_add_text(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                let req: pubrs_api::tools::frames::FrameAddShape =
+                    serde_json::from_value(serde_json::json!({
+                        "shape": "ellipse",
+                        "x": 170.0, "y": 80.0, "width": 160.0, "height": 120.0,
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let ellipse = app
+                    .session
+                    .frame_add_shape(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                app.select(vec![ellipse]);
+                self.data.m18 = Some((text, ellipse));
+            }
+            157 => {
+                // The panel shows the wrap list for the selected ellipse.
+                self.data.hist = Self::done_steps(app);
+                self.click_target(ctx, "wrap-combo")?;
+            }
+            158 => {
+                self.click_target(ctx, "wrap-tight")?;
+            }
+            159 => {
+                let (_, e) = self.data.m18.ok_or("no M18 frames")?;
+                let w = app.doc().and_then(|d| d.frame(e)).map(|f| f.wrap);
+                if w.map(|w| w.mode) != Some(pubrs_api::core::WrapMode::Tight) {
+                    return Err(format!("the wrap list did not choose Tight: {w:?}"));
+                }
+                self.click_target(ctx, "wrap-both-sides")?;
+            }
+            160 => {
+                let (t, e) = self.data.m18.ok_or("no M18 frames")?;
+                let w = app
+                    .doc()
+                    .and_then(|d| d.frame(e))
+                    .map(|f| f.wrap)
+                    .ok_or("ellipse gone")?;
+                if !w.both_sides || w.mode != pubrs_api::core::WrapMode::Tight {
+                    return Err(format!("the checkbox did not set both sides: {w:?}"));
+                }
+                let steps = Self::done_steps(app) - self.data.hist;
+                if steps != 2 {
+                    return Err(format!("mode and checkbox took {steps} undo steps, not 2"));
+                }
+                // Ellipse at x 170..330 (text frame x 40): its slots are
+                // frame-local x 4..126 on the left and 294..416 on the right.
+                let lines = Self::m15_lines(app, t)?;
+                let ys: Vec<f64> = lines.iter().map(|l| l.rect.y).collect();
+                let row = |y: f64| lines.iter().filter(|l| l.rect.y == y).count();
+                let both = ys.iter().any(|y| row(*y) >= 2);
+                let left = lines
+                    .iter()
+                    .any(|l| l.rect.right() < 130.0 && l.rect.y > 60.0);
+                let right = lines.iter().any(|l| l.rect.x > 290.0 && l.rect.y > 60.0);
+                if !(both && left && right) {
+                    return Err(format!(
+                        "expected lines on both sides of the ellipse: two-line rows {both}, left {left}, right {right}"
+                    ));
+                }
+                self.ok("Text wrap \u{25b8} Tight and Text on both sides (chosen in the panel): lines sit left and right of the ellipse on the same rows");
+                self.screenshot(ctx);
                 return Ok(true);
             }
             _ => return Ok(true),

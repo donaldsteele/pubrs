@@ -73,6 +73,7 @@ fn reference_document() -> Document {
         TextWrap {
             mode: WrapMode::Square,
             margin: 6.0,
+            both_sides: false,
         },
     )
     .unwrap();

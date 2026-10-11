@@ -324,33 +324,8 @@ pub fn image_placement(
     fw: f64,
     fh: f64,
 ) -> (Affine, Rect) {
-    let sx0 = crop.left * src_w;
-    let sy0 = crop.top * src_h;
-    let sw = (src_w * (1.0 - crop.left - crop.right)).max(1e-6);
-    let sh = (src_h * (1.0 - crop.top - crop.bottom)).max(1e-6);
-    let (kx, ky) = match fit {
-        ImageFit::Stretch => (fw / sw, fh / sh),
-        ImageFit::Fill => {
-            let s = (fw / sw).max(fh / sh);
-            (s, s)
-        }
-        ImageFit::Fit => {
-            let s = (fw / sw).min(fh / sh);
-            (s, s)
-        }
-    };
-    let dw = sw * kx;
-    let dh = sh * ky;
-    let dx = (fw - dw) / 2.0;
-    let dy = (fh - dh) / 2.0;
-    let t = Affine([kx, 0.0, 0.0, ky, dx - sx0 * kx, dy - sy0 * ky]);
-    let frame = Rect::new(0.0, 0.0, fw, fh);
-    let dest = Rect::new(dx, dy, dw, dh);
-    (
-        t,
-        dest.intersection(&frame)
-            .unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
-    )
+    let (t, dest) = pubrs_core::image_placement(src_w, src_h, crop, fit, fw, fh);
+    (Affine(t), dest)
 }
 
 /// Frame-local → page transform for a frame rect and rotation.

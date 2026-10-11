@@ -1000,24 +1000,7 @@ fn frame_props(
     shadow_props(app, ui, doc, id, &f.style);
     border_art_props(app, ui, id, &f.style);
     if f.kind() != FrameKind::Text {
-        let mut mode = f.wrap.mode;
-        ui.horizontal(|ui| {
-            ui.label("Text wrap");
-            egui::ComboBox::from_id_salt("wrap")
-                .selected_text(format!("{mode:?}"))
-                .show_ui(ui, |ui| {
-                    for m in [WrapMode::None, WrapMode::Square, WrapMode::TopBottom] {
-                        if ui
-                            .selectable_value(&mut mode, m, format!("{m:?}"))
-                            .changed()
-                        {
-                            let mut w = f.wrap;
-                            w.mode = mode;
-                            app.exec(Command::SetWrap { frame: id, wrap: w });
-                        }
-                    }
-                });
-        });
+        wrap_section(app, ui, id, f.wrap);
     }
     ui.separator();
     match &f.content {
@@ -1831,4 +1814,86 @@ fn text_props(
             app.run_action(&ctx, Action::UnlinkTextFrames);
         }
     });
+}
+
+/// The name of a wrap mode in the panel.
+fn wrap_label(m: WrapMode) -> &'static str {
+    match m {
+        WrapMode::None => "None",
+        WrapMode::Square => "Square",
+        WrapMode::Tight => "Tight",
+        WrapMode::Through => "Through",
+        WrapMode::TopBottom => "Top and bottom",
+    }
+}
+
+/// Text wrap around the selected frame: the mode, the clearance and, when
+/// text can sit beside the frame, whether to fill both sides. Every control
+/// is focusable (Tab) and works from the keyboard (Space/Enter opens the
+/// list, arrows choose, Space toggles the box).
+fn wrap_section(
+    app: &mut PubrsApp,
+    ui: &mut egui::Ui,
+    id: FrameId,
+    wrap: pubrs_api::core::TextWrap,
+) {
+    let mut mode = wrap.mode;
+    ui.horizontal(|ui| {
+        let label = ui.label("Text wrap");
+        let combo = egui::ComboBox::from_id_salt("wrap")
+            .selected_text(wrap_label(mode))
+            .show_ui(ui, |ui| {
+                for (m, name) in [
+                    (WrapMode::None, "wrap-none"),
+                    (WrapMode::Square, "wrap-square"),
+                    (WrapMode::Tight, "wrap-tight"),
+                    (WrapMode::Through, "wrap-through"),
+                    (WrapMode::TopBottom, "wrap-top-bottom"),
+                ] {
+                    let r = ui.selectable_value(&mut mode, m, wrap_label(m));
+                    crate::dialogs::mark(ui, name, &r);
+                    if r.changed() {
+                        let mut w = wrap;
+                        w.mode = mode;
+                        app.exec(Command::SetWrap { frame: id, wrap: w });
+                    }
+                }
+            });
+        crate::dialogs::mark(ui, "wrap-combo", &combo.response);
+        combo.response.labelled_by(label.id);
+    });
+    if wrap.mode == WrapMode::None {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label("Margin");
+        let mut margin = wrap.margin;
+        let r = ui.add(
+            egui::DragValue::new(&mut margin)
+                .range(0.0..=200.0)
+                .speed(0.5)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "wrap-margin", &r);
+        if r.changed() {
+            let mut w = wrap;
+            w.margin = margin;
+            app.exec_merge(
+                Command::SetWrap { frame: id, wrap: w },
+                &format!("wrap-margin-{id}"),
+            );
+        }
+    });
+    if wrap.mode != WrapMode::TopBottom {
+        let mut both = wrap.both_sides;
+        let r = ui
+            .checkbox(&mut both, "Text on both sides")
+            .on_hover_text("Fill every gap beside the frame that is wider than three em");
+        crate::dialogs::mark(ui, "wrap-both-sides", &r);
+        if r.changed() {
+            let mut w = wrap;
+            w.both_sides = both;
+            app.exec(Command::SetWrap { frame: id, wrap: w });
+        }
+    }
 }

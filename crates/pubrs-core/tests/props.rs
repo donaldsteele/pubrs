@@ -120,12 +120,15 @@ impl World {
             8 => Command::SetWrap {
                 frame,
                 wrap: TextWrap {
-                    mode: match op.c % 3 {
+                    mode: match op.c % 5 {
                         0 => WrapMode::None,
                         1 => WrapMode::Square,
-                        _ => WrapMode::TopBottom,
+                        2 => WrapMode::TopBottom,
+                        3 => WrapMode::Tight,
+                        _ => WrapMode::Through,
                     },
                     margin: w,
+                    both_sides: op.c.is_multiple_of(2),
                 },
             },
             9 => {

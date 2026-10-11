@@ -12,6 +12,7 @@ pub mod flow;
 pub mod fonts;
 pub mod hyphen;
 pub mod types;
+pub mod wrap;
 
 pub use cache::{CacheStats, StoryLayoutCache};
 pub use flow::Layouter;
@@ -20,3 +21,4 @@ pub use types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
     PositionedGlyph, StoryLayout, WordArtLayout,
 };
+pub use wrap::{AlphaContours, Contour, trace_contour};

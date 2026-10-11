@@ -78,6 +78,8 @@
   {"tool": "scheme_list", "args": {}},
   {"tool": "scheme_apply", "args": {"scheme": "coral_reef"}, "note": "Sets the seven Scheme swatches; everything using them recolours (the built-in templates do)."},
   {"tool": "swatch_delete", "args": {"swatch": "Brand Cyan", "replace_with": "#1E3A5F", "confirm": true}},
+  {"tool": "frame_set_wrap", "args": {"frame_id": "${logo.frame_id}", "mode": "tight", "margin": 8, "both_sides": true}, "note": "Text follows the outline (a PNG with transparency wraps around its visible pixels) and fills the gaps on both sides of it."},
+  {"tool": "frame_set_wrap", "args": {"frame_id": "${logo.frame_id}", "mode": "through", "margin": 4}, "note": "Like tight, but text can enter notches and holes of the outline."},
   {"tool": "frame_set_wrap", "args": {"frame_id": "${logo.frame_id}", "mode": "square", "margin": 6}},
   {"tool": "frame_set_placeholder", "args": {"frame_id": "${title.frame_id}", "name": "headline", "hint": "Event name and date"}},
   {"tool": "frame_lock", "args": {"frame_id": "${rule.frame_id}", "locked": true}},

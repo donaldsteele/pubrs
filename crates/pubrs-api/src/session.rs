@@ -341,6 +341,7 @@ impl Session {
         {
             return Ok(l.clone());
         }
+        self.ctx.images.sync_for_wrap(open.editor.doc());
         let layout = Arc::new(
             open.stories
                 .layout(&mut self.ctx.layouter, open.editor.doc()),

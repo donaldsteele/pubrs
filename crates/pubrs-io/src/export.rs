@@ -1,5 +1,7 @@
 //! Export orchestration: layout + image decoding + rendering.
 
+use std::sync::Arc;
+
 use pubrs_core::Document;
 use pubrs_layout::{DocumentLayout, FontLibrary, Layouter};
 use pubrs_render::impose::impose;
@@ -50,15 +52,19 @@ impl std::fmt::Debug for ExportContext {
 
 impl ExportContext {
     pub fn new(fonts: FontLibrary) -> Self {
+        let images = ImageCache::new();
+        let mut layouter = Layouter::new(fonts);
+        layouter.set_contours(Some(Arc::new(images.contours())));
         Self {
-            layouter: Layouter::new(fonts),
-            images: ImageCache::new(),
+            layouter,
+            images,
             raster: RasterRenderer::new(),
         }
     }
 
     /// Lay out every story of `doc`.
     pub fn layout(&mut self, doc: &Document) -> DocumentLayout {
+        self.images.sync_for_wrap(doc);
         self.layouter.layout_document(doc)
     }
 

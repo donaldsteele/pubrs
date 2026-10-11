@@ -412,7 +412,7 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
 fn ensure_current_fixture() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let fixtures: [(u32, Document); 8] = [
+        let fixtures: [(u32, Document); 9] = [
             (2, sheet_document()),
             (3, hyphenation_document()),
             (4, common::colour_document()),
@@ -421,6 +421,7 @@ fn ensure_current_fixture() {
             (7, tabs_lists_document()),
             (8, char_format_document()),
             (9, effects_document()),
+            (10, wrap_document()),
         ];
         for (v, doc) in &fixtures {
             let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -460,7 +461,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 9, "expected the schema_v1 to v9 fixtures");
+    assert!(n >= 10, "expected the schema_v1 to v10 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -946,4 +947,85 @@ fn char_format_document() -> Document {
         .unwrap();
     }
     b.finish()
+}
+
+/// The document `tests/fixtures/schema_v10.pubrs` is written from: text
+/// wrapping tight around an ellipse on both sides, through a line and
+/// tight around a picture frame.
+fn wrap_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(1902), PageSetup::default());
+    let p = b.page(0);
+    b.text(
+        p,
+        Rect::new(36.0, 36.0, 300.0, 240.0),
+        "Text runs around the outline of a shape and, when asked, on both sides of it.",
+    )
+    .unwrap();
+    let e = b
+        .shape(p, Rect::new(150.0, 60.0, 90.0, 90.0), Shape::Ellipse)
+        .unwrap();
+    b.wrap(
+        e,
+        TextWrap {
+            mode: WrapMode::Tight,
+            margin: 8.0,
+            both_sides: true,
+        },
+    )
+    .unwrap();
+    let l = b
+        .shape(
+            p,
+            Rect::new(60.0, 160.0, 60.0, 60.0),
+            Shape::Line {
+                direction: LineDirection::UpRight,
+            },
+        )
+        .unwrap();
+    b.wrap(
+        l,
+        TextWrap {
+            mode: WrapMode::Through,
+            margin: 4.0,
+            both_sides: false,
+        },
+    )
+    .unwrap();
+    let i = b
+        .image(p, Rect::new(220.0, 160.0, 80.0, 80.0), None)
+        .unwrap();
+    b.wrap(
+        i,
+        TextWrap {
+            mode: WrapMode::Tight,
+            margin: 6.0,
+            both_sides: false,
+        },
+    )
+    .unwrap();
+    b.finish()
+}
+
+/// The schema 10 fixture: tight and through wrap and text on both sides.
+#[test]
+fn schema_10_fixture_keeps_wrap_modes() {
+    ensure_current_fixture();
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v10.pubrs")).unwrap();
+    let wraps: Vec<_> = doc
+        .frames
+        .values()
+        .map(|f| f.wrap)
+        .filter(|w| w.mode != WrapMode::None)
+        .collect();
+    assert!(
+        wraps
+            .iter()
+            .any(|w| w.mode == WrapMode::Tight && w.both_sides)
+    );
+    assert!(wraps.iter().any(|w| w.mode == WrapMode::Through));
+    assert!(
+        wraps
+            .iter()
+            .any(|w| w.mode == WrapMode::Tight && !w.both_sides)
+    );
 }

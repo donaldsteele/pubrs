@@ -1012,3 +1012,117 @@ fn borderart_ropes() {
     );
     assert_png_golden("borderart_ropes", &render(&doc, 0, &opts()));
 }
+
+// ---- tight, through and both-sides wrap (M18) ----
+
+const WRAP_LOREM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do \
+eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud \
+exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in \
+reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint \
+occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. \
+Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, \
+totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae \
+dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit.";
+
+/// A 100 x 100 RGBA PNG: a red disc on transparency, or a blue arch.
+fn alpha_png(arch: bool) -> Vec<u8> {
+    let img = image::RgbaImage::from_fn(100, 100, |x, y| {
+        let (dx, dy) = (f64::from(x) - 49.5, f64::from(y) - 49.5);
+        let on = if arch {
+            y < 22 || !(12..88).contains(&x)
+        } else {
+            dx * dx + dy * dy <= 48.0 * 48.0
+        };
+        match (on, arch) {
+            (false, _) => image::Rgba([0, 0, 0, 0]),
+            (true, false) => image::Rgba([200, 40, 40, 255]),
+            (true, true) => image::Rgba([40, 70, 190, 255]),
+        }
+    });
+    let mut out = Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+    out.into_inner()
+}
+
+fn wrap_doc() -> Document {
+    let mut b = DocBuilder::new(
+        SeqIds::new(18),
+        PageSetup {
+            size: Size::new(400.0, 300.0),
+            margins: Margins::uniform(18.0),
+            ..PageSetup::default()
+        },
+    );
+    let p = b.page(0);
+    let (disc, disc_data) = import_image(&mut b.ids, "disc.png", alpha_png(false)).unwrap();
+    let (arch, arch_data) = import_image(&mut b.ids, "arch.png", alpha_png(true)).unwrap();
+    let (disc_id, arch_id) = (disc.id, arch.id);
+    for (asset, data) in [(disc, disc_data), (arch, arch_data)] {
+        b.exec(Command::AddAsset { asset, data }).unwrap();
+    }
+    b.text(p, Rect::new(18.0, 18.0, 364.0, 264.0), WRAP_LOREM)
+        .unwrap();
+    let ellipse = b
+        .shape(p, Rect::new(110.0, 30.0, 110.0, 90.0), Shape::Ellipse)
+        .unwrap();
+    b.style(ellipse, style(Some(Color::rgb(250, 190, 80)), None, 1.0))
+        .unwrap();
+    b.wrap(
+        ellipse,
+        TextWrap {
+            mode: WrapMode::Tight,
+            margin: 6.0,
+            both_sides: true,
+        },
+    )
+    .unwrap();
+    let disc_frame = b
+        .image(p, Rect::new(255.0, 150.0, 110.0, 110.0), Some(disc_id))
+        .unwrap();
+    b.wrap(
+        disc_frame,
+        TextWrap {
+            mode: WrapMode::Tight,
+            margin: 6.0,
+            both_sides: true,
+        },
+    )
+    .unwrap();
+    let arch_frame = b
+        .image(p, Rect::new(30.0, 150.0, 100.0, 100.0), Some(arch_id))
+        .unwrap();
+    b.wrap(
+        arch_frame,
+        TextWrap {
+            mode: WrapMode::Through,
+            margin: 4.0,
+            both_sides: false,
+        },
+    )
+    .unwrap();
+    b.finish()
+}
+
+#[test]
+fn tight_wrap() {
+    let doc = wrap_doc();
+    let png = render(&doc, 0, &opts());
+    assert_png_golden("tight_wrap", &png);
+}
+
+#[test]
+fn image_cache_traces_the_alpha_of_decoded_pngs() {
+    let doc = wrap_doc();
+    let mut ctx = ExportContext::new(test_fonts());
+    // Layout decodes the images tight or through wrap needs.
+    ctx.layout(&doc);
+    let contours = ctx.images.contours();
+    let mut found = 0;
+    for id in doc.assets.keys() {
+        let c = pubrs_layout::AlphaContours::contour(&contours, *id).expect("traced");
+        assert_eq!((c.width, c.height), (100, 100));
+        assert!(!c.polys.is_empty() && c.polys.iter().all(|p| p.len() >= 3));
+        found += 1;
+    }
+    assert_eq!(found, 2);
+}
