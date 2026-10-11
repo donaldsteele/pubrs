@@ -53,6 +53,15 @@ Thank you for keeping a small bakery busy for more than thirty years.";
 /// software-rendered CI frames are slower, so this is a frame count).
 const SETTLE_FRAMES: u32 = 900;
 
+/// Seconds one step may take before the self-test fails. Software-rendered
+/// CI frames (Windows WARP, llvmpipe) are slow; the 50-page steps take longest.
+const STEP_TIMEOUT_SECS: u64 = 120;
+
+/// Seconds the whole self-test may take: only a guard against a hang, since
+/// the run grows with every milestone's steps (it passed 300 s on the Windows
+/// runner at M16, run 38129342526).
+const TOTAL_TIMEOUT_SECS: u64 = 1800;
+
 /// At 800% a pixel-aligned shape edge must put at least this share of its
 /// contrast between two neighbouring screen pixels. One texel per device
 /// pixel gives 100%; the old page texture capped at 4,096 px was magnified
@@ -128,6 +137,8 @@ pub struct SelfTest {
     data: Data,
     shots: usize,
     started: Instant,
+    /// When the current step began; each step gets its own time limit.
+    step_started: Instant,
     /// File to drop on the window with the next frame.
     drop: Option<PathBuf>,
     /// Input clock, one 60 Hz tick per frame, so double-clicks and drags do
@@ -165,6 +176,7 @@ impl SelfTest {
             data: Data::default(),
             shots: 0,
             started: Instant::now(),
+            step_started: Instant::now(),
             drop: None,
             clock: 0.0,
             settling: 0,
@@ -540,10 +552,16 @@ impl SelfTest {
     ) -> Option<Result<String, String>> {
         self.save_screenshots(ctx);
         // Generous: CI draws the window in software, several frames a second.
-        if self.started.elapsed().as_secs() > 300 {
+        // Each step has its own limit, so the whole run may grow with the
+        // number of steps; the overall limit only guards against a hang.
+        if self.step_started.elapsed().as_secs() > STEP_TIMEOUT_SECS
+            || self.started.elapsed().as_secs() > TOTAL_TIMEOUT_SECS
+        {
             return Some(Err(format!(
-                "timed out at step {}\n{}",
+                "timed out at step {} ({} s on this step, {} s in total)\n{}",
                 self.step,
+                self.step_started.elapsed().as_secs(),
+                self.started.elapsed().as_secs(),
                 self.log.join("\n")
             )));
         }
@@ -576,6 +594,7 @@ impl SelfTest {
             Ok(true) => Some(Ok(self.log.join("\n"))),
             Ok(false) => {
                 self.step += 1;
+                self.step_started = Instant::now();
                 self.wait = 4;
                 None
             }
