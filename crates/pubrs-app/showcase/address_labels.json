@@ -1,0 +1,14 @@
+[
+  {"tool": "template_apply", "args": {"name": "address_labels"}, "as": "d"},
+  {"tool": "doc_set_info", "args": {"title": "Newsletter mailing labels"}},
+  {"tool": "doc_set_sheet", "args": {"preset": "avery-5160", "fill": "sequence"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.address}", "text": "\n\n"}},
+  {"tool": "merge_set_source", "args": {"path": "${csv}"}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${d.ph.address}", "offset": 0, "field": "Name"}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${d.ph.address}", "offset": 2, "field": "Street"}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${d.ph.address}", "offset": 4, "field": "City"}},
+  {"tool": "text_insert", "args": {"frame_id": "${d.ph.address}", "offset": 5, "text": ", "}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${d.ph.address}", "offset": 7, "field": "State"}},
+  {"tool": "text_insert", "args": {"frame_id": "${d.ph.address}", "offset": 8, "text": " "}},
+  {"tool": "merge_insert_field", "args": {"frame_id": "${d.ph.address}", "offset": 9, "field": "Zip"}}
+]

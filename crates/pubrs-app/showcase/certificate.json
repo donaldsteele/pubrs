@@ -1,0 +1,13 @@
+[
+ { "tool": "template_apply", "args": { "name": "certificate" }, "as": "d" },
+ { "tool": "doc_set_info", "args": { "title": "Certificate of Achievement", "author": "Maple Court Garden Club" } },
+ { "tool": "frame_delete", "args": { "frame_id": "${d.ph.title}", "confirm": true } },
+ { "tool": "frame_add_wordart", "args": { "page_id": "${d.page_ids.0}", "text": "Certificate of Achievement", "x": 96, "y": 70, "width": 600, "height": 64, "font": "Liberation Serif", "warp": "wave", "fill": { "gradient": "linear", "angle": 0, "stops": [ { "offset": 0, "color": "#7b2d1e" },
+ { "offset": 1, "color": "#d9822b" } ] }, "outline": "#5a1f14", "outline_width": 1, "shadow": { "offset_x": 2, "offset_y": 3, "blur": 3, "color": "#000000", "opacity": 0.3 } }, "as": "wa" },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.recipient}", "text": "Maria Okafor" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.reason}", "text": "for three seasons of tireless care for the Maple Court community garden, and for teaching a whole neighbourhood to grow its own food." } },
+ { "tool": "image_place", "args": { "frame_id": "${d.ph.seal}", "path": "${content}/seal.svg" } },
+ { "tool": "image_set_alt_text", "args": { "frame_id": "${d.ph.seal}", "alt_text": "Gold award seal with a star and two red ribbons." } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.date}", "text": "April 24, 2027" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.signer}", "text": "Tom Reyes, Chair" } }
+]

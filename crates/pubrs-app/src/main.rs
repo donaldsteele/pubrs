@@ -21,6 +21,7 @@ mod platform;
 mod render_worker;
 mod rulers;
 mod selftest;
+mod showcase;
 mod spell;
 mod tables;
 mod textedit;
@@ -39,6 +40,8 @@ pub struct Args {
     pub smoke_test: bool,
     /// Drive the GUI through the end-to-end scenario and exit (CI).
     pub self_test: Option<PathBuf>,
+    /// Draw the curated website screenshots into this folder and exit.
+    pub showcase: Option<PathBuf>,
     /// Use only bundled fonts and no native dialogs/clipboard (tests).
     pub headless_platform: bool,
     /// Files to open.
@@ -59,13 +62,20 @@ impl Args {
                     args.self_test = Some(PathBuf::from(dir));
                     args.headless_platform = true;
                 }
+                "--showcase" => {
+                    let dir = it
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("--showcase needs an output folder"))?;
+                    args.showcase = Some(PathBuf::from(dir));
+                    args.headless_platform = true;
+                }
                 "--version" => {
                     println!("pubrs-app {}", env!("CARGO_PKG_VERSION"));
                     std::process::exit(0);
                 }
                 "--help" | "-h" => {
                     println!(
-                        "pubrs-app [FILE.pubrs...]\n\nOptions:\n  --smoke-test        open a window and exit (CI)\n  --self-test DIR     run the GUI end-to-end scenario, write results to DIR\n  --version"
+                        "pubrs-app [FILE.pubrs...]\n\nOptions:\n  --smoke-test        open a window and exit (CI)\n  --self-test DIR     run the GUI end-to-end scenario, write results to DIR\n  --showcase DIR      draw the website screenshots into DIR\n  --version"
                     );
                     std::process::exit(0);
                 }
@@ -82,13 +92,19 @@ impl Args {
 pub struct Outcome {
     pub painted: bool,
     pub self_test: Option<Result<String, String>>,
+    pub showcase: Option<Result<String, String>>,
 }
 
-fn options(renderer: eframe::Renderer) -> eframe::NativeOptions {
+fn options(renderer: eframe::Renderer, showcase: bool) -> eframe::NativeOptions {
+    let size = if showcase {
+        showcase::WINDOW_PX
+    } else {
+        [1280.0, 860.0]
+    };
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("pubrs")
         .with_app_id("pubrs")
-        .with_inner_size([1280.0, 860.0])
+        .with_inner_size(size)
         .with_min_inner_size([720.0, 480.0]);
     if let Ok(icon) =
         eframe::icon_data::from_png_bytes(include_bytes!("../../../packaging/icons/pubrs-256.png"))
@@ -115,7 +131,7 @@ fn run(args: &Args, renderer: eframe::Renderer, outcome: &Rc<RefCell<Outcome>>) 
     let outcome = outcome.clone();
     eframe::run_native(
         "pubrs",
-        options(renderer),
+        options(renderer, args.showcase.is_some()),
         Box::new(move |cc| Ok(Box::new(app::PubrsApp::new(cc, args, outcome)))),
     )
 }
@@ -179,6 +195,13 @@ fn run_app() -> anyhow::Result<()> {
             Some(Ok(report)) => println!("self-test ok\n{report}"),
             Some(Err(e)) => anyhow::bail!("self-test FAILED: {e}"),
             None => anyhow::bail!("self-test did not finish"),
+        }
+    }
+    if args.showcase.is_some() {
+        match outcome.showcase {
+            Some(Ok(report)) => println!("showcase ok\n{report}"),
+            Some(Err(e)) => anyhow::bail!("showcase FAILED: {e}"),
+            None => anyhow::bail!("showcase did not finish"),
         }
     }
     Ok(())

@@ -1,0 +1,15 @@
+[
+  {"tool": "template_apply", "args": {"name": "menu"}, "as": "d"},
+  {"tool": "doc_set_info", "args": {"title": "The Copper Kettle: Spring Menu"}},
+  {"tool": "frame_resize", "args": {"frame_id": "${d.ph.restaurant_name}", "width": 380, "height": 50}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.restaurant_name}", "text": "The Copper Kettle"}},
+  {"tool": "frame_add_image", "args": {"page_id": "${d.page_ids.0}", "x": 438, "y": 48, "width": 120, "height": 80, "path": "${content}/dish.svg", "fit": "fill"}, "as": "dish"},
+  {"tool": "image_set_alt_text", "args": {"frame_id": "${dish.frame_id}", "alt_text": "A bowl of tomato soup with a basil leaf and a bread roll."}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.tagline}", "text": "Seasonal cooking from the Maple Court allotments"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.starters}", "text": "Roasted tomato soup, basil oil\t7.00\nBeetroot and goat's cheese salad\t8.50\nWild garlic and potato croquettes\t7.50\nSourdough, cultured butter\t4.50"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.mains}", "text": "Pan-fried sea bass, lemon and caper butter\t19.50\nMushroom and thyme risotto\t16.00\nSlow-roast chicken, garden greens\t17.50\nButternut squash and sage cannelloni\t15.00\nBeef and ale pie, mash and carrots\t16.50\nCatch of the day\t21.00"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.desserts}", "text": "Rhubarb and custard tart\t7.50\nDark chocolate pot, sea salt\t7.00\nApple and blackberry crumble\t7.25\nHomemade ice cream, three scoops\t6.00"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.specials}", "text": "Soup of the day with warm bread\nFish pie with buttered spring greens\nSlow-cooked lamb shoulder for two\nApple and elderflower sponge"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.drinks}", "text": "Fresh mint lemonade\t3.75\nSparkling water\t3.00\nFilter coffee\t3.25\nEspresso\t2.75\nPot of loose-leaf tea\t3.50\nGlass of house wine\t7.50"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.footer_note}", "text": "Please tell your server about any allergies. A discretionary 10% service charge is added to tables of six or more."}}
+]

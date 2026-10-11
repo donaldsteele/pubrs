@@ -469,7 +469,7 @@ pub fn panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
     let mut toggled = false;
     egui::Panel::bottom("checker")
         .resizable(true)
-        .default_size(200.0)
+        .default_size(if app.showcase_mode { 290.0 } else { 200.0 })
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Design Checker");

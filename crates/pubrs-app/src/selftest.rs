@@ -221,6 +221,85 @@ fn png(w: u32, h: u32, seed: u8) -> Vec<u8> {
     pm.encode_png().expect("png")
 }
 
+/// The screenshots egui delivered in this frame's input.
+pub(crate) fn screenshots_in(ctx: &egui::Context) -> Vec<std::sync::Arc<egui::ColorImage>> {
+    ctx.input(|i| {
+        i.events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+/// A screenshot as PNG bytes.
+pub(crate) fn encode_screenshot(img: &egui::ColorImage) -> Option<Vec<u8>> {
+    let [w, h] = img.size;
+    let mut pm = tiny_skia::Pixmap::new(w as u32, h as u32)?;
+    for (dst, c) in pm.pixels_mut().iter_mut().zip(img.pixels.iter()) {
+        let [r, g, b, a] = c.to_srgba_unmultiplied();
+        *dst = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
+    }
+    pm.encode_png().ok()
+}
+
+/// The canvas shows the current revision at the current view: the render
+/// worker has caught up with the document, the zoom and the page, and the
+/// thumbnails the pages panel shows first are current.
+pub(crate) fn rendered(app: &PubrsApp) -> bool {
+    let Some(v) = app.view() else {
+        return true;
+    };
+    let Ok(open) = app.session.get(Some(v.doc_id)) else {
+        return true;
+    };
+    let rev = open.revision();
+    let pages = open.doc().pages.len();
+    let canvas = v.page_tex.as_ref().is_some_and(|t| {
+        t.revision == rev
+            && t.key.page_index == v.page
+            && v.requested.is_none_or(|(k, r)| k == t.key && r == rev)
+    });
+    canvas && (0..pages.min(8)).all(|i| v.thumbs.get(&i).is_some_and(|t| t.revision == rev))
+}
+
+/// Per-frame events of a click (or double-click) at `pos`.
+pub(crate) fn click_events(pos: Pos2, double: bool) -> Vec<Vec<Event>> {
+    let press = |pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    let mut v = vec![
+        vec![Event::PointerMoved(pos)],
+        vec![press(true)],
+        vec![press(false)],
+    ];
+    if double {
+        v.push(vec![press(true)]);
+        v.push(vec![press(false)]);
+    }
+    v
+}
+
+/// Per-frame events of a key press and release.
+pub(crate) fn key_events(key: Key, modifiers: Modifiers) -> Vec<Vec<Event>> {
+    [true, false]
+        .map(|pressed| {
+            vec![Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed,
+                repeat: false,
+                modifiers,
+            }]
+        })
+        .into()
+}
+
 impl SelfTest {
     pub fn new(out: PathBuf) -> Self {
         let _ = std::fs::create_dir_all(&out);
@@ -270,28 +349,12 @@ impl SelfTest {
     }
 
     fn save_screenshots(&mut self, ctx: &egui::Context) {
-        let shots: Vec<std::sync::Arc<egui::ColorImage>> = ctx.input(|i| {
-            i.events
-                .iter()
-                .filter_map(|e| match e {
-                    Event::Screenshot { image, .. } => Some(image.clone()),
-                    _ => None,
-                })
-                .collect()
-        });
-        for img in shots {
+        for img in screenshots_in(ctx) {
             self.data.shot = Some(img.clone());
             self.shots += 1;
-            let [w, h] = img.size;
-            if let Some(mut pm) = tiny_skia::Pixmap::new(w as u32, h as u32) {
-                for (dst, c) in pm.pixels_mut().iter_mut().zip(img.pixels.iter()) {
-                    let [r, g, b, a] = c.to_srgba_unmultiplied();
-                    *dst = tiny_skia::ColorU8::from_rgba(r, g, b, a).premultiply();
-                }
-                let path = self.out.join(format!("screen-{}.png", self.shots));
-                if let Ok(bytes) = pm.encode_png() {
-                    let _ = std::fs::write(&path, bytes);
-                }
+            let path = self.out.join(format!("screen-{}.png", self.shots));
+            if let Some(bytes) = encode_screenshot(&img) {
+                let _ = std::fs::write(&path, bytes);
             }
         }
     }
@@ -300,20 +363,7 @@ impl SelfTest {
     /// worker has caught up with the document, the zoom and the page, and the
     /// thumbnails the pages panel shows first are current.
     fn rendered(app: &PubrsApp) -> bool {
-        let Some(v) = app.view() else {
-            return true;
-        };
-        let Ok(open) = app.session.get(Some(v.doc_id)) else {
-            return true;
-        };
-        let rev = open.revision();
-        let pages = open.doc().pages.len();
-        let canvas = v.page_tex.as_ref().is_some_and(|t| {
-            t.revision == rev
-                && t.key.page_index == v.page
-                && v.requested.is_none_or(|(k, r)| k == t.key && r == rev)
-        });
-        canvas && (0..pages.min(8)).all(|i| v.thumbs.get(&i).is_some_and(|t| t.revision == rev))
+        rendered(app)
     }
 
     /// The rendered RGBA at page point (`x`, `y`) of the page being shown.
@@ -469,24 +519,12 @@ impl SelfTest {
         Self::screen_of(app, p).ok_or_else(|| "canvas not laid out".to_string())
     }
 
-    fn screen_of(app: &PubrsApp, p: Point) -> Option<Pos2> {
+    pub(crate) fn screen_of(app: &PubrsApp, p: Point) -> Option<Pos2> {
         app.view().and_then(|v| v.xf).map(|xf| xf.to_screen(p))
     }
 
     fn click(&mut self, pos: Pos2, double: bool) {
-        let press = |pressed| Event::PointerButton {
-            pos,
-            button: PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::NONE,
-        };
-        self.pending.push_back(vec![Event::PointerMoved(pos)]);
-        self.pending.push_back(vec![press(true)]);
-        self.pending.push_back(vec![press(false)]);
-        if double {
-            self.pending.push_back(vec![press(true)]);
-            self.pending.push_back(vec![press(false)]);
-        }
+        self.pending.extend(click_events(pos, double));
     }
 
     /// A double-click after 0.7 s of input-clock idle: egui counts a third
@@ -508,7 +546,12 @@ impl SelfTest {
     }
 
     /// Screen centre of a table cell (an unrotated table).
-    fn cell_center(app: &mut PubrsApp, frame: FrameId, row: u32, col: u32) -> Result<Pos2, String> {
+    pub(crate) fn cell_center(
+        app: &mut PubrsApp,
+        frame: FrameId,
+        row: u32,
+        col: u32,
+    ) -> Result<Pos2, String> {
         let id = app.doc_id().ok_or("no doc")?;
         let layout = app.session.layout(Some(id)).map_err(|e| e.message)?;
         let doc = app.doc().ok_or("no doc")?;
@@ -639,20 +682,7 @@ impl SelfTest {
     }
 
     fn key(&mut self, key: Key, modifiers: Modifiers) {
-        self.pending.push_back(vec![Event::Key {
-            key,
-            physical_key: Some(key),
-            pressed: true,
-            repeat: false,
-            modifiers,
-        }]);
-        self.pending.push_back(vec![Event::Key {
-            key,
-            physical_key: Some(key),
-            pressed: false,
-            repeat: false,
-            modifiers,
-        }]);
+        self.pending.extend(key_events(key, modifiers));
     }
 
     /// Advance the scenario; `Some(result)` when finished.
@@ -4709,7 +4739,7 @@ impl SelfTest {
 
 /// A file "dropped" on the window by the self-test.
 #[derive(Debug)]
-struct DroppedPath(PathBuf);
+pub(crate) struct DroppedPath(pub(crate) PathBuf);
 
 impl egui::DroppedFile for DroppedPath {
     fn path(&self) -> &std::path::Path {

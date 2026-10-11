@@ -1,0 +1,15 @@
+[
+ { "tool": "template_apply", "args": { "name": "calendar", "year": 2027 }, "as": "d" },
+ { "tool": "doc_set_info", "args": { "title": "Maple Court Calendar 2027" } },
+ { "tool": "image_place", "args": { "frame_id": "${d.ph.photo_01}", "path": "${content}/mountains.svg" } },
+ { "tool": "image_set_alt_text", "args": { "frame_id": "${d.ph.photo_01}", "alt_text": "Snow-capped mountains above a pine forest." } },
+ { "tool": "table_set_cell_text", "args": { "frame_id": "${d.named_frames.days_01}", "row": 1, "col": 5, "text": "1\nNew Year’s Day" } },
+ { "tool": "table_set_cell_text", "args": { "frame_id": "${d.named_frames.days_01}", "row": 3, "col": 3, "text": "13\nSeed catalogues" } },
+ { "tool": "table_set_cell_text", "args": { "frame_id": "${d.named_frames.days_01}", "row": 4, "col": 1, "text": "18\nHoliday: no pick-up" } },
+ { "tool": "table_set_cell_text", "args": { "frame_id": "${d.named_frames.days_01}", "row": 5, "col": 6, "text": "30\nWinter walk" } },
+ { "tool": "table_get", "args": { "frame_id": "${d.named_frames.days_01}" }, "as": "t" },
+ { "tool": "text_apply_char_style", "args": { "story_id": "${t.cells.12.story_id}", "start": 2, "bold": false, "font_size": 9 } },
+ { "tool": "text_apply_char_style", "args": { "story_id": "${t.cells.24.story_id}", "start": 3, "bold": false, "font_size": 9 } },
+ { "tool": "text_apply_char_style", "args": { "story_id": "${t.cells.29.story_id}", "start": 3, "bold": false, "font_size": 9 } },
+ { "tool": "text_apply_char_style", "args": { "story_id": "${t.cells.41.story_id}", "start": 3, "bold": false, "font_size": 9 } }
+]

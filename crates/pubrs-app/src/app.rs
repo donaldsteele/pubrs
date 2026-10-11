@@ -28,6 +28,7 @@ use crate::keymap::{self, Action};
 use crate::platform::menu::NativeMenu;
 use crate::platform::{Platform, PrintOptions, PrintOutcome};
 use crate::selftest::SelfTest;
+use crate::showcase::Showcase;
 use crate::view::DocView;
 use crate::{Args, Outcome};
 
@@ -133,6 +134,11 @@ pub struct PubrsApp {
     outcome: Rc<RefCell<Outcome>>,
     pub frames_drawn: u64,
     pub selftest: Option<SelfTest>,
+    /// Draws the website screenshots (`--showcase`).
+    pub showcase: Option<Showcase>,
+    /// Set for `--showcase`: hides what a screenshot should not show (the
+    /// software-drawing warning, spelling squiggles). Never set in normal use.
+    pub showcase_mode: bool,
     /// Frames copied in this process (see `clipboard.rs`).
     pub clip: Option<crate::clipboard::InProcessClip>,
     allow_close: bool,
@@ -167,7 +173,8 @@ impl PubrsApp {
         outcome: Rc<RefCell<Outcome>>,
     ) -> Self {
         let selftest_dir = args.self_test.clone();
-        let platform = match &selftest_dir {
+        let showcase_dir = args.showcase.clone();
+        let platform = match selftest_dir.as_ref().or(showcase_dir.as_ref()) {
             Some(dir) => Platform::null(dir),
             None if args.smoke_test => Platform::null(&std::env::temp_dir().join("pubrs-smoke")),
             None => Platform::native(),
@@ -184,6 +191,9 @@ impl PubrsApp {
         let mut visuals = egui::Visuals::light();
         visuals.window_corner_radius = egui::CornerRadius::same(8);
         cc.egui_ctx.set_visuals(visuals);
+        if showcase_dir.is_some() {
+            cc.egui_ctx.set_zoom_factor(crate::showcase::ZOOM);
+        }
         let fonts = Vec::new();
         let autosave = Autosave::new(platform.paths.recovery_dir());
         let mut app = Self {
@@ -206,6 +216,8 @@ impl PubrsApp {
             template_thumbs: HashMap::new(),
             template_list: None,
             selftest: selftest_dir.map(SelfTest::new),
+            showcase_mode: showcase_dir.is_some(),
+            showcase: showcase_dir.map(Showcase::new),
             args: args.clone(),
             outcome,
             frames_drawn: 0,
@@ -239,7 +251,7 @@ impl PubrsApp {
         for f in &args.files {
             app.open_or_import(f);
         }
-        if app.selftest.is_none() && !args.smoke_test {
+        if app.selftest.is_none() && app.showcase.is_none() && !args.smoke_test {
             let recoverable = app.autosave.recoverable();
             if !recoverable.is_empty() {
                 app.dialog = Some(Dialog::Recovery(recoverable));
@@ -1649,13 +1661,20 @@ impl eframe::App for PubrsApp {
         if let Some(t) = &mut self.selftest {
             t.inject(ctx, raw);
         }
+        if let Some(t) = &mut self.showcase {
+            t.inject(raw);
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let started = Instant::now();
         self.frames_drawn += 1;
-        if !self.menu_tried && self.selftest.is_none() && !self.args.smoke_test {
+        if !self.menu_tried
+            && self.selftest.is_none()
+            && self.showcase.is_none()
+            && !self.args.smoke_test
+        {
             self.menu_tried = true;
             self.native_menu = NativeMenu::install(keymap::MENUS);
         }
@@ -1703,8 +1722,20 @@ impl eframe::App for PubrsApp {
             ctx.request_repaint();
         }
         self.autosave.tick(&self.session, &self.views);
-        if self.selftest.is_none() && !self.args.smoke_test {
+        if self.selftest.is_none() && self.showcase.is_none() && !self.args.smoke_test {
             self.save_settings();
+        }
+        if let Some(mut t) = self.showcase.take() {
+            if !t.finished {
+                if let Some(result) = t.step(self, &ctx) {
+                    self.outcome.borrow_mut().showcase = Some(result);
+                    self.allow_close = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    t.finished = true;
+                }
+                ctx.request_repaint();
+            }
+            self.showcase = Some(t);
         }
         if let Some(mut t) = self.selftest.take() {
             if !t.finished {
@@ -1730,6 +1761,7 @@ impl eframe::App for PubrsApp {
         }
         if let Some((_, t)) = &self.status
             && t.elapsed().as_secs() > 8
+            && !self.showcase_mode
         {
             self.status = None;
         }

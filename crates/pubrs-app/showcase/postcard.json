@@ -1,0 +1,9 @@
+[
+  {"tool": "template_apply", "args": {"name": "postcard"}, "as": "d"},
+  {"tool": "doc_set_info", "args": {"title": "Greetings from Harbour City"}},
+  {"tool": "image_place", "args": {"frame_id": "${d.ph.front_picture}", "path": "${content}/skyline.svg"}},
+  {"tool": "image_set_alt_text", "args": {"frame_id": "${d.ph.front_picture}", "alt_text": "City skyline at dusk with lit windows and a river in the foreground."}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.front_caption}", "text": "Greetings from Harbour City"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.message}", "text": "Dear Nana,\nThe train was on time for once and the hotel looks right over the river. We watched the lights come on from the balcony last night.\nTomorrow: the market and the old lighthouse. Back on Sunday with stories (and fudge).\nLove, Ben and Ada"}},
+  {"tool": "text_set", "args": {"frame_id": "${d.ph.address}", "text": "Mrs. Eleanor Vance\n9 Orchard Lane\nFairview, OR 97000"}}
+]

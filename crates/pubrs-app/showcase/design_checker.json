@@ -1,0 +1,12 @@
+[
+ { "tool": "template_apply", "args": { "name": "flyer" }, "as": "d" },
+ { "tool": "doc_set_info", "args": { "title": "Spring Plant Sale flyer" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.headline}", "text": "Spring Plant Sale" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.subheadline}", "text": "Seedlings, herbs and flowers grown by your neighbours" } },
+ { "tool": "image_place", "args": { "frame_id": "${d.ph.hero_image}", "path": "${content}/garden.svg" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.body}", "text": "Join us at the Maple Court community garden for our annual plant sale. Every plant has been raised from seed in the greenhouse, and every penny goes back into the garden.\nYou will find tomato and pepper seedlings, a dozen kinds of herbs, sunflowers, sweet peas and bedding plants for pots and borders, all labelled with growing tips from the volunteers who raised them.\nThere will be tea and home-made cake, a children's planting table, and a free seed swap for anyone who brings a packet to share. Please bring your own bags and boxes, and come early for the best choice: the beans always go first." } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.call_to_action}", "text": "Saturday 17 April\n10 am to 3 pm\nFree entry" } },
+ { "tool": "text_set", "args": { "frame_id": "${d.ph.contact}", "text": "14 Maple Court, Fairview · garden@maplecourt.example · 555-0142" } },
+ { "tool": "text_apply_char_style", "args": { "story_id": "${d.story.contact}", "font_size": 5 } },
+ { "tool": "frame_add_text", "args": { "page_id": "${d.page_ids.0}", "x": 54, "y": 690, "width": 400, "height": 24, "text": "Raffle tickets on sale at the gate, 1 dollar each", "font_size": 13, "color": "#c9c9c9" } }
+]

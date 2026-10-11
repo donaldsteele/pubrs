@@ -461,7 +461,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 }
             }
             // ---- spelling: squiggles under misspelt words
-            if let Some(layout) = &layout {
+            if let Some(layout) = layout.as_ref().filter(|_| !app.showcase_mode) {
                 crate::spell::draw_squiggles(
                     app,
                     &painter,

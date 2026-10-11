@@ -167,7 +167,7 @@ pub fn status_bar(app: &mut PubrsApp, ui: &mut egui::Ui) {
             if let Some((msg, _)) = &app.status {
                 ui.label(RichText::new(msg.as_str()).color(Color32::from_rgb(30, 64, 120)));
             }
-            if app.window.software {
+            if app.window.software && !app.showcase_mode {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new("⚠ Drawing without a GPU").color(Color32::from_rgb(180, 83, 9)))
                         .on_hover_text(format!(
