@@ -1668,6 +1668,9 @@ impl eframe::App for PubrsApp {
         crate::dialogs::show(self, &ctx);
         crate::find::replace_window(self, &ctx);
         crate::spell::dialog_window(self, &ctx);
+        if self.checker.take_wake() {
+            ctx.request_repaint();
+        }
         self.autosave.tick(&self.session, &self.views);
         if self.selftest.is_none() && !self.args.smoke_test {
             self.save_settings();

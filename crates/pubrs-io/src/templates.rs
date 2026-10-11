@@ -1387,7 +1387,7 @@ fn menu() -> Document {
         158.0,
         "Starters",
         "starters",
-        "Tomato soup\t6.50\nGarden salad\t7.25\nGrilled halloumi\t8.00\nSourdough and butter\t4.00\nMarinated olives\t4.50",
+        "Tomato soup \t6.50\nGarden salad \t7.25\nGrilled halloumi \t8.00\nSourdough and butter \t4.00\nMarinated olives \t4.50",
         126.0,
     );
     section(
@@ -1396,7 +1396,7 @@ fn menu() -> Document {
         332.0,
         "Mains",
         "mains",
-        "Grilled salmon with lemon\t18.00\nMushroom risotto\t15.50\nRoast chicken\t16.00\nBeef burger and chips\t14.00\nSpinach and ricotta cannelloni\t13.50\nCatch of the day\t19.00",
+        "Grilled salmon with lemon \t18.00\nMushroom risotto \t15.50\nRoast chicken \t16.00\nBeef burger and chips \t14.00\nSpinach and ricotta cannelloni \t13.50\nCatch of the day \t19.00",
         148.0,
     );
     section(
@@ -1405,7 +1405,7 @@ fn menu() -> Document {
         526.0,
         "Desserts",
         "desserts",
-        "Lemon tart\t7.00\nChocolate pot\t6.50\nSeasonal fruit crumble\t7.25\nIce cream, two scoops\t5.00",
+        "Lemon tart \t7.00\nChocolate pot \t6.50\nSeasonal fruit crumble \t7.25\nIce cream, two scoops \t5.00",
         106.0,
     );
     t.text_s(
@@ -1440,7 +1440,7 @@ fn menu() -> Document {
         306.0,
         "Drinks",
         "drinks",
-        "House lemonade\t3.50\nSparkling water\t3.00\nFilter coffee\t3.00\nEspresso\t2.75\nPot of tea\t3.25\nGlass of house wine\t7.50",
+        "House lemonade \t3.50\nSparkling water \t3.00\nFilter coffee \t3.00\nEspresso \t2.75\nPot of tea \t3.25\nGlass of house wine \t7.50",
         148.0,
     );
     t.text(
@@ -1587,7 +1587,8 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 /// Day of the week of a date, 0 = Sunday ... 6 = Saturday (Sakamoto).
-pub fn weekday(year: i32, month: u32, day: u32) -> u32 {
+pub(crate) fn weekday(year: i32, month: u32, day: u32) -> u32 {
+    debug_assert!((1..=12).contains(&month), "month {month} out of range");
     const T: [i32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
     let y = if month < 3 { year - 1 } else { year };
     (y + y / 4 - y / 100 + y / 400 + T[month as usize - 1] + day as i32).rem_euclid(7) as u32
@@ -2487,6 +2488,18 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn weekday_rejects_month_zero() {
+        weekday(2024, 0, 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn weekday_rejects_month_thirteen() {
+        weekday(2024, 13, 1);
+    }
+
+    #[test]
     fn weekday_agrees_with_a_day_count_for_every_day_1900_to_2100() {
         // 1970-01-01 was a Thursday (4).
         let mut known = 0;
@@ -2508,6 +2521,8 @@ mod tests {
         assert_eq!(weekday(2100, 3, 1), 1);
         assert_eq!(weekday(2024, 2, 29), 4);
         assert_eq!(weekday(2027, 1, 1), 5);
+        // The month bounds are the edges of the table.
+        assert_eq!(weekday(2024, 12, 31), 2);
     }
 
     #[test]

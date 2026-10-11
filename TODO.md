@@ -155,3 +155,4 @@ Deferred and partial work. Each entry says what is missing and why.
 - Design Checker (M29): the model-level checks run on the UI thread after the debounce (they need the session's layout); a refresh of every page after a style or swatch change is unmeasured on very large documents.
 - Design Checker (M29): the pre-export check covers missing fonts, RGB colour and low-resolution pictures only; ink coverage, overprint and trapping are not checked.
 - Clipboard (M29): a picture over 200 megapixels is refused before it is copied, but arboard has already decoded it by then.
+- Tab leaders (M30 menu template): the leader fill can start flush against the text (dots sit on a fixed grid), so the menu template appends a space before each tab; the layout should leave a minimum gap after the text itself.

@@ -2404,11 +2404,34 @@ fn blocking_view(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) ->
     egui::ScrollArea::vertical()
         .max_height(260.0)
         .show(ui, |ui| {
-            for w in &list {
-                ui.group(|ui| {
-                    ui.label(RichText::new(&w.message).strong());
-                    ui.small(&w.hint);
-                });
+            for code in crate::checker::BLOCKING {
+                let items: Vec<_> = list.iter().filter(|w| w.code == code).collect();
+                if items.is_empty() {
+                    continue;
+                }
+                let n = items.len();
+                let (what, why) = match code {
+                    pubrs_api::core::WarningCode::RgbInCmykJob => {
+                        ("RGB colours", "a CMYK job needs CMYK or spot colours")
+                    }
+                    pubrs_api::core::WarningCode::MissingFont => {
+                        ("Missing fonts", "the printer cannot embed them")
+                    }
+                    _ => ("Low-resolution pictures", "they print soft below 300 dpi"),
+                };
+                let unit = if n == 1 { "object" } else { "objects" };
+                let title = format!("{what} in {n} {unit} ({why})");
+                egui::CollapsingHeader::new(RichText::new(title).strong())
+                    .id_salt(("export-block", code))
+                    .default_open(n == 1)
+                    .show(ui, |ui| {
+                        for w in items {
+                            ui.group(|ui| {
+                                ui.label(&w.message);
+                                ui.small(&w.hint);
+                            });
+                        }
+                    });
             }
         });
     ui.add_space(6.0);

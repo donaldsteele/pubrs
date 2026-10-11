@@ -15,6 +15,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
 **Next step:** Phase 2, the next unfinished milestone of the plan on branch `plan/publisher-parity` (M27, M29, M32 are done; M30, T22 everyday templates, is on branch `plan/t22-templates`).
+Review follow-ups landed (checker repaint, grouped pre-export list, `weekday` bounds, menu leader gap).
 
 
 ## Phase 2: Publisher parity

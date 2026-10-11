@@ -139,6 +139,9 @@ pub struct CheckerState {
     /// Refresh at the next poll without waiting (just opened, or the box
     /// was toggled).
     force: bool,
+    /// A forced refresh was asked for and the frame that will run it has not
+    /// been requested yet (see [`CheckerState::take_wake`]).
+    wake: bool,
     cache: Option<Cache>,
     pub error: Option<String>,
     /// After a failed refresh: the time to try again.
@@ -158,6 +161,7 @@ impl Default for CheckerState {
             seen: None,
             changed_at: None,
             force: false,
+            wake: false,
             cache: None,
             error: None,
             retry_at: None,
@@ -172,7 +176,18 @@ impl CheckerState {
     /// Show the panel; the next poll checks without waiting.
     pub fn show(&mut self) {
         self.open = true;
+        self.force_refresh();
+    }
+
+    /// Refresh at the next poll without waiting, and ask for one frame to do it.
+    pub fn force_refresh(&mut self) {
         self.force = true;
+        self.wake = true;
+    }
+
+    /// True once per [`CheckerState::force_refresh`]: the caller requests a repaint.
+    pub fn take_wake(&mut self) -> bool {
+        std::mem::take(&mut self.wake)
     }
 
     /// Whether a change is waiting for the debounce.
@@ -357,7 +372,7 @@ pub fn goto(app: &mut PubrsApp, w: &Warning) {
         && app.doc().is_some_and(|d| d.frame(f).is_none())
     {
         app.notify("That object no longer exists");
-        app.checker.force = true;
+        app.checker.force_refresh();
         return;
     }
     let page = w.page.and_then(|p| app.doc().and_then(|d| d.page_index(p)));
@@ -543,7 +558,7 @@ pub fn panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 });
         });
     if toggled {
-        app.checker.force = true;
+        app.checker.force_refresh();
     }
     if close {
         app.checker.open = false;
@@ -703,6 +718,17 @@ mod tests {
         for i in 1..20u64 {
             let t = t1 + DEBOUNCE + Duration::from_millis(50 * i);
             assert_eq!(c.tick(&mut s, Some(id), t), Repaint::No);
+        }
+        // A forced refresh (the commercial box) asks for exactly one frame.
+        let t2 = t1 + Duration::from_secs(5);
+        c.force_refresh();
+        assert!(c.take_wake());
+        assert!(!c.take_wake());
+        assert_eq!(c.tick(&mut s, Some(id), t2), Repaint::Now);
+        for i in 1..20u64 {
+            let t = t2 + Duration::from_millis(50 * i);
+            assert_eq!(c.tick(&mut s, Some(id), t), Repaint::No);
+            assert!(!c.take_wake());
         }
     }
 
