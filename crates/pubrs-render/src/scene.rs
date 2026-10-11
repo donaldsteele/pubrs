@@ -484,6 +484,7 @@ pub fn frame_node_with(
                 }
             }
         }
+        FrameContent::Table(table) => table_prims(doc, layout, id, table, &mut prims),
         FrameContent::Group(_) => return None,
         FrameContent::Shape(_) => {}
         FrameContent::WordArt(art) => {
@@ -550,6 +551,158 @@ pub fn frame_node_with(
         shadow,
         clip: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Tables
+
+/// A glyph run moved by (`dx`, `dy`).
+fn shifted_run(run: &GlyphRun, dx: f64, dy: f64) -> GlyphRun {
+    let mut r = run.clone();
+    for g in &mut r.glyphs {
+        g.x += dx;
+        g.y += dy;
+    }
+    r
+}
+
+/// One border segment on a grid line, before overlaps are resolved.
+struct Edge {
+    /// Order of the cell side that made it (pieces keep their parent's).
+    seq: usize,
+    horizontal: bool,
+    /// Coordinate of the line (y for horizontal, x for vertical).
+    at: f64,
+    from: f64,
+    to: f64,
+    stroke: pubrs_core::Stroke,
+}
+
+/// The primitives of a table: cell fills, then each cell's lines at its
+/// rectangle, then borders. A border two cells share is drawn once, the
+/// later cell's winning where both set one (ADR 0024).
+fn table_prims(
+    doc: &Document,
+    layout: &DocumentLayout,
+    id: FrameId,
+    table: &pubrs_core::TableFrame,
+    prims: &mut Vec<Prim>,
+) {
+    let Some(tl) = layout.table(id) else { return };
+    for (cell, cl) in table.cells.iter().zip(&tl.cells) {
+        if let Some(fill) = &cell.fill
+            && cl.rect.width > 0.0
+            && cl.rect.height > 0.0
+        {
+            prims.push(Prim::Rect {
+                rect: cl.rect,
+                color: doc.resolve_solid(fill),
+            });
+        }
+    }
+    for (cell, cl) in table.cells.iter().zip(&tl.cells) {
+        let Some(ft) = layout.cell_text(id, cell.story) else {
+            continue;
+        };
+        let (dx, dy) = (cl.rect.x, cl.rect.y + cl.dy);
+        for line in &ft.lines {
+            for run in &line.runs {
+                prims.push(Prim::Glyphs(
+                    Arc::new(shifted_run(run, dx, dy)),
+                    doc.resolve_ink(run.color),
+                ));
+            }
+            for d in &line.decorations {
+                prims.push(Prim::Rect {
+                    rect: Rect::new(d.rect.x + dx, d.rect.y + dy, d.rect.width, d.rect.height),
+                    color: doc.resolve_ink(d.color),
+                });
+            }
+        }
+    }
+    // Segments bucketed by grid line, so a side only meets the segments on
+    // its own line.
+    let key = |v: f64| (v * 1000.0).round() as i64;
+    let mut lines: std::collections::HashMap<(bool, i64), Vec<Edge>> =
+        std::collections::HashMap::new();
+    let mut seq = 0usize;
+    for (cell, cl) in table.cells.iter().zip(&tl.cells) {
+        let r = cl.rect;
+        if r.height <= 0.0 && r.width <= 0.0 {
+            continue;
+        }
+        let sides = [
+            (true, r.y, r.x, r.right()),
+            (false, r.right(), r.y, r.bottom()),
+            (true, r.bottom(), r.x, r.right()),
+            (false, r.x, r.y, r.bottom()),
+        ];
+        for (side, (horizontal, at, from, to)) in sides.into_iter().enumerate() {
+            let Some(stroke) = cell.borders[side].as_ref().filter(|s| s.width > 0.0) else {
+                continue;
+            };
+            // The later cell wins: cut its span out of what is there.
+            let line = lines.entry((horizontal, key(at))).or_default();
+            let mut kept: Vec<Edge> = Vec::with_capacity(line.len() + 1);
+            for e in line.drain(..) {
+                if e.to <= from || e.from >= to {
+                    kept.push(e);
+                    continue;
+                }
+                if e.from < from {
+                    kept.push(Edge {
+                        to: from,
+                        stroke: e.stroke.clone(),
+                        ..e
+                    });
+                }
+                if e.to > to {
+                    kept.push(Edge {
+                        from: to,
+                        stroke: e.stroke.clone(),
+                        ..e
+                    });
+                }
+            }
+            kept.push(Edge {
+                seq,
+                horizontal,
+                at,
+                from,
+                to,
+                stroke: stroke.clone(),
+            });
+            seq += 1;
+            *line = kept;
+        }
+    }
+    let mut edges: Vec<Edge> = lines.into_values().flatten().collect();
+    edges.sort_by(|a, b| a.seq.cmp(&b.seq).then(a.from.total_cmp(&b.from)));
+    for e in edges {
+        // Centred on the grid line; ends reach half a width so corners close.
+        let half = e.stroke.width / 2.0;
+        let geom = if e.horizontal {
+            Geom::Line {
+                x0: e.from - half,
+                y0: e.at,
+                x1: e.to + half,
+                y1: e.at,
+            }
+        } else {
+            Geom::Line {
+                x0: e.at,
+                y0: e.from - half,
+                x1: e.at,
+                y1: e.to + half,
+            }
+        };
+        prims.push(Prim::Stroke {
+            geom,
+            color: doc.resolve_solid(&e.stroke.color),
+            width: e.stroke.width,
+            dash: e.stroke.dash,
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------

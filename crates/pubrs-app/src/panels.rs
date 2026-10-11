@@ -806,6 +806,7 @@ fn frame_props(
         FrameKind::Shape => "Shape",
         FrameKind::Group => "Group",
         FrameKind::WordArt => "WordArt",
+        FrameKind::Table => "Table",
     };
     ui.label(RichText::new(kind).strong());
     if let Some(p) = &f.placeholder {
@@ -1135,6 +1136,10 @@ fn frame_props(
             }
         }
         FrameContent::WordArt(w) => wordart_props(app, ui, doc, id, w),
+        // Read-only until the table GUI (T12).
+        FrameContent::Table(t) => {
+            ui.label(format!("Table: {}×{}", t.rows.len(), t.cols.len()));
+        }
         FrameContent::Group(g) => {
             ui.label(format!("{} items", g.children.len()));
             let ctx = ui.ctx().clone();

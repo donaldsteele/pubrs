@@ -67,13 +67,25 @@ impl Session {
             };
             if let Some(o) = sl.overflow {
                 let last = story.frames.last().copied();
+                let in_cell = doc.table_of_story(*sid).is_some();
                 warnings.push(Warning {
                     code: WarningCode::Overflow,
-                    message: format!(
-                        "{} characters do not fit in the text frame chain",
-                        o.hidden_chars
-                    ),
-                    hint: "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames".into(),
+                    message: if in_cell {
+                        format!(
+                            "{} characters do not fit in the table cell",
+                            o.hidden_chars
+                        )
+                    } else {
+                        format!(
+                            "{} characters do not fit in the text frame chain",
+                            o.hidden_chars
+                        )
+                    },
+                    hint: if in_cell {
+                        "enlarge the table frame, shorten the cell text or reduce its font size".into()
+                    } else {
+                        "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames".into()
+                    },
                     page: last.and_then(page_of),
                     frame: last,
                 });

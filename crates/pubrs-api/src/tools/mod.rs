@@ -20,6 +20,7 @@ pub mod query;
 pub mod sheets;
 pub mod spell;
 pub mod styles;
+pub mod tables;
 pub mod templates;
 pub mod text;
 pub mod wordart;

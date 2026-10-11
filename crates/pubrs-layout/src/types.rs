@@ -160,6 +160,10 @@ pub struct DocumentLayout {
     pub stories: BTreeMap<StoryId, Arc<StoryLayout>>,
     /// Shaped text of every WordArt frame.
     pub wordart: BTreeMap<FrameId, Arc<WordArtLayout>>,
+    /// The table pass of every table frame (row geometry, cell rectangles).
+    /// A cell's lines are in `stories[cell story].frames[table frame]`, in
+    /// cell-local space: draw them at [`crate::TableLayout::origin`].
+    pub tables: BTreeMap<FrameId, Arc<crate::table::TableLayout>>,
 }
 
 /// The shaped text of one WordArt frame: glyph pen positions on a single
@@ -177,6 +181,24 @@ impl DocumentLayout {
     /// The text laid out in a frame, if it is a text frame.
     pub fn frame(&self, frame: FrameId) -> Option<&FrameText> {
         self.stories.values().find_map(|s| s.frames.get(&frame))
+    }
+
+    /// The text of one cell of a table (lines in cell-local space).
+    pub fn cell_text(&self, frame: FrameId, story: StoryId) -> Option<&FrameText> {
+        self.stories.get(&story)?.frames.get(&frame)
+    }
+
+    /// The table pass of a table frame.
+    pub fn table(&self, frame: FrameId) -> Option<&Arc<crate::table::TableLayout>> {
+        self.tables.get(&frame)
+    }
+
+    /// Table-local position of a cell's cell-local origin (its top-left
+    /// corner plus the vertical alignment shift).
+    pub fn cell_origin(&self, frame: FrameId, story: StoryId) -> Option<pubrs_core::Point> {
+        self.table(frame)?
+            .origin(story)
+            .map(|(x, y)| pubrs_core::Point::new(x, y))
     }
 
     /// The shaped text of a WordArt frame.

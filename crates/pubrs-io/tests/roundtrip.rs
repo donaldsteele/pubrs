@@ -412,7 +412,7 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
 fn ensure_current_fixture() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let fixtures: [(u32, Document); 9] = [
+        let fixtures: [(u32, Document); 10] = [
             (2, sheet_document()),
             (3, hyphenation_document()),
             (4, common::colour_document()),
@@ -422,6 +422,7 @@ fn ensure_current_fixture() {
             (8, char_format_document()),
             (9, effects_document()),
             (10, wrap_document()),
+            (11, table_document()),
         ];
         for (v, doc) in &fixtures {
             let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -461,7 +462,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 10, "expected the schema_v1 to v10 fixtures");
+    assert!(n >= 11, "expected the schema_v1 to v11 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -1027,5 +1028,83 @@ fn schema_10_fixture_keeps_wrap_modes() {
         wraps
             .iter()
             .any(|w| w.mode == WrapMode::Tight && !w.both_sides)
+    );
+}
+
+/// The document `tests/fixtures/schema_v11.pubrs` is written from: a 3x3
+/// table with a merged header, a fill, borders, insets and a vertically
+/// centred cell.
+fn table_document() -> Document {
+    use pubrs_core::table::CellStyle;
+    let mut b = DocBuilder::new(SeqIds::new(1903), PageSetup::default());
+    let p = b.page(0);
+    let hair = Stroke {
+        color: Color::BLACK.into(),
+        width: 0.75,
+        dash: Dash::Solid,
+    };
+    let style = CellStyle {
+        borders: std::array::from_fn(|_| Some(hair.clone())),
+        ..CellStyle::default()
+    };
+    let t = b
+        .table(
+            Parent::Page(p),
+            Rect::new(36.0, 36.0, 300.0, 120.0),
+            3,
+            3,
+            &style,
+        )
+        .unwrap();
+    b.exec(Command::TableMergeCells {
+        frame: t,
+        row: 0,
+        col: 0,
+        row_span: 1,
+        col_span: 3,
+    })
+    .unwrap();
+    b.exec(Command::TableSetCellStyle {
+        frame: t,
+        row: 0,
+        col: 0,
+        style: CellStyle {
+            fill: Some(Color::rgb(0xDB, 0xE4, 0xF5).into()),
+            valign: VerticalAlign::Middle,
+            insets: Margins::uniform(6.0),
+            ..style.clone()
+        },
+    })
+    .unwrap();
+    b.cell_text(t, 0, 0, "Prices").unwrap();
+    b.cell_text(t, 1, 0, "Cakes").unwrap();
+    b.cell_text(t, 1, 2, "2.50").unwrap();
+    b.finish()
+}
+
+/// The schema 11 fixture: a table keeps its cells, spans and styles.
+#[test]
+fn schema_11_fixture_keeps_tables() {
+    ensure_current_fixture();
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v11.pubrs")).unwrap();
+    let t = doc
+        .frames
+        .values()
+        .find_map(|f| f.as_table())
+        .expect("a table");
+    assert_eq!((t.rows.len(), t.cols.len()), (3, 3));
+    let head = t.cell_at(0, 2).unwrap();
+    assert_eq!((head.row, head.col, head.col_span), (0, 0, 3));
+    assert_eq!(head.valign, VerticalAlign::Middle);
+    assert!(head.fill.is_some() && head.borders.iter().all(Option::is_some));
+    assert!(pubrs_core::validate::check_integrity(&doc).is_empty());
+    let text = |r, c| {
+        doc.story(t.cell_at(r, c).unwrap().story)
+            .unwrap()
+            .plain_text()
+    };
+    assert_eq!(
+        (text(0, 0).as_str(), text(1, 0).as_str()),
+        ("Prices", "Cakes")
     );
 }

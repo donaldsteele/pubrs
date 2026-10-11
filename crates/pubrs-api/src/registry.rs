@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
-    color, doc, export, find, frames, history, images, pages, query, sheets, spell, styles,
+    color, doc, export, find, frames, history, images, pages, query, sheets, spell, styles, tables,
     templates, text, wordart,
 };
 
@@ -190,6 +190,31 @@ pub static TOOLS: &[ToolDef] = &[
         "Get one frame in full (geometry, style, wrap, content), plus overflow for text frames and effective dpi for images."),
     tool!("frame_duplicate", "Frames", frame_duplicate, frames::FrameDuplicate => frames::FrameAddOut, ro = false, destructive = false, image = None,
         "Copy a frame (text frames get a copy of their text) offset by dx/dy points, optionally onto another page."),
+    // ---------------------------------------------------------------- tables
+    tool!("table_add", "Tables", table_add, tables::TableAdd => tables::TableAddOut, ro = false, destructive = false, image = None,
+        "Add a table: rows x cols cells filling the rectangle (equal columns and rows, 0.5pt black borders, 4pt insets), optionally with a header_fill on the first row. Each cell holds ordinary text: story_ids lists the cells row by row; fill them with table_set_cell_text. A row grows to fit its text up to the frame's bottom; text that no longer fits is reported by text_overflow_status and validate."),
+    tool!("table_get", "Tables", table_get, tables::TableRef => tables::TableGetOut, ro = true, destructive = false, image = None,
+        "Read a table: column widths, row heights (minimum and as laid out), the grid of story ids, and every cell with its text, span, fill, borders, insets, vertical alignment and whether its text overflows. Use a cell's story_id with text_get, text_set, text_find, style_apply and the other text tools."),
+    tool!("table_set_cell_text", "Tables", table_set_cell_text, tables::TableSetCellText => tables::TableCellOut, ro = false, destructive = false, image = None,
+        "Replace the text of the cell at (row, col), counting from 0. Any position a merged cell covers addresses that cell. Keeps the cell's first-paragraph formatting; markup: true enables headings and **bold**/*italic*/__underline__. Reports whether the text fits."),
+    tool!("table_insert_rows", "Tables", table_insert_rows, tables::TableInsertRows => tables::TableEditOut, ro = false, destructive = false, image = None,
+        "Insert empty rows before row `at` (default: at the end). A merged cell that spans the insertion point grows instead of getting new cells; new cells copy the borders, insets and alignment of their neighbours (not the fill)."),
+    tool!("table_delete_rows", "Tables", table_delete_rows, tables::TableDeleteRows => tables::TableEditOut, ro = false, destructive = true, image = None,
+        "Delete rows and the text in their cells. Requires confirm: true (undo restores them). Merged cells shrink; a table keeps at least one row."),
+    tool!("table_insert_cols", "Tables", table_insert_cols, tables::TableInsertCols => tables::TableEditOut, ro = false, destructive = false, image = None,
+        "Insert empty columns before column `at` (default: at the end), as wide as the column next to them. The table frame grows by the new columns' width."),
+    tool!("table_delete_cols", "Tables", table_delete_cols, tables::TableDeleteCols => tables::TableEditOut, ro = false, destructive = true, image = None,
+        "Delete columns and the text in their cells. Requires confirm: true (undo restores them). Merged cells shrink; a table keeps at least one column. The frame narrows by the deleted width."),
+    tool!("table_merge_cells", "Tables", table_merge_cells, tables::TableMergeCells => tables::TableEditOut, ro = false, destructive = false, image = None,
+        "Merge a rectangle of cells into its top-left cell. The other cells' text is appended to it, each as its own paragraph. The rectangle must not cut through another merged cell."),
+    tool!("table_split_cell", "Tables", table_split_cell, tables::TableSplitCell => tables::TableEditOut, ro = false, destructive = false, image = None,
+        "Split a merged cell back into single cells. The top-left cell keeps the text; the new cells are empty and copy its style."),
+    tool!("table_set_cell_style", "Tables", table_set_cell_style, tables::TableSetCellStyle => Changed, ro = false, destructive = false, image = None,
+        "Style a cell, or every cell in a row_span x col_span range: fill (colour, swatch or \"none\"), borders (`border` for all four sides, or border_top / border_right / border_bottom / border_left; each {color, width, dash} or \"none\"), inset in points, valign (top, middle, bottom). Only the fields given change. A border two cells share is drawn once, from the later cell."),
+    tool!("table_set_col_width", "Tables", table_set_col_width, tables::TableSetColWidth => Changed, ro = false, destructive = false, image = None,
+        "Set one column's width in points. The table frame's width follows the sum of the columns."),
+    tool!("table_set_row_height", "Tables", table_set_row_height, tables::TableSetRowHeight => Changed, ro = false, destructive = false, image = None,
+        "Set a row's minimum height in points. The row still grows to fit its text, up to the frame's bottom."),
     // ---------------------------------------------------------------- text
     tool!("text_set", "Text", text_set, text::TextSet => text::TextChangeOut, ro = false, destructive = false, image = None,
         "Replace all text of a text frame's story (the whole linked chain). Keeps the existing first-paragraph formatting, so filling a template placeholder keeps its style. markup: true enables # headings and **bold**/*italic*/__underline__. Reports overflow."),

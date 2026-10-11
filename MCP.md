@@ -186,9 +186,9 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000002e",
+  "doc_id": "00000000-0000-87ea-8000-000000000046",
   "page_ids": [
-    "00000000-0000-87ea-8000-000000000026"
+    "00000000-0000-87ea-8000-00000000003e"
   ],
   "revision": 1
 }
@@ -221,7 +221,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000024",
+  "doc_id": "00000000-0000-87ea-8000-00000000003c",
   "page_ids": [
     "00000000-0000-87ea-8000-000000000002",
     "00000000-0000-87ea-8000-00000000000b"
@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 162982,
+  "bytes": 163875,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 162982,
+  "bytes": 163875,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -339,7 +339,7 @@ _destructive (needs `confirm: true`)_
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-000000000023"
+    "doc_id": "00000000-0000-87ea-8000-00000000003b"
   },
   "name": "doc_close"
 }
@@ -351,7 +351,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": false,
-  "doc_id": "00000000-0000-87ea-8000-000000000023"
+  "doc_id": "00000000-0000-87ea-8000-00000000003b"
 }
 ```
 
@@ -361,7 +361,7 @@ Result:
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-00000000002e"
+    "doc_id": "00000000-0000-87ea-8000-000000000046"
   },
   "name": "doc_close"
 }
@@ -373,7 +373,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": true,
-  "doc_id": "00000000-0000-87ea-8000-00000000002e"
+  "doc_id": "00000000-0000-87ea-8000-000000000046"
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 79
+  "revision": 92
 }
 ```
 
@@ -920,7 +920,7 @@ Result:
       },
       "…": "5 more keys"
     },
-    "… 3 more"
+    "… 4 more"
   ],
   "guides": [],
   "index": 0,
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 80
+  "revision": 93
 }
 ```
 
@@ -2264,7 +2264,7 @@ _read-only_
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `doc_id` | string |  | Document id (default: the most recently used document). |
-| `kind` | "text" \| "image" \| "shape" \| "group" \| "word_art" \| null |  | Only frames of this kind: text, image, shape, group or word_art. |
+| `kind` | "text" \| "image" \| "shape" \| "group" \| "word_art" \| "table" \| null |  | Only frames of this kind: text, image, shape, group, word_art or table. |
 | `master_id` | string |  | Only frames on this master page. |
 | `page_id` | string |  | Only frames on this page. |
 
@@ -2317,7 +2317,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 76
+  "revision": 89
 }
 ```
 
@@ -2382,7 +2382,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 76,
+  "revision": 89,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2443,6 +2443,840 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
   "revision": 71
+}
+```
+
+## Tables
+
+### `table_add`
+
+Add a table: rows x cols cells filling the rectangle (equal columns and rows, 0.5pt black borders, 4pt insets), optionally with a header_fill on the first row. Each cell holds ordinary text: story_ids lists the cells row by row; fill them with table_set_cell_text. A row grows to fit its text up to the frame's bottom; text that no longer fits is reported by text_overflow_status and validate.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `border_color` | string \| object \| object |  | Border colour or swatch (default black). |
+| `border_width` | number |  | Border width in points on every cell side (default 0.5; 0 = no borders). |
+| `cols` | integer | yes | Number of columns (1 to 40). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `header_fill` | string \| object \| object |  | Fill for the first row (a header): a colour or swatch. |
+| `height` | number | yes | Height in points; the rows share it equally (a row grows to fit its text, up to the frame's bottom). |
+| `master_id` | string |  | Identifies a master page. |
+| `name` | string |  | Display name shown in frame lists. |
+| `page_id` | string |  | Identifies a page. |
+| `rows` | integer | yes | Number of rows (1 to 200). |
+| `width` | number | yes | Width in points; the columns share it equally. |
+| `x` | number | yes | Left edge in points from the page's left edge. |
+| `y` | number | yes | Top edge in points from the page's top edge (y grows down). |
+
+**Result fields:** `affected_ids`, `doc_id`, `frame_id`, `revision`, `story_ids`
+
+**Example** — Each cell is an ordinary text story; story_ids lists them row by row. Rows grow to fit their text, up to the frame's bottom.
+
+```json
+{
+  "arguments": {
+    "cols": 3,
+    "header_fill": "#DBE4F5",
+    "height": 100,
+    "name": "Stall prices",
+    "page_id": "00000000-0000-87ea-8000-000000000002",
+    "rows": 4,
+    "width": 300,
+    "x": 36,
+    "y": 440
+  },
+  "name": "table_add"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000002",
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-000000000023",
+    "00000000-0000-87ea-8000-000000000024",
+    "… 10 more"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 77,
+  "story_ids": [
+    "00000000-0000-87ea-8000-000000000023",
+    "00000000-0000-87ea-8000-000000000024",
+    "00000000-0000-87ea-8000-000000000025",
+    "00000000-0000-87ea-8000-000000000026",
+    "… 8 more"
+  ]
+}
+```
+
+### `table_get`
+
+Read a table: column widths, row heights (minimum and as laid out), the grid of story ids, and every cell with its text, span, fill, borders, insets, vertical alignment and whether its text overflows. Use a cell's story_id with text_get, text_set, text_find, style_apply and the other text tools.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `frame_id` | uuid | yes | A table frame. |
+
+**Result fields:** `cells`, `col_widths`, `cols`, `frame_id`, `grid`, `overflowing`, `revision`, `row_heights`, `row_min_heights`, `rows`
+
+**Example** — Use a cell's story_id with text_get, text_set, text_find, style_apply and the other text tools.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_get"
+}
+```
+
+Result:
+
+```json
+{
+  "cells": [
+    {
+      "borders": {
+        "bottom": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 1.5
+        },
+        "left": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "right": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "top": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        }
+      },
+      "col": 0,
+      "col_span": 1,
+      "fill": "#1E3A5F",
+      "…": "7 more keys"
+    },
+    {
+      "borders": {
+        "bottom": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 1.5
+        },
+        "left": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "right": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "top": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        }
+      },
+      "col": 1,
+      "col_span": 1,
+      "fill": "#1E3A5F",
+      "…": "7 more keys"
+    },
+    {
+      "borders": {
+        "bottom": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 1.5
+        },
+        "left": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "right": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "top": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        }
+      },
+      "col": 2,
+      "col_span": 1,
+      "fill": "#1E3A5F",
+      "…": "7 more keys"
+    },
+    {
+      "borders": {
+        "bottom": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 1.5
+        },
+        "left": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "right": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        },
+        "top": {
+          "color": "#000000",
+          "dash": "solid",
+          "width": 0.5
+        }
+      },
+      "col": 3,
+      "col_span": 1,
+      "fill": "#1E3A5F",
+      "…": "7 more keys"
+    },
+    "… 16 more"
+  ],
+  "col_widths": [
+    140.0,
+    100.0,
+    100.0,
+    100.0
+  ],
+  "cols": 4,
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "grid": [
+    [
+      "00000000-0000-87ea-8000-000000000023",
+      "00000000-0000-87ea-8000-000000000037",
+      "… 2 more"
+    ],
+    [
+      "00000000-0000-87ea-8000-000000000026",
+      "00000000-0000-87ea-8000-000000000027",
+      "… 2 more"
+    ],
+    [
+      "00000000-0000-87ea-8000-00000000002f",
+      "00000000-0000-87ea-8000-000000000030",
+      "… 2 more"
+    ],
+    [
+      "00000000-0000-87ea-8000-000000000029",
+      "00000000-0000-87ea-8000-00000000002a",
+      "… 2 more"
+    ],
+    "… 1 more"
+  ],
+  "overflowing": false,
+  "revision": 87,
+  "row_heights": [
+    30.0,
+    25.0,
+    25.0,
+    20.0,
+    "… 1 more"
+  ],
+  "row_min_heights": [
+    30.0,
+    25.0,
+    25.0,
+    25.0,
+    "… 1 more"
+  ],
+  "rows": 5
+}
+```
+
+### `table_set_cell_text`
+
+Replace the text of the cell at (row, col), counting from 0. Any position a merged cell covers addresses that cell. Keeps the cell's first-paragraph formatting; markup: true enables headings and **bold**/*italic*/__underline__. Reports whether the text fits.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `col` | integer | yes |  |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `markup` | boolean |  | Interpret `# ` headings and **bold**, *italic*, __underline__. |
+| `row` | integer | yes | Row of the cell (0-based; any position a merged cell covers). |
+| `text` | string | yes | New text; "\n" separates paragraphs. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "col": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 0,
+    "text": "Stall"
+  },
+  "name": "table_set_cell_text"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000023"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 5,
+  "overflowing": false,
+  "revision": 78,
+  "story_id": "00000000-0000-87ea-8000-000000000023"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "col": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 1,
+    "text": "Cakes"
+  },
+  "name": "table_set_cell_text"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000026"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 5,
+  "overflowing": false,
+  "revision": 79,
+  "story_id": "00000000-0000-87ea-8000-000000000026"
+}
+```
+
+### `table_insert_rows`
+
+Insert empty rows before row `at` (default: at the end). A merged cell that spans the insertion point grows instead of getting new cells; new cells copy the borders, insets and alignment of their neighbours (not the fill).
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `at` | integer |  | Insert before this row (0-based). Default: after the last row. |
+| `count` | integer |  | How many (default 1). |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "at": 2,
+    "count": 1,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_insert_rows"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-00000000002f",
+    "00000000-0000-87ea-8000-000000000030",
+    "00000000-0000-87ea-8000-000000000031"
+  ],
+  "cols": 3,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 84,
+  "rows": 5
+}
+```
+
+**Example** — A table has at most 200 rows and 40 columns; counts and positions are checked before anything is created.
+
+```json
+{
+  "arguments": {
+    "count": 4294967295,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_insert_rows"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "at counts from 0 up to the number of rows/columns; a table has at most 200 rows and 40 columns",
+  "message": "a table has at most 200 rows"
+}
+```
+
+### `table_delete_rows`
+
+Delete rows and the text in their cells. Requires confirm: true (undo restores them). Merged cells shrink; a table keeps at least one row.
+
+_destructive (needs `confirm: true`)_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `at` | integer | yes | First row to delete (0-based). |
+| `confirm` | boolean |  | Must be true: the cells' text is deleted (undo restores it). |
+| `count` | integer |  | How many (default 1). A table keeps at least one row. |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "at": 2,
+    "confirm": true,
+    "count": 1,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_delete_rows"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-00000000002f",
+    "00000000-0000-87ea-8000-000000000030",
+    "00000000-0000-87ea-8000-000000000031"
+  ],
+  "cols": 3,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 89,
+  "rows": 4
+}
+```
+
+### `table_insert_cols`
+
+Insert empty columns before column `at` (default: at the end), as wide as the column next to them. The table frame grows by the new columns' width.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `at` | integer |  | Insert before this column (0-based). Default: after the last column. |
+| `count` | integer |  | How many (default 1). |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "count": 1,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_insert_cols"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-000000000032",
+    "00000000-0000-87ea-8000-000000000033",
+    "00000000-0000-87ea-8000-000000000034",
+    "… 2 more"
+  ],
+  "cols": 4,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 85,
+  "rows": 5
+}
+```
+
+### `table_delete_cols`
+
+Delete columns and the text in their cells. Requires confirm: true (undo restores them). Merged cells shrink; a table keeps at least one column. The frame narrows by the deleted width.
+
+_destructive (needs `confirm: true`)_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `at` | integer | yes | First column to delete (0-based). |
+| `confirm` | boolean |  | Must be true: the cells' text is deleted (undo restores it). |
+| `count` | integer |  | How many (default 1). A table keeps at least one column. |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "at": 3,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_delete_cols"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "confirmation_required",
+  "hint": "repeat the call with \"confirm\": true",
+  "message": "deleting table columns is destructive"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "at": 3,
+    "confirm": true,
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "table_delete_cols"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-000000000033",
+    "00000000-0000-87ea-8000-000000000034",
+    "00000000-0000-87ea-8000-000000000035",
+    "… 2 more"
+  ],
+  "cols": 3,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 88,
+  "rows": 5
+}
+```
+
+### `table_merge_cells`
+
+Merge a rectangle of cells into its top-left cell. The other cells' text is appended to it, each as its own paragraph. The rectangle must not cut through another merged cell.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `col` | integer | yes |  |
+| `col_span` | integer | yes |  |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `row` | integer | yes | Top-left grid position of the range to merge (0-based). |
+| `row_span` | integer | yes | Rows and columns the merged cell covers (at least 2 positions in all). |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example** — The other cells' text is appended to the top-left cell as extra paragraphs.
+
+```json
+{
+  "arguments": {
+    "col": 0,
+    "col_span": 4,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 0,
+    "row_span": 1
+  },
+  "name": "table_merge_cells"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-000000000024",
+    "00000000-0000-87ea-8000-000000000025",
+    "00000000-0000-87ea-8000-000000000032"
+  ],
+  "cols": 4,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 86,
+  "rows": 5
+}
+```
+
+**Example** — A merge cannot cut through an existing merged cell.
+
+```json
+{
+  "arguments": {
+    "col": 1,
+    "col_span": 1,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 0,
+    "row_span": 2
+  },
+  "name": "table_merge_cells"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "check the argument ranges in the tool's input schema",
+  "message": "invalid argument: the merge range cuts through an existing merged cell"
+}
+```
+
+### `table_split_cell`
+
+Split a merged cell back into single cells. The top-left cell keeps the text; the new cells are empty and copy its style.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `col` | integer | yes |  |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `row` | integer | yes | Any grid position of the merged cell. |
+
+**Result fields:** `affected_ids`, `cols`, `doc_id`, `frame_id`, `revision`, `rows`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "col": 2,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 0
+  },
+  "name": "table_split_cell"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-000000000037",
+    "00000000-0000-87ea-8000-000000000038",
+    "00000000-0000-87ea-8000-000000000039"
+  ],
+  "cols": 4,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000022",
+  "revision": 87,
+  "rows": 5
+}
+```
+
+### `table_set_cell_style`
+
+Style a cell, or every cell in a row_span x col_span range: fill (colour, swatch or "none"), borders (`border` for all four sides, or border_top / border_right / border_bottom / border_left; each {color, width, dash} or "none"), inset in points, valign (top, middle, bottom). Only the fields given change. A border two cells share is drawn once, from the later cell.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `border` | "none" \| object |  | All four borders at once ({color, width, dash} or "none"); the sides below override it. |
+| `border_bottom` | "none" \| object |  |  |
+| `border_left` | "none" \| object |  |  |
+| `border_right` | "none" \| object |  |  |
+| `border_top` | "none" \| object |  |  |
+| `col` | integer | yes |  |
+| `col_span` | integer |  |  |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `fill` | string \| string \| object \| object |  | Fill colour or swatch, or "none". |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `inset` | number |  | Space between the cell edge and its text on all sides, in points. |
+| `row` | integer | yes | Top-left grid position of the cell, or of the first cell of a range. |
+| `row_span` | integer |  | Apply to every cell in this many rows / columns from (row, col) (default 1 each). |
+| `valign` | "top" \| "middle" \| "bottom" \| null |  | Vertical alignment of the text in the cell: top, middle or bottom. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — A range of cells is styled at once. Only the fields given change.
+
+```json
+{
+  "arguments": {
+    "border_bottom": {
+      "color": "#000000",
+      "width": 1.5
+    },
+    "col": 0,
+    "col_span": 3,
+    "fill": "#1E3A5F",
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "row": 0,
+    "valign": "middle"
+  },
+  "name": "table_set_cell_style"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 81
+}
+```
+
+### `table_set_col_width`
+
+Set one column's width in points. The table frame's width follows the sum of the columns.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `col` | integer | yes | Column index (0-based). |
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `width` | number | yes | Width in points (> 0). The table frame's width follows the column total. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — The frame's width follows the column total.
+
+```json
+{
+  "arguments": {
+    "col": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "width": 140
+  },
+  "name": "table_set_col_width"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 82
+}
+```
+
+### `table_set_row_height`
+
+Set a row's minimum height in points. The row still grows to fit its text, up to the frame's bottom.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Identifies a document within a session. |
+| `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
+| `min_height` | number | yes | Minimum height in points; the row still grows to fit its text. |
+| `row` | integer | yes | Row index (0-based). |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000022",
+    "min_height": 30,
+    "row": 0
+  },
+  "name": "table_set_row_height"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000022"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 83
 }
 ```
 
@@ -3285,6 +4119,27 @@ Result:
 }
 ```
 
+**Example** — A table has one story per cell: pass a cell's story_id from table_get.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000022"
+  },
+  "name": "text_get"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "pass the cell's story_id (from table_get), or use table_set_cell_text",
+  "message": "frame 00000000-0000-87ea-8000-000000000022 is a table; each cell has its own story"
+}
+```
+
 ### `text_overflow_status`
 
 Report every story: its frame chain, whether it overflows and how many characters are hidden. Fix overflow by enlarging the last frame, shortening text or linking another frame.
@@ -3334,6 +4189,63 @@ Result:
       "overflowing": false,
       "…": "1 more keys"
     }
+  ]
+}
+```
+
+**Example** — Cells whose text does not fit the table frame are listed here too.
+
+```json
+{
+  "arguments": {},
+  "name": "text_overflow_status"
+}
+```
+
+Result:
+
+```json
+{
+  "any_overflow": true,
+  "revision": 89,
+  "stories": [
+    {
+      "first_hidden_offset": 12,
+      "frame_ids": [
+        "00000000-0000-87ea-8000-00000000000f"
+      ],
+      "hidden_chars": 31,
+      "last_frame_id": "00000000-0000-87ea-8000-00000000000f",
+      "…": "2 more keys"
+    },
+    {
+      "first_hidden_offset": 220,
+      "frame_ids": [
+        "00000000-0000-87ea-8000-000000000015"
+      ],
+      "hidden_chars": 0,
+      "last_frame_id": "00000000-0000-87ea-8000-000000000015",
+      "…": "2 more keys"
+    },
+    {
+      "frame_ids": [
+        "00000000-0000-87ea-8000-000000000017"
+      ],
+      "hidden_chars": 0,
+      "last_frame_id": "00000000-0000-87ea-8000-000000000017",
+      "overflowing": false,
+      "…": "1 more keys"
+    },
+    {
+      "frame_ids": [
+        "00000000-0000-87ea-8000-000000000022"
+      ],
+      "hidden_chars": 0,
+      "last_frame_id": "00000000-0000-87ea-8000-000000000022",
+      "overflowing": false,
+      "…": "1 more keys"
+    },
+    "… 11 more"
   ]
 }
 ```
@@ -3404,7 +4316,7 @@ _read-only_
 ```json
 {
   "arguments": {
-    "frame_id": "00000000-0000-87ea-8000-000000000039"
+    "frame_id": "00000000-0000-87ea-8000-000000000051"
   },
   "name": "spell_check"
 }
@@ -3421,21 +4333,21 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000039",
+      "frame_id": "00000000-0000-87ea-8000-000000000051",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000039",
+      "frame_id": "00000000-0000-87ea-8000-000000000051",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
     },
     {
       "end": 57,
-      "frame_id": "00000000-0000-87ea-8000-000000000039",
+      "frame_id": "00000000-0000-87ea-8000-000000000051",
       "language": "en-US",
       "start": 52,
       "…": "2 more keys"
@@ -3467,14 +4379,14 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000039",
+      "frame_id": "00000000-0000-87ea-8000-000000000051",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000039",
+      "frame_id": "00000000-0000-87ea-8000-000000000051",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
@@ -4493,7 +5405,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000023",
+  "doc_id": "00000000-0000-87ea-8000-00000000003b",
   "named_frames": {},
   "page_ids": [
     "00000000-0000-8065-8000-000000000002"
@@ -4667,7 +5579,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002e",
+  "doc_id": "00000000-0000-87ea-8000-000000000046",
   "revision": 2
 }
 ```
@@ -4722,7 +5634,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002e",
+  "doc_id": "00000000-0000-87ea-8000-000000000046",
   "revision": 5
 }
 ```
@@ -4768,11 +5680,11 @@ Result:
 
 ```json
 {
-  "bytes": 128201,
+  "bytes": 135313,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -4793,11 +5705,11 @@ Result:
 
 ```json
 {
-  "bytes": 547792,
+  "bytes": 554917,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -4835,7 +5747,7 @@ Result:
 
 ```json
 {
-  "bytes": 702120,
+  "bytes": 709828,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4843,7 +5755,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -4883,12 +5795,12 @@ Result:
 
 ```json
 {
-  "bytes": 37272,
+  "bytes": 36833,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 78,
+  "revision": 91,
   "width": 596
 }
 ```
@@ -4929,8 +5841,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA2dElEQVR4nO2d… (18664 characters)",
-  "revision": 78,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA4nElEQVR4nO2d… (19400 characters)",
+  "revision": 91,
   "width": 249
 }
 ```
@@ -4963,14 +5875,17 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000017"
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-00000000002f",
+    "00000000-0000-87ea-8000-000000000030",
+    "00000000-0000-87ea-8000-000000000031"
   ],
   "can_redo": true,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
-  "label": "frame style",
-  "revision": 77
+  "label": "table delete rows",
+  "revision": 90
 }
 ```
 
@@ -5000,14 +5915,17 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000017"
+    "00000000-0000-87ea-8000-000000000022",
+    "00000000-0000-87ea-8000-00000000002f",
+    "00000000-0000-87ea-8000-000000000030",
+    "00000000-0000-87ea-8000-000000000031"
   ],
   "can_redo": false,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
-  "label": "frame style",
-  "revision": 78
+  "label": "table delete rows",
+  "revision": 91
 }
 ```
 
@@ -5060,9 +5978,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 71 more"
+    "… 84 more"
   ],
-  "revision": 76
+  "revision": 89
 }
 ```
 
@@ -5202,7 +6120,7 @@ Result:
         },
         "…": "3 more keys"
       },
-      "…": "4 more keys"
+      "…": "5 more keys"
     },
     "grid": {
       "show_grid": false,
@@ -5231,7 +6149,7 @@ Result:
         "frames": [
           "00000000-0000-87ea-8000-00000000000f",
           "00000000-0000-87ea-8000-000000000011",
-          "… 5 more"
+          "… 6 more"
         ],
         "guides": [],
         "id": "00000000-0000-87ea-8000-000000000002",
@@ -5244,7 +6162,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 10,
+    "schema_version": 11,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -5350,7 +6268,23 @@ Result:
             "…": "9 more keys"
           }
         ]
-      }
+      },
+      "00000000-0000-87ea-8000-000000000023": {
+        "frames": [
+          "00000000-0000-87ea-8000-000000000022"
+        ],
+        "id": "00000000-0000-87ea-8000-000000000023",
+        "paragraphs": [
+          {
+            "runs": [
+              {
+                "text": "Stall"
+              }
+            ]
+          }
+        ]
+      },
+      "…": "11 more keys"
     },
     "styles": {
       "default_paragraph": "00000000-0000-87ea-8000-000000000003",
@@ -5407,7 +6341,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 78
+  "revision": 91
 }
 ```
 
@@ -5440,7 +6374,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 78,
+  "revision": 91,
   "warnings": [
     {
       "code": "overflow",

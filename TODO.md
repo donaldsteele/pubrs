@@ -110,3 +110,19 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Text wrap (M18)
 
 - Wrap (ADR 0022): slots in one row share a top, not a forced baseline (mixed sizes in a row differ); a word wider than its slot overflows it; widow fixes look at the first slot of a row; frames inside groups wrap by their bounding box. WordArt frames (M25) wrap by their frame rectangle in every mode (their warped path is not an obstacle outline yet).
+
+## Tables (M19)
+
+- Splitting a cell only undoes a merge; there is no "split into N rows and M columns" that adds grid lines. Insert rows and columns instead.
+- Table text is clipped to whole lines at the frame's bottom; a table never grows its frame, and rows below the bottom have no height.
+- Tagged PDF has no Table, Row or Cell structure elements (cells are artifacts and text spans).
+- The canvas edits a cell on double-click only: clicking another cell while editing, arrow keys moving between cells and Tab to the next cell are T12 (M20), with the table GUI. Up/Down inside a cell use the cell's own lines.
+- Wrap obstacles do not affect cell text (a cell never wraps around a frame above it); a table with wrap set is an obstacle by its rectangle.
+- A cell's fill is a solid colour or swatch (no gradients).
+
+- Templates have no table builder yet: T22 adds a `table(...)` helper to `templates.rs` with the first template that carries a table (`DocBuilder::table` and `cell_text` exist).
+
+## Wrap (M18 review)
+
+- A drop cap beside a multi-slot (both-sides/through) row can be overlapped by the second slot.
+- Up/Down move by story line, not by visual row, in multi-slot rows.

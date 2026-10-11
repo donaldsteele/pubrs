@@ -675,6 +675,24 @@ fn handle_input(
                         resp.request_focus();
                     }
                 }
+                Some(FrameKind::Table) => {
+                    // Edit the cell under the pointer (the full table GUI is T12).
+                    if let (Some(layout), Some((x, y))) =
+                        (layout, textedit::page_to_frame(doc, leaf, p))
+                        && let Some(t) = doc.frame(leaf).and_then(|f| f.as_table())
+                        && let Some(tl) = layout.table(leaf)
+                        && let Some(cl) = t
+                            .cells
+                            .iter()
+                            .zip(&tl.cells)
+                            .find(|(_, cl)| cl.rect.contains(Point::new(x, y)))
+                            .map(|(c, _)| c.story)
+                    {
+                        let at = textedit::offset_at(doc, layout, cl, leaf, p).unwrap_or(0);
+                        begin_edit(app, leaf, cl, at);
+                        resp.request_focus();
+                    }
+                }
                 Some(FrameKind::Image) => {
                     app.select(vec![leaf]);
                     if let Some(path) = app.platform.dialogs.pick_image() {

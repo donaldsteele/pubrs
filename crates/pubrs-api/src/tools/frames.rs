@@ -429,7 +429,7 @@ pub struct FrameList {
     /// Only frames on this master page.
     #[serde(default)]
     pub master_id: Option<MasterId>,
-    /// Only frames of this kind: text, image, shape, group or word_art.
+    /// Only frames of this kind: text, image, shape, group, word_art or table.
     #[serde(default)]
     pub kind: Option<FrameKind>,
 }
@@ -1050,7 +1050,16 @@ impl Session {
                         .is_some_and(|s| s.overflow.is_some()),
                 )
             }
-            None => None,
+            None => match f.as_table() {
+                Some(t) => {
+                    let layout = self.layout(req.doc_id)?;
+                    Some(
+                        t.stories()
+                            .any(|s| layout.stories.get(&s).is_some_and(|l| l.overflow.is_some())),
+                    )
+                }
+                None => None,
+            },
         };
         let open = self.get(req.doc_id)?;
         let doc = open.doc();
@@ -1101,6 +1110,44 @@ impl Session {
                 id: sid,
                 frames: vec![fid],
                 paragraphs: src.paragraphs,
+            });
+        }
+        if let Some(table) = copy.as_table_mut() {
+            // A table copy gets a story per cell, holding a copy of the text.
+            let doc = self.get(req.doc_id)?.doc();
+            let texts: Vec<Vec<pubrs_core::Paragraph>> = table
+                .cells
+                .iter()
+                .map(|c| {
+                    doc.story(c.story)
+                        .map(|s| s.paragraphs.clone())
+                        .unwrap_or_else(|| vec![pubrs_core::Paragraph::default()])
+                })
+                .collect();
+            let mut stories = Vec::with_capacity(table.cells.len());
+            for (cell, paragraphs) in table.cells.iter_mut().zip(texts) {
+                let sid = StoryId::new(&mut *self.ids);
+                cell.story = sid;
+                stories.push(Story {
+                    id: sid,
+                    frames: vec![fid],
+                    paragraphs,
+                });
+            }
+            let change = self.exec(
+                req.doc_id,
+                Command::AddTable {
+                    parent,
+                    index: None,
+                    frame: copy,
+                    stories,
+                },
+            )?;
+            return Ok(FrameAddOut {
+                frame_id: fid,
+                story_id: None,
+                asset_id: None,
+                change,
             });
         }
         let asset_id = copy.as_image().and_then(|i| i.asset);

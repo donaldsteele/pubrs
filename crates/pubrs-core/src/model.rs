@@ -15,9 +15,10 @@ use crate::id::{
 };
 use crate::style::{CharProps, ParaProps, StyleSheet};
 use crate::swatch::{Paint, SchemeId, Swatch};
+pub use crate::table::{Cell, CellStyle, Row, TableFrame};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -399,12 +400,27 @@ impl Frame {
             FrameContent::Shape(_) => FrameKind::Shape,
             FrameContent::Group(_) => FrameKind::Group,
             FrameContent::WordArt(_) => FrameKind::WordArt,
+            FrameContent::Table(_) => FrameKind::Table,
         }
     }
 
     pub fn as_wordart(&self) -> Option<&WordArtFrame> {
         match &self.content {
             FrameContent::WordArt(w) => Some(&**w),
+            _ => None,
+        }
+    }
+
+    pub fn as_table(&self) -> Option<&TableFrame> {
+        match &self.content {
+            FrameContent::Table(t) => Some(&**t),
+            _ => None,
+        }
+    }
+
+    pub fn as_table_mut(&mut self) -> Option<&mut TableFrame> {
+        match &mut self.content {
+            FrameContent::Table(t) => Some(&mut **t),
             _ => None,
         }
     }
@@ -460,6 +476,7 @@ pub enum FrameKind {
     Shape,
     Group,
     WordArt,
+    Table,
 }
 
 /// What a frame contains.
@@ -472,6 +489,8 @@ pub enum FrameContent {
     Shape(ShapeFrame),
     Group(GroupFrame),
     WordArt(Box<WordArtFrame>),
+    /// A grid of cells whose text lives in per-cell stories (ADR 0024).
+    Table(Box<TableFrame>),
 }
 
 /// One paragraph of decorative text, warped as a whole (ADR 0020).
@@ -1235,6 +1254,21 @@ impl Document {
     /// The story a text frame shows.
     pub fn story_of(&self, frame: FrameId) -> Option<StoryId> {
         self.frame(frame).and_then(|f| f.as_text()).map(|t| t.story)
+    }
+
+    /// The table frame whose cell shows `story`, and that cell.
+    pub fn cell_of_story(&self, story: StoryId) -> Option<(FrameId, &Cell)> {
+        let s = self.story(story)?;
+        let &[f] = s.frames.as_slice() else {
+            return None;
+        };
+        let cell = self.frame(f)?.as_table()?.cell_of_story(story)?;
+        Some((f, cell))
+    }
+
+    /// The table frame whose cell shows `story`.
+    pub fn table_of_story(&self, story: StoryId) -> Option<FrameId> {
+        self.cell_of_story(story).map(|(f, _)| f)
     }
 
     /// Find a frame by its placeholder name.

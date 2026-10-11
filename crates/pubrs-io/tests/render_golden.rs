@@ -1126,3 +1126,152 @@ fn image_cache_traces_the_alpha_of_decoded_pngs() {
     }
     assert_eq!(found, 2);
 }
+
+// ---- tables (ADR 0024) ----
+
+/// A 6-row, 4-column price table with a merged header row, header and band
+/// fills, thick and dashed borders, insets, vertical alignment, a merged
+/// 2x1 cell and one row grown by wrapped text.
+fn table_doc() -> Document {
+    use pubrs_core::table::CellStyle;
+    let mut b = DocBuilder::new(
+        SeqIds::new(31),
+        PageSetup {
+            size: Size::new(360.0, 400.0),
+            margins: Margins::uniform(24.0),
+            ..PageSetup::default()
+        },
+    );
+    let p = b.page(0);
+    let line = |w: f64, color: Color, dash: Dash| Stroke {
+        color: color.into(),
+        width: w,
+        dash,
+    };
+    let grey = Color::rgb(0x6B, 0x72, 0x80);
+    let style = CellStyle {
+        borders: std::array::from_fn(|_| Some(line(0.75, grey, Dash::Solid))),
+        ..CellStyle::default()
+    };
+    let t = b
+        .table(
+            Parent::Page(p),
+            Rect::new(24.0, 24.0, 312.0, 360.0),
+            6,
+            4,
+            &style,
+        )
+        .unwrap();
+    for (r, c, text) in [
+        (0, 0, "Market stall prices"),
+        (1, 0, "Stall"),
+        (1, 1, "Item"),
+        (1, 2, "Qty"),
+        (1, 3, "Price"),
+        (2, 0, "Cakes"),
+        (
+            2,
+            1,
+            "Victoria sponge, lemon drizzle and the very large fruit cake",
+        ),
+        (2, 2, "12"),
+        (2, 3, "2.50"),
+        (3, 0, "Plants"),
+        (3, 1, "Herbs"),
+        (3, 2, "30"),
+        (3, 3, "1.20"),
+        (5, 3, "Total"),
+    ] {
+        b.cell_text(t, r, c, text).unwrap();
+    }
+    let exec = |b: &mut DocBuilder<SeqIds>, c: Command| {
+        b.exec(c).unwrap();
+    };
+    exec(
+        &mut b,
+        Command::TableMergeCells {
+            frame: t,
+            row: 0,
+            col: 0,
+            row_span: 1,
+            col_span: 4,
+        },
+    );
+    exec(
+        &mut b,
+        Command::TableMergeCells {
+            frame: t,
+            row: 3,
+            col: 0,
+            row_span: 2,
+            col_span: 1,
+        },
+    );
+    let navy = Color::rgb(0x1E, 0x3A, 0x5F);
+    let cell = |fill: Option<Color>, valign, insets| CellStyle {
+        fill: fill.map(Paint::from),
+        valign,
+        insets,
+        borders: std::array::from_fn(|_| Some(line(1.5, navy, Dash::Solid))),
+    };
+    let style_at = |b: &mut DocBuilder<SeqIds>, r, c, s: CellStyle| {
+        b.exec(Command::TableSetCellStyle {
+            frame: t,
+            row: r,
+            col: c,
+            style: s,
+        })
+        .unwrap();
+    };
+    style_at(
+        &mut b,
+        0,
+        0,
+        cell(
+            Some(Color::rgb(0xDB, 0xE4, 0xF5)),
+            VerticalAlign::Middle,
+            Margins::uniform(8.0),
+        ),
+    );
+    for c in 0..4 {
+        style_at(
+            &mut b,
+            1,
+            c,
+            cell(
+                Some(Color::rgb(0xF3, 0xF4, 0xF6)),
+                VerticalAlign::Bottom,
+                Margins::uniform(4.0),
+            ),
+        );
+    }
+    let dashed = CellStyle {
+        borders: std::array::from_fn(|_| Some(line(1.0, grey, Dash::Dashed))),
+        valign: VerticalAlign::Middle,
+        ..CellStyle::default()
+    };
+    style_at(&mut b, 3, 0, dashed.clone());
+    style_at(
+        &mut b,
+        5,
+        3,
+        CellStyle {
+            valign: VerticalAlign::Bottom,
+            ..dashed
+        },
+    );
+    b.exec(Command::TableSetRowHeight {
+        frame: t,
+        row: 1,
+        min_height: 32.0,
+    })
+    .unwrap();
+    b.finish()
+}
+
+#[test]
+fn table_with_merged_header() {
+    let doc = table_doc();
+    assert!(pubrs_core::validate::check_integrity(&doc).is_empty());
+    assert_png_golden("table_merged_header", &render(&doc, 0, &opts()));
+}

@@ -1335,3 +1335,53 @@ fn thin_filled_rects(pdf: &lopdf::Document) -> usize {
     }
     n
 }
+
+#[test]
+fn table_cells_are_drawn_with_fills_borders_and_extractable_text() {
+    use pubrs_core::table::CellStyle;
+    let mut b = DocBuilder::new(SeqIds::new(77), PageSetup::default());
+    let p = b.page(0);
+    let hair = Stroke {
+        color: Color::BLACK.into(),
+        width: 1.0,
+        dash: Dash::Solid,
+    };
+    let style = CellStyle {
+        borders: std::array::from_fn(|_| Some(hair.clone())),
+        ..CellStyle::default()
+    };
+    let t = b
+        .table(
+            Parent::Page(p),
+            Rect::new(36.0, 36.0, 300.0, 90.0),
+            2,
+            2,
+            &style,
+        )
+        .unwrap();
+    for (r, c, s) in [
+        (0, 0, "Alpha"),
+        (0, 1, "Beta"),
+        (1, 0, "Gamma"),
+        (1, 1, "Delta"),
+    ] {
+        b.cell_text(t, r, c, s).unwrap();
+    }
+    b.exec(Command::TableSetCellStyle {
+        frame: t,
+        row: 0,
+        col: 0,
+        style: CellStyle {
+            fill: Some(Color::rgb(200, 220, 255).into()),
+            ..style
+        },
+    })
+    .unwrap();
+    let (_, pdf) = export(&b.finish(), &PdfOptions::default());
+    let text: String = pdf.extract_text(&[1]).unwrap().split_whitespace().collect();
+    for w in ["Alpha", "Beta", "Gamma", "Delta"] {
+        assert!(text.contains(w), "{w} in {text}");
+    }
+    assert!(!operands(&pdf, "f").is_empty(), "the cell fill is painted");
+    assert!(operands(&pdf, "S").len() >= 4, "the borders are stroked");
+}

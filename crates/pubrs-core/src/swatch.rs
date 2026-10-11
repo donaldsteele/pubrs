@@ -543,6 +543,16 @@ fn extra_paints(f: &crate::model::Frame) -> Vec<(&'static str, &Paint, bool)> {
             v.push(("WordArt shadow", &s.color, true));
         }
     }
+    if let crate::model::FrameContent::Table(t) = &f.content {
+        for c in &t.cells {
+            if let Some(p) = &c.fill {
+                v.push(("table cell fill", p, true));
+            }
+            for s in c.borders.iter().flatten() {
+                v.push(("table cell border", &s.color, true));
+            }
+        }
+    }
     v
 }
 
@@ -551,14 +561,27 @@ fn extra_paints_mut(f: &mut crate::model::Frame) -> Vec<&mut Paint> {
     if let Some(s) = &mut f.style.shadow {
         v.push(&mut s.color);
     }
-    if let crate::model::FrameContent::WordArt(w) = &mut f.content {
-        v.push(&mut w.fill);
-        if let Some(o) = &mut w.outline {
-            v.push(&mut o.color);
+    match &mut f.content {
+        crate::model::FrameContent::WordArt(w) => {
+            v.push(&mut w.fill);
+            if let Some(o) = &mut w.outline {
+                v.push(&mut o.color);
+            }
+            if let Some(s) = &mut w.shadow {
+                v.push(&mut s.color);
+            }
         }
-        if let Some(s) = &mut w.shadow {
-            v.push(&mut s.color);
+        crate::model::FrameContent::Table(t) => {
+            for c in &mut t.cells {
+                if let Some(p) = &mut c.fill {
+                    v.push(p);
+                }
+                for s in c.borders.iter_mut().flatten() {
+                    v.push(&mut s.color);
+                }
+            }
         }
+        _ => {}
     }
     v
 }

@@ -18,6 +18,7 @@ pub mod patch;
 pub mod snap;
 pub mod style;
 pub mod swatch;
+pub mod table;
 pub mod text;
 pub mod validate;
 

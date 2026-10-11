@@ -22,6 +22,7 @@ use crate::model::{
 use crate::patch::Patch;
 use crate::style::{CharProps, ParaProps, Style, StyleKind};
 use crate::swatch::{Paint, SchemeId, Swatch};
+use crate::table::{Axis, CellStyle, TableFrame};
 use crate::text::{RunFormat, normalize_paragraph};
 
 /// Largest page or frame dimension accepted (200 inches, the PDF limit).
@@ -248,6 +249,73 @@ pub enum Command {
         frame: FrameId,
         art: WordArtFrame,
     },
+    // ---- tables ----
+    /// Add a table frame with the stories of all its cells (ADR 0024).
+    AddTable {
+        parent: Parent,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        frame: Frame,
+        /// One new story per cell, each listing only the table frame.
+        stories: Vec<Story>,
+    },
+    /// Insert `count` rows before row `at`. `stories` are the ids of the
+    /// cells created (see `TableFrame::insert_rows_needed`).
+    TableInsertRows {
+        frame: FrameId,
+        at: u32,
+        count: u32,
+        stories: Vec<StoryId>,
+    },
+    TableDeleteRows {
+        frame: FrameId,
+        at: u32,
+        count: u32,
+    },
+    TableInsertCols {
+        frame: FrameId,
+        at: u32,
+        count: u32,
+        stories: Vec<StoryId>,
+    },
+    TableDeleteCols {
+        frame: FrameId,
+        at: u32,
+        count: u32,
+    },
+    /// Merge a rectangle of grid positions into its top-left cell; the
+    /// other cells' text is appended to it as extra paragraphs.
+    TableMergeCells {
+        frame: FrameId,
+        row: u32,
+        col: u32,
+        row_span: u32,
+        col_span: u32,
+    },
+    /// Split a merged cell back into single cells (`stories` are the new ones).
+    TableSplitCell {
+        frame: FrameId,
+        row: u32,
+        col: u32,
+        stories: Vec<StoryId>,
+    },
+    TableSetCellStyle {
+        frame: FrameId,
+        row: u32,
+        col: u32,
+        style: CellStyle,
+    },
+    /// Set a column width; the frame's width follows the column sum.
+    TableSetColWidth {
+        frame: FrameId,
+        col: u32,
+        width: f64,
+    },
+    TableSetRowHeight {
+        frame: FrameId,
+        row: u32,
+        min_height: f64,
+    },
     // ---- text ----
     SetStory {
         story: StoryId,
@@ -397,6 +465,16 @@ impl Command {
             Self::SetTextFrame { .. } => "set_text_frame",
             Self::SetShape { .. } => "set_shape",
             Self::SetWordArt { .. } => "set_wordart",
+            Self::AddTable { .. } => "add_table",
+            Self::TableInsertRows { .. } => "table_insert_rows",
+            Self::TableDeleteRows { .. } => "table_delete_rows",
+            Self::TableInsertCols { .. } => "table_insert_cols",
+            Self::TableDeleteCols { .. } => "table_delete_cols",
+            Self::TableMergeCells { .. } => "table_merge_cells",
+            Self::TableSplitCell { .. } => "table_split_cell",
+            Self::TableSetCellStyle { .. } => "table_set_cell_style",
+            Self::TableSetColWidth { .. } => "table_set_col_width",
+            Self::TableSetRowHeight { .. } => "table_set_row_height",
             Self::SetStory { .. } => "set_story",
             Self::InsertText { .. } => "insert_text",
             Self::DeleteText { .. } => "delete_text",
@@ -683,7 +761,14 @@ impl Command {
                 index,
                 frame,
                 story,
-            } => add_frame(doc, *parent, *index, frame, story.as_ref()),
+            } => {
+                if matches!(frame.content, FrameContent::Table(_)) {
+                    return Err(CommandError::invalid(
+                        "create tables with the add_table command",
+                    ));
+                }
+                add_frame(doc, *parent, *index, frame, story.as_slice())
+            }
             Self::DeleteFrame { frame } => {
                 let f = require_frame(doc, *frame)?;
                 if f.locked {
@@ -710,7 +795,11 @@ impl Command {
                 if is_group {
                     transform_group(doc, *frame, old, *rect, rotation);
                 }
-                doc.frame_mut(*frame).expect("checked").rect = *rect;
+                let f = doc.frame_mut(*frame).expect("checked");
+                f.rect = *rect;
+                if let Some(t) = f.as_table_mut() {
+                    t.scale_to_width(rect.width);
+                }
                 refresh_ancestors(doc, *frame);
                 Ok(())
             }
@@ -860,6 +949,98 @@ impl Command {
                     }
                     _ => Err(CommandError::invalid("frame is not WordArt")),
                 }
+            }
+            Self::AddTable {
+                parent,
+                index,
+                frame,
+                stories,
+            } => {
+                if !matches!(frame.content, FrameContent::Table(_)) {
+                    return Err(CommandError::invalid("add_table needs a table frame"));
+                }
+                add_frame(doc, *parent, *index, frame, stories)
+            }
+            Self::TableInsertRows {
+                frame,
+                at,
+                count,
+                stories,
+            } => table_insert(doc, *frame, Axis::Row, *at, *count, stories),
+            Self::TableInsertCols {
+                frame,
+                at,
+                count,
+                stories,
+            } => table_insert(doc, *frame, Axis::Col, *at, *count, stories),
+            Self::TableDeleteRows { frame, at, count } => {
+                table_delete(doc, *frame, Axis::Row, *at, *count)
+            }
+            Self::TableDeleteCols { frame, at, count } => {
+                table_delete(doc, *frame, Axis::Col, *at, *count)
+            }
+            Self::TableMergeCells {
+                frame,
+                row,
+                col,
+                row_span,
+                col_span,
+            } => table_merge(doc, *frame, *row, *col, *row_span, *col_span),
+            Self::TableSplitCell {
+                frame,
+                row,
+                col,
+                stories,
+            } => {
+                require_unlocked(doc, *frame)?;
+                let new = {
+                    let t = table_mut(doc, *frame)?;
+                    t.split(*row, *col, stories)
+                        .map_err(CommandError::invalid)?;
+                    stories.clone()
+                };
+                for s in new {
+                    insert_cell_story(doc, *frame, s)?;
+                }
+                Ok(())
+            }
+            Self::TableSetCellStyle {
+                frame,
+                row,
+                col,
+                style,
+            } => {
+                check_cell_style(doc, style)?;
+                require_unlocked(doc, *frame)?;
+                let t = table_mut(doc, *frame)?;
+                let i = t.cell_index_at(*row, *col).ok_or_else(|| {
+                    CommandError::invalid(format!("no cell at row {row} column {col}"))
+                })?;
+                t.cells[i].set_style(style);
+                Ok(())
+            }
+            Self::TableSetColWidth { frame, col, width } => {
+                require_unlocked(doc, *frame)?;
+                let f = frame_mut(doc, *frame)?;
+                let t = f
+                    .as_table_mut()
+                    .ok_or_else(|| CommandError::invalid("frame is not a table"))?;
+                t.set_col_width(*col as usize, *width)
+                    .map_err(CommandError::invalid)?;
+                let w = t.width();
+                f.rect.width = w;
+                refresh_ancestors(doc, *frame);
+                Ok(())
+            }
+            Self::TableSetRowHeight {
+                frame,
+                row,
+                min_height,
+            } => {
+                require_unlocked(doc, *frame)?;
+                table_mut(doc, *frame)?
+                    .set_row_height(*row as usize, *min_height)
+                    .map_err(CommandError::invalid)
             }
             Self::SetStory { story, paragraphs } => {
                 for p in paragraphs {
@@ -1406,7 +1587,7 @@ fn add_frame(
     parent: Parent,
     index: Option<usize>,
     frame: &Frame,
-    story: Option<&Story>,
+    stories: &[Story],
 ) -> CmdResult {
     if doc.frames.contains_key(&frame.id) {
         return Err(CommandError::conflict(format!(
@@ -1429,7 +1610,7 @@ fn add_frame(
             ));
         }
         FrameContent::Text(t) => {
-            let Some(s) = story else {
+            let [s] = stories else {
                 return Err(CommandError::invalid("a text frame needs a new story"));
             };
             if s.id != t.story || s.frames != [frame.id] {
@@ -1456,15 +1637,48 @@ fn add_frame(
         }
         FrameContent::Shape(_) => {}
         FrameContent::WordArt(w) => check_wordart(doc, w)?,
+        FrameContent::Table(t) => {
+            t.check().map_err(CommandError::invalid)?;
+            check_table_paints(doc, t)?;
+            let mut want: Vec<StoryId> = t.stories().collect();
+            let mut have: Vec<StoryId> = stories.iter().map(|s| s.id).collect();
+            want.sort();
+            have.sort();
+            if want != have {
+                return Err(CommandError::invalid(
+                    "a table needs exactly one new story per cell",
+                ));
+            }
+            for s in stories {
+                if s.frames != [frame.id] {
+                    return Err(CommandError::invalid(
+                        "each cell story must list only the table frame",
+                    ));
+                }
+                if doc.stories.contains_key(&s.id) {
+                    return Err(CommandError::conflict("story already exists"));
+                }
+                for p in &s.paragraphs {
+                    check_paragraph(doc, p)?;
+                }
+            }
+        }
     }
-    if story.is_some() && !matches!(frame.content, FrameContent::Text(_)) {
-        return Err(CommandError::invalid("only text frames take a story"));
+    if !stories.is_empty()
+        && !matches!(
+            frame.content,
+            FrameContent::Text(_) | FrameContent::Table(_)
+        )
+    {
+        return Err(CommandError::invalid(
+            "only text and table frames take stories",
+        ));
     }
     if let Some(p) = &frame.placeholder {
         check_placeholder(doc, frame, p)?;
     }
     doc.frames.insert(frame.id, Arc::new(frame.clone()));
-    if let Some(s) = story {
+    for s in stories {
         let mut s = s.clone();
         if s.paragraphs.is_empty() {
             s.paragraphs.push(Paragraph::default());
@@ -1492,18 +1706,26 @@ fn remove_frames(doc: &mut Document, frames: &[FrameId]) {
         {
             list.retain(|f| f != id);
         }
-        if let Some(f) = doc.frames.remove(id)
-            && let FrameContent::Text(t) = &f.content
-        {
-            let empty = match doc.story_mut(t.story) {
-                Some(s) => {
-                    s.frames.retain(|f| f != id);
-                    s.frames.is_empty()
+        if let Some(f) = doc.frames.remove(id) {
+            match &f.content {
+                FrameContent::Text(t) => {
+                    let empty = match doc.story_mut(t.story) {
+                        Some(s) => {
+                            s.frames.retain(|f| f != id);
+                            s.frames.is_empty()
+                        }
+                        None => false,
+                    };
+                    if empty {
+                        doc.stories.remove(&t.story);
+                    }
                 }
-                None => false,
-            };
-            if empty {
-                doc.stories.remove(&t.story);
+                FrameContent::Table(t) => {
+                    for s in t.stories() {
+                        doc.stories.remove(&s);
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -1581,6 +1803,9 @@ fn transform_group(doc: &mut Document, group: FrameId, old: Rect, new: Rect, rot
         let (fx, fy) = if swapped { (sy, sx) } else { (sx, sy) };
         let (w, h) = (f.rect.width * fx, f.rect.height * fy);
         f.rect = Rect::new(mapped.x - w / 2.0, mapped.y - h / 2.0, w, h);
+        if let Some(t) = f.as_table_mut() {
+            t.scale_to_width(w);
+        }
     }
 }
 
@@ -1889,4 +2114,130 @@ pub fn list_level_command(
             ..Default::default()
         },
     ))
+}
+
+fn table_mut(doc: &mut Document, id: FrameId) -> CmdResult<&mut TableFrame> {
+    frame_mut(doc, id)?
+        .as_table_mut()
+        .ok_or_else(|| CommandError::invalid("frame is not a table"))
+}
+
+fn check_cell_style(doc: &Document, s: &CellStyle) -> CmdResult {
+    if !s.insets.is_valid() {
+        return Err(CommandError::invalid("cell insets must be finite and >= 0"));
+    }
+    if let Some(p) = &s.fill {
+        p.check(doc, false).map_err(CommandError::invalid)?;
+    }
+    for b in s.borders.iter().flatten() {
+        if !(b.width.is_finite() && (0.0..=288.0).contains(&b.width)) {
+            return Err(CommandError::invalid("border width must be 0..=288pt"));
+        }
+        b.color.check(doc, false).map_err(CommandError::invalid)?;
+    }
+    Ok(())
+}
+
+fn check_table_paints(doc: &Document, t: &TableFrame) -> CmdResult {
+    for c in &t.cells {
+        check_cell_style(doc, &c.style())?;
+    }
+    Ok(())
+}
+
+/// Create the (empty) story of a cell that was just added to a table.
+fn insert_cell_story(doc: &mut Document, frame: FrameId, id: StoryId) -> CmdResult {
+    if doc.stories.contains_key(&id) {
+        return Err(CommandError::conflict("story already exists"));
+    }
+    doc.stories.insert(id, Arc::new(Story::new(id, frame)));
+    Ok(())
+}
+
+fn table_insert(
+    doc: &mut Document,
+    frame: FrameId,
+    axis: Axis,
+    at: u32,
+    count: u32,
+    stories: &[StoryId],
+) -> CmdResult {
+    require_unlocked(doc, frame)?;
+    for s in stories {
+        if doc.stories.contains_key(s) {
+            return Err(CommandError::conflict("story already exists"));
+        }
+    }
+    let f = frame_mut(doc, frame)?;
+    let t = f
+        .as_table_mut()
+        .ok_or_else(|| CommandError::invalid("frame is not a table"))?;
+    match axis {
+        Axis::Row => t.insert_rows(at as usize, count as usize, stories),
+        Axis::Col => t.insert_cols(at as usize, count as usize, stories),
+    }
+    .map_err(CommandError::invalid)?;
+    if axis == Axis::Col {
+        let w = t.width();
+        f.rect.width = w;
+    }
+    for s in stories {
+        insert_cell_story(doc, frame, *s)?;
+    }
+    refresh_ancestors(doc, frame);
+    Ok(())
+}
+
+fn table_delete(doc: &mut Document, frame: FrameId, axis: Axis, at: u32, count: u32) -> CmdResult {
+    require_unlocked(doc, frame)?;
+    let f = frame_mut(doc, frame)?;
+    let t = f
+        .as_table_mut()
+        .ok_or_else(|| CommandError::invalid("frame is not a table"))?;
+    let gone = match axis {
+        Axis::Row => t.delete_rows(at as usize, count as usize),
+        Axis::Col => t.delete_cols(at as usize, count as usize),
+    }
+    .map_err(CommandError::invalid)?;
+    if axis == Axis::Col {
+        let w = t.width();
+        f.rect.width = w;
+    }
+    for s in gone {
+        doc.stories.remove(&s);
+    }
+    refresh_ancestors(doc, frame);
+    Ok(())
+}
+
+fn table_merge(
+    doc: &mut Document,
+    frame: FrameId,
+    row: u32,
+    col: u32,
+    row_span: u32,
+    col_span: u32,
+) -> CmdResult {
+    require_unlocked(doc, frame)?;
+    let (keep, gone) = table_mut(doc, frame)?
+        .merge(row, col, row_span, col_span)
+        .map_err(CommandError::invalid)?;
+    // Absorbed text follows the kept cell's, one paragraph break between.
+    let mut extra: Vec<Paragraph> = Vec::new();
+    for s in gone {
+        if let Some(st) = doc.stories.remove(&s)
+            && !st.is_empty()
+        {
+            extra.extend(st.paragraphs.iter().cloned());
+        }
+    }
+    if !extra.is_empty() {
+        let k = story_mut(doc, keep)?;
+        if k.is_empty() {
+            k.paragraphs = extra;
+        } else {
+            k.paragraphs.extend(extra);
+        }
+    }
+    Ok(())
 }

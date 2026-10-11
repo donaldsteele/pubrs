@@ -121,6 +121,7 @@ version.
 | 8 | Character fields `baseline`, `caps`, `strikethrough`, `ligatures` and `kerning` (on runs and character styles). All are optional, so older files are valid version 8 files; migration only stamps the version. |
 | 9 | `type: "word_art"` frame content, and the frame style fields `shadow` and `border_art`. All are optional and omitted when unset, so older files are valid version 9 files; migration only stamps the version (ADR 0020). |
 | 10 | Wrap modes `tight` and `through`, and `wrap.both_sides` on frames. All optional (`both_sides` is omitted when false), so older files are valid version 9 files; migration only stamps the version. |
+| 11 | `type: "table"` frame content (`cols`, `rows`, `cells`; cell text is stories whose chain is the table frame). A new variant, so older files hold none; migration only stamps the version (ADR 0024). |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -308,3 +309,18 @@ layout, unchanged.**
   decoded or has no transparency wraps by its rectangle.
 
 See ADR 0022.
+
+### Tables (version 11)
+
+A frame with `"type": "table"` has `cols` (column widths in points), `rows`
+(`[{"min_height"}]`) and `cells`. Each cell is `{"row", "col", "row_span",
+"col_span", "story", "fill", "borders", "insets", "valign"}`: `row` and `col`
+are the top-left grid position, the spans default to 1, `borders` is
+`[top, right, bottom, left]` with each side a stroke or `null`, and `story` is
+the id of an ordinary story in `stories` whose `frames` is `[the table frame]`.
+Every grid position is covered by exactly one cell, and cells are listed in
+row-major order of their top-left position. Row heights as laid out are never
+stored: a row is as tall as its tallest cell, at least `min_height`, and rows
+stop at the frame's bottom.
+
+See ADR 0024.

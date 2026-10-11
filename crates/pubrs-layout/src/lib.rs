@@ -11,12 +11,14 @@ pub mod cache;
 pub mod flow;
 pub mod fonts;
 pub mod hyphen;
+pub mod table;
 pub mod types;
 pub mod wrap;
 
 pub use cache::{CacheStats, StoryLayoutCache};
 pub use flow::Layouter;
 pub use fonts::{FALLBACK_SANS, FALLBACK_SERIF, FamilyEntry, FontLibrary, FontSource};
+pub use table::{CellLayout, TableLayout};
 pub use types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
     PositionedGlyph, StoryLayout, WordArtLayout,

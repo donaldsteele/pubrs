@@ -752,6 +752,11 @@ pub fn page_document(
         if let Some(t) = f.as_text() {
             add_story(doc, t.story, &mut frames, &mut stories);
         }
+        if let Some(t) = f.as_table() {
+            for s in t.stories() {
+                add_story(doc, s, &mut frames, &mut stories);
+            }
+        }
         if let Some(a) = f.as_image().and_then(|i| i.asset)
             && let Some(asset) = doc.assets.get(&a)
         {

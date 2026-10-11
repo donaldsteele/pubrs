@@ -1162,6 +1162,81 @@ fn patch_json_matches_the_golden_corpus() {
         },
     });
 
+    // Tables (append-only).
+    let (tframe, tstories) = pubrs_core::table::new_table(
+        &mut r.fx.ids,
+        Rect::new(40.0, 300.0, 200.0, 60.0),
+        2,
+        2,
+        &pubrs_core::table::CellStyle::default(),
+    )
+    .unwrap();
+    let tid = tframe.id;
+    let first_cell = tstories[0].id;
+    r.run(Command::AddTable {
+        parent: Parent::Page(page),
+        index: None,
+        frame: tframe,
+        stories: tstories,
+    });
+    let row_ids = vec![StoryId::new(&mut r.fx.ids), StoryId::new(&mut r.fx.ids)];
+    r.run(Command::TableInsertRows {
+        frame: tid,
+        at: 1,
+        count: 1,
+        stories: row_ids,
+    });
+    r.run(Command::TableSetCellStyle {
+        frame: tid,
+        row: 0,
+        col: 0,
+        style: pubrs_core::table::CellStyle {
+            fill: Some(Color::rgb(220, 230, 250).into()),
+            valign: VerticalAlign::Middle,
+            ..Default::default()
+        },
+    });
+    r.run(Command::TableMergeCells {
+        frame: tid,
+        row: 0,
+        col: 0,
+        row_span: 1,
+        col_span: 2,
+    });
+    let split_ids = vec![StoryId::new(&mut r.fx.ids)];
+    r.run(Command::TableSplitCell {
+        frame: tid,
+        row: 0,
+        col: 1,
+        stories: split_ids,
+    });
+    r.run(Command::TableSetColWidth {
+        frame: tid,
+        col: 0,
+        width: 120.0,
+    });
+    r.run(Command::TableSetRowHeight {
+        frame: tid,
+        row: 2,
+        min_height: 40.0,
+    });
+    r.run(Command::InsertText {
+        story: first_cell,
+        at: 0,
+        text: "Cell".into(),
+        format: None,
+    });
+    r.run(Command::TableDeleteCols {
+        frame: tid,
+        at: 1,
+        count: 1,
+    });
+    r.run(Command::TableDeleteRows {
+        frame: tid,
+        at: 0,
+        count: 1,
+    });
+
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/patch_corpus.json");

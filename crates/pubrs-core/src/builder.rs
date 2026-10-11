@@ -95,6 +95,50 @@ impl<I: IdSource> DocBuilder<I> {
         self.frame(parent, frame, Some(story))
     }
 
+    /// A `rows` x `cols` table with equal cells, all empty.
+    pub fn table(
+        &mut self,
+        parent: Parent,
+        rect: Rect,
+        rows: usize,
+        cols: usize,
+        style: &crate::table::CellStyle,
+    ) -> CmdResult<FrameId> {
+        let (frame, stories) = crate::table::new_table(&mut self.ids, rect, rows, cols, style)
+            .map_err(crate::command::CommandError::invalid)?;
+        let id = frame.id;
+        self.exec(Command::AddTable {
+            parent,
+            index: None,
+            frame,
+            stories,
+        })?;
+        Ok(id)
+    }
+
+    /// Replace the text of the cell at (`row`, `col`) of a table.
+    pub fn cell_text(
+        &mut self,
+        table: FrameId,
+        row: u32,
+        col: u32,
+        text: &str,
+    ) -> CmdResult<&mut Self> {
+        let story = self
+            .doc()
+            .frame(table)
+            .and_then(Frame::as_table)
+            .and_then(|t| t.cell_at(row, col))
+            .map(|c| c.story)
+            .ok_or_else(|| {
+                crate::command::CommandError::not_found("cell", format!("{row},{col}"))
+            })?;
+        self.exec(Command::SetStory {
+            story,
+            paragraphs: text.split('\n').map(Paragraph::plain).collect(),
+        })
+    }
+
     pub fn shape(&mut self, page: PageId, rect: Rect, shape: Shape) -> CmdResult<FrameId> {
         let fid = FrameId::new(&mut self.ids);
         let frame = Frame::new(fid, rect, FrameContent::Shape(ShapeFrame { shape }));

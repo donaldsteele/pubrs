@@ -44,6 +44,15 @@ impl TextEdit {
     }
 }
 
+/// Offset of a story's lines inside `frame`: zero for text frames, the
+/// cell's origin for the cell story of a table (cell text is laid out in
+/// cell-local space).
+pub fn story_shift(layout: &DocumentLayout, frame: FrameId, story: StoryId) -> (f64, f64) {
+    layout
+        .cell_origin(frame, story)
+        .map_or((0.0, 0.0), |p| (p.x, p.y))
+}
+
 /// Map a frame-local point to page space.
 pub fn frame_to_page(doc: &Document, frame: FrameId, x: f64, y: f64) -> Option<Point> {
     let f = doc.frame(frame)?;
@@ -100,11 +109,12 @@ pub fn caret_segment(
     let lines = story_lines(doc, layout, story);
     let i = line_for(&lines, offset)?;
     let (f, l) = lines[i];
-    let x = l.caret_x(offset.clamp(l.chars.start, l.chars.end));
+    let (sx, sy) = story_shift(layout, f, story);
+    let x = l.caret_x(offset.clamp(l.chars.start, l.chars.end)) + sx;
     Some((
         f,
-        frame_to_page(doc, f, x, l.rect.y)?,
-        frame_to_page(doc, f, x, l.rect.bottom())?,
+        frame_to_page(doc, f, x, l.rect.y + sy)?,
+        frame_to_page(doc, f, x, l.rect.bottom() + sy)?,
     ))
 }
 
@@ -117,6 +127,8 @@ pub fn offset_at(
     p: Point,
 ) -> Option<usize> {
     let (x, y) = page_to_frame(doc, frame, p)?;
+    let (sx, sy) = story_shift(layout, frame, story);
+    let (x, y) = (x - sx, y - sy);
     let lines = story_lines(doc, layout, story);
     let in_frame: Vec<&LineBox> = lines
         .iter()
@@ -228,11 +240,13 @@ pub fn selection_quads(
         if end > l.chars.end && x1 - x0 < 3.0 {
             x1 = x0 + 3.0;
         }
+        let (sx, sy) = story_shift(layout, f, story);
+        let (x0, x1) = (x0 + sx, x1 + sx);
         let pts = [
-            (x0, l.rect.y),
-            (x1, l.rect.y),
-            (x1, l.rect.bottom()),
-            (x0, l.rect.bottom()),
+            (x0, l.rect.y + sy),
+            (x1, l.rect.y + sy),
+            (x1, l.rect.bottom() + sy),
+            (x0, l.rect.bottom() + sy),
         ];
         let mut q = [Point::default(); 4];
         let mut ok = true;
@@ -280,10 +294,11 @@ pub fn underline_segments<T>(
             if a >= b {
                 continue;
             }
-            let y = l.baseline + (l.rect.bottom() - l.baseline) * 0.5;
+            let (sx, sy) = story_shift(layout, frame, story);
+            let y = l.baseline + (l.rect.bottom() - l.baseline) * 0.5 + sy;
             if let (Some(p), Some(q)) = (
-                frame_to_page(doc, frame, l.caret_x(a), y),
-                frame_to_page(doc, frame, l.caret_x(b), y),
+                frame_to_page(doc, frame, l.caret_x(a) + sx, y),
+                frame_to_page(doc, frame, l.caret_x(b) + sx, y),
             ) {
                 out.push((p, q));
             }

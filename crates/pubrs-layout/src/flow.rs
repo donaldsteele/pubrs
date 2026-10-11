@@ -67,17 +67,17 @@ pub(crate) struct Obstacle {
 /// ([`crate::cache::StoryKey`]).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Region {
-    frame: FrameId,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    valign: VerticalAlign,
-    obstacles: Vec<Obstacle>,
+    pub(crate) frame: FrameId,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+    pub(crate) valign: VerticalAlign,
+    pub(crate) obstacles: Vec<Obstacle>,
     /// Rank of the frame's page among the pages of the chain, in document
     /// order (`None` on a master). Relative, so adding pages elsewhere
     /// leaves it alone; page breaks compare it.
-    page: Option<u32>,
+    pub(crate) page: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -353,9 +353,33 @@ pub(crate) struct DocIndex {
     /// Index of each page in the document.
     page_index: HashMap<PageId, usize>,
     pub(crate) contours: Option<Arc<dyn AlphaContours>>,
+    /// Cell index of each cell story, per table frame, built on first use
+    /// (a pass over a table costs its cells once, not once per story).
+    cells: HashMap<FrameId, HashMap<StoryId, usize>>,
 }
 
 impl DocIndex {
+    /// The cell of `table` (frame `frame`) showing `story`.
+    fn cell_index(
+        &mut self,
+        frame: FrameId,
+        table: &pubrs_core::TableFrame,
+        story: StoryId,
+    ) -> Option<usize> {
+        self.cells
+            .entry(frame)
+            .or_insert_with(|| {
+                table
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| (c.story, i))
+                    .collect()
+            })
+            .get(&story)
+            .copied()
+    }
+
     pub(crate) fn new(doc: &Document, contours: Option<Arc<dyn AlphaContours>>) -> Self {
         let mut parent = HashMap::with_capacity(doc.frames.len());
         let mut page_index = HashMap::with_capacity(doc.pages.len());
@@ -382,6 +406,7 @@ impl DocIndex {
             orders: HashMap::new(),
             page_index,
             contours,
+            cells: HashMap::new(),
         }
     }
 
@@ -438,13 +463,20 @@ impl Layouter {
         let mut index = DocIndex::new(doc, self.contours.clone());
         let mut out = DocumentLayout::default();
         for (id, story) in &doc.stories {
-            let regions = regions_for(doc, &mut index, &story.frames);
+            let regions = regions_for(doc, &mut index, *id, &story.frames);
             out.stories
                 .insert(*id, Arc::new(self.flow_story(doc, *id, &regions)));
         }
         for (id, f) in &doc.frames {
             if let Some(w) = f.as_wordart() {
                 out.wordart.insert(*id, Arc::new(self.layout_wordart(w)));
+            }
+            if f.as_table().is_some() {
+                let (layout, adjusted) = crate::table::table_pass(doc, f, &out.stories);
+                for (s, l) in adjusted {
+                    out.stories.insert(s, l);
+                }
+                out.tables.insert(*id, Arc::new(layout));
             }
         }
         out
@@ -506,6 +538,7 @@ impl Layouter {
             Some(story) => regions_for(
                 doc,
                 &mut DocIndex::new(doc, self.contours.clone()),
+                story_id,
                 &story.frames,
             ),
             None => Vec::new(),
@@ -555,7 +588,7 @@ impl Layouter {
             return (out, false);
         };
         for f in &story.frames {
-            if doc.frame(*f).and_then(|f| f.as_text()).is_some() {
+            if doc.frame(*f).is_some_and(shows_story_text) {
                 out.frames.insert(*f, FrameText::default());
             }
         }
@@ -2490,10 +2523,24 @@ fn caret_x(layout: &Layout<Ink>, offsets: &ClusterOffsets, cursor: Cursor) -> f6
 /// columns, with the wrap obstacles over it. The layout flows into exactly
 /// these values, and the cache key ([`crate::cache::StoryKey`]) compares
 /// them, so the two cannot disagree.
-pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameId]) -> Vec<Region> {
+pub(crate) fn regions_for(
+    doc: &Document,
+    index: &mut DocIndex,
+    story: StoryId,
+    frames: &[FrameId],
+) -> Vec<Region> {
     let mut out = Vec::new();
     for fid in frames {
         let Some(f) = doc.frame(*fid) else { continue };
+        if let Some(table) = f.as_table() {
+            // A table cell: one region in cell-local space (ADR 0024).
+            out.extend(
+                index
+                    .cell_index(*fid, table, story)
+                    .map(|i| crate::table::cell_region(*fid, table, &table.cells[i])),
+            );
+            continue;
+        }
         let Some(t) = f.as_text() else { continue };
         let Some(owner) = index.owner_of(*fid) else {
             continue;
@@ -2534,6 +2581,11 @@ pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameI
             .and_then(|p| pages.binary_search(&p).ok().map(|i| i as u32));
     }
     out
+}
+
+/// Whether a frame's stories get a [`FrameText`]: text frames and tables.
+pub(crate) fn shows_story_text(f: &Frame) -> bool {
+    matches!(f.content, FrameContent::Text(_) | FrameContent::Table(_))
 }
 
 /// Frames above text frame `tf` on its page (or master) `owner` whose wrap

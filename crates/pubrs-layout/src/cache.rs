@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use pubrs_core::{Document, Story, StoryId, StyleSheet};
 
 use crate::flow::{DocIndex, Layouter, Region, regions_for};
+use crate::table::TableLayout;
 use crate::types::{DocumentLayout, StoryLayout, WordArtLayout};
 use pubrs_core::FrameId;
 
@@ -105,9 +106,9 @@ pub(crate) fn story_key(
         text_frames: story
             .frames
             .iter()
-            .map(|f| doc.frame(*f).and_then(|f| f.as_text()).is_some())
+            .map(|f| doc.frame(*f).is_some_and(crate::flow::shows_story_text))
             .collect(),
-        regions: regions_for(doc, index, &story.frames),
+        regions: regions_for(doc, index, story.id, &story.frames),
         story: SharedStory(Arc::clone(story)),
     }
 }
@@ -121,6 +122,10 @@ pub struct CacheStats {
     pub reused: usize,
     /// Entries dropped in the last pass because their story was deleted.
     pub dropped: usize,
+    /// Table passes (row heights, cell rectangles) computed in the last pass.
+    pub tables_recomposed: usize,
+    /// Table passes reused in the last pass.
+    pub tables_reused: usize,
     /// Time the last pass spent building and comparing keys.
     pub key_time: Duration,
     /// Stories recomposed since the cache was created.
@@ -142,6 +147,15 @@ struct WordArtKey {
     fonts: (usize, usize),
 }
 
+/// A cached table pass, valid while the table frame and the raw layouts of
+/// its cells are the very same allocations (or the frame is equal).
+struct TableEntry {
+    frame: Arc<pubrs_core::Frame>,
+    cells: Vec<Arc<StoryLayout>>,
+    layout: Arc<TableLayout>,
+    adjusted: Vec<(StoryId, Arc<StoryLayout>)>,
+}
+
 struct WordArtEntry {
     key: WordArtKey,
     layout: Arc<WordArtLayout>,
@@ -152,6 +166,7 @@ struct WordArtEntry {
 pub struct StoryLayoutCache {
     entries: BTreeMap<StoryId, Entry>,
     wordart: BTreeMap<FrameId, WordArtEntry>,
+    tables: BTreeMap<FrameId, TableEntry>,
     styles: Option<StyleSheet>,
     styles_generation: u64,
     stats: CacheStats,
@@ -188,6 +203,7 @@ impl StoryLayoutCache {
         Self {
             entries: BTreeMap::new(),
             wordart: BTreeMap::new(),
+            tables: BTreeMap::new(),
             styles: None,
             styles_generation: 0,
             stats: CacheStats::default(),
@@ -204,6 +220,7 @@ impl StoryLayoutCache {
     pub fn clear(&mut self) {
         self.entries.clear();
         self.wordart.clear();
+        self.tables.clear();
         self.styles = None;
     }
 
@@ -282,7 +299,57 @@ impl StoryLayoutCache {
             };
             out.wordart.insert(*id, layout);
         }
+        // Tables: the pass over the cells is reused while the frame and the
+        // cells' raw layouts are unchanged.
+        self.tables
+            .retain(|id, _| doc.frame(*id).is_some_and(|f| f.as_table().is_some()));
+        let (mut tables_recomposed, mut tables_reused) = (0, 0);
+        for (id, f) in &doc.frames {
+            let Some(t) = f.as_table() else { continue };
+            let raw: Vec<Option<Arc<StoryLayout>>> = t
+                .cells
+                .iter()
+                .map(|c| out.stories.get(&c.story).cloned())
+                .collect();
+            let hit = self.tables.get(id).filter(|e| {
+                (Arc::ptr_eq(&e.frame, f) || *e.frame == **f)
+                    && e.cells.len() == raw.len()
+                    && e.cells
+                        .iter()
+                        .zip(&raw)
+                        .all(|(a, b)| b.as_ref().is_some_and(|b| Arc::ptr_eq(a, b)))
+            });
+            if let Some(e) = hit {
+                tables_reused += 1;
+                for (s, l) in &e.adjusted {
+                    out.stories.insert(*s, l.clone());
+                }
+                out.tables.insert(*id, e.layout.clone());
+                continue;
+            }
+            tables_recomposed += 1;
+            let refs: Vec<Option<&Arc<StoryLayout>>> = raw.iter().map(Option::as_ref).collect();
+            let (layout, adjusted) = crate::table::pass(doc, f, t, &refs);
+            let layout = Arc::new(layout);
+            for (s, l) in &adjusted {
+                out.stories.insert(*s, l.clone());
+            }
+            out.tables.insert(*id, layout.clone());
+            if raw.iter().all(Option::is_some) {
+                self.tables.insert(
+                    *id,
+                    TableEntry {
+                        frame: f.clone(),
+                        cells: raw.into_iter().flatten().collect(),
+                        layout,
+                        adjusted,
+                    },
+                );
+            }
+        }
         self.stats = CacheStats {
+            tables_recomposed,
+            tables_reused,
             recomposed,
             reused,
             dropped,
@@ -318,6 +385,14 @@ fn verify(layouter: &mut Layouter, doc: &Document, incremental: &DocumentLayout)
         if full.wordart.get(id) != incremental.wordart.get(id) {
             panic!(
                 "PUBRS_LAYOUT_VERIFY: the incremental WordArt layout of frame {id} differs from a full layout"
+            );
+        }
+    }
+    let ids = full.tables.keys().chain(incremental.tables.keys());
+    for id in ids {
+        if full.tables.get(id) != incremental.tables.get(id) {
+            panic!(
+                "PUBRS_LAYOUT_VERIFY: the incremental table layout of frame {id} differs from a full layout"
             );
         }
     }

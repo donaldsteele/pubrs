@@ -11,7 +11,7 @@ type Step = fn(Value) -> Result<Value, IoError>;
 /// One entry per past version, indexed by the version it upgrades from.
 const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [
     v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5, v5_to_v6, v6_to_v7, v7_to_v8, v8_to_v9,
-    v9_to_v10,
+    v9_to_v10, v10_to_v11,
 ];
 
 /// The schema version a document JSON declares (absent = 0).
@@ -140,6 +140,15 @@ fn v9_to_v10(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(10));
+    Ok(v)
+}
+
+/// Version 11 adds the `table` frame content (ADR 0024): a new variant, so
+/// older files have none. Only the version changes.
+fn v10_to_v11(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(11));
     Ok(v)
 }
 

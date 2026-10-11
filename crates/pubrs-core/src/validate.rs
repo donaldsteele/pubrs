@@ -126,6 +126,21 @@ pub fn check_integrity(doc: &Document) -> Vec<String> {
                     errs.push(format!("frame {id} uses missing asset {a}"));
                 }
             }
+            FrameContent::Table(t) => {
+                if let Err(e) = t.check() {
+                    errs.push(format!("table {id}: {e}"));
+                }
+                for c in &t.cells {
+                    match doc.story(c.story) {
+                        Some(s) if s.frames == [*id] => {}
+                        Some(_) => errs.push(format!(
+                            "table {id}: story {} must list only the table",
+                            c.story
+                        )),
+                        None => errs.push(format!("table {id} uses missing story {}", c.story)),
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -140,7 +155,7 @@ pub fn check_integrity(doc: &Document) -> Vec<String> {
             errs.push(format!("story {id} has no paragraphs"));
         }
         for f in &s.frames {
-            if doc.story_of(*f) != Some(*id) {
+            if doc.story_of(*f) != Some(*id) && doc.table_of_story(*id) != Some(*f) {
                 errs.push(format!(
                     "story {id} lists frame {f} which shows another story"
                 ));

@@ -15,6 +15,8 @@
 //!    edits, a wrap obstacle moving): every line whose drawing changed, old
 //!    and new ink, through the frame's old and new transforms. Lines that
 //!    only moved in character offsets but draw the same glyphs are skipped.
+//!    A table is damaged whole when its row geometry or any cell's layout
+//!    changed (a keystroke can move every row below it).
 //! 5. Image frames on the page showing a touched asset: their bounds.
 //! 6. A changed swatch list or colour scheme: the whole page (swatch values
 //!    are resolved when drawing, so no frame or layout changed).
@@ -169,6 +171,15 @@ pub fn page_damage(old: PageState, new: PageState, touched: Option<&Touched>) ->
         let (Some(of), Some(nf)) = (old.doc.frame(*f), new.doc.frame(*f)) else {
             continue;
         };
+        // A table whose row geometry or any cell's layout changed (a
+        // keystroke can move every row below it): the whole table.
+        if let (Some(ot), Some(nt)) = (of.as_table(), nf.as_table()) {
+            if table_changed(old, new, *f, ot, nt) {
+                rects.extend(frame_bounds(old, *f));
+                rects.extend(frame_bounds(new, *f));
+            }
+            continue;
+        }
         let (Some(os), Some(ns)) = (old.doc.story_of(*f), new.doc.story_of(*f)) else {
             continue;
         };
@@ -215,6 +226,36 @@ pub fn page_damage(old: PageState, new: PageState, touched: Option<&Touched>) ->
         new.doc.setup.size.height + 2.0 * b,
     );
     PageDamage::Rects(merge(rects, page))
+}
+
+/// Whether anything a table draws may differ: its row geometry, or the
+/// layout of any cell (by allocation, so an unchanged table costs a pointer
+/// comparison per cell).
+fn table_changed(
+    old: PageState,
+    new: PageState,
+    id: FrameId,
+    ot: &pubrs_core::TableFrame,
+    nt: &pubrs_core::TableFrame,
+) -> bool {
+    let same_geometry = match (old.layout.tables.get(&id), new.layout.tables.get(&id)) {
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b) || a == b,
+        (None, None) => true,
+        _ => false,
+    };
+    if !same_geometry || ot.cells.len() != nt.cells.len() {
+        return true;
+    }
+    ot.cells.iter().zip(&nt.cells).any(|(a, b)| {
+        match (
+            old.layout.stories.get(&a.story),
+            new.layout.stories.get(&b.story),
+        ) {
+            (Some(x), Some(y)) => !(Arc::ptr_eq(x, y) || x == y),
+            (None, None) => false,
+            _ => true,
+        }
+    })
 }
 
 /// Frames present before and after whose relative paint order changed.

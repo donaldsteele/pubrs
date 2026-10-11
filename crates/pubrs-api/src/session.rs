@@ -448,6 +448,12 @@ impl Session {
                 let frame = doc.frame(f).ok_or_else(|| {
                     ApiError::not_found("frame", &f.to_string(), "list frames with frame_list")
                 })?;
+                if frame.as_table().is_some() {
+                    return Err(ApiError::invalid(
+                        format!("frame {f} is a table; each cell has its own story"),
+                        "pass the cell's story_id (from table_get), or use table_set_cell_text",
+                    ));
+                }
                 frame.as_text().map(|t| t.story).ok_or_else(|| {
                     ApiError::invalid(
                         format!("frame {f} is not a text frame"),
