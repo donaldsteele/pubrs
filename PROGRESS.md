@@ -59,3 +59,6 @@ None.
   from the copy of itself there (`crates/pubrs-app/src/mesa.rs`). CI runs the GUI self-test through that restart on
   the GPU-less Windows runner, and the release workflow checks that the installed MSI draws with llvmpipe. +3 app
   tests (128 in total). ARM64 has no Mesa build (TODO.md).
+- Then (requested): `pubrs-app.exe` no longer opens a command prompt on Windows (GUI subsystem). It attaches to the
+  terminal it was started from, if any, for logs, `--help` and `--version`. It shows fatal start-up errors in a dialog
+  when there is no terminal. CI and the release workflow check the PE subsystem of each exe (ADR 0010 addendum).

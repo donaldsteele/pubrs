@@ -210,3 +210,47 @@ impl PrintBackend for WindowsPrint {
         }
     }
 }
+
+/// pubrs-app is a GUI-subsystem program, so Windows gives it no console
+/// window. Started from a terminal, it attaches to that terminal's console
+/// and points stdout/stderr at it, so logs, `--help` and `--version` print
+/// there; output that is already redirected (CI, the Mesa restart) is left
+/// alone. Returns whether stderr goes somewhere a person can read it.
+pub fn attach_parent_console() -> bool {
+    use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows::Win32::System::Console::{
+        ATTACH_PARENT_PROCESS, AttachConsole, GetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
+    };
+    use windows::core::w;
+    // SAFETY: Win32 calls with constant arguments; the console handle stays
+    // open for the life of the process.
+    unsafe {
+        let missing: Vec<_> = [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
+            .into_iter()
+            .filter(|&h| GetStdHandle(h).is_err())
+            .collect();
+        let stderr_ok = !missing.contains(&STD_ERROR_HANDLE);
+        if missing.is_empty() || AttachConsole(ATTACH_PARENT_PROCESS).is_err() {
+            return stderr_ok;
+        }
+        let Ok(console) = CreateFileW(
+            w!("CONOUT$"),
+            (GENERIC_READ | GENERIC_WRITE).0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        ) else {
+            return stderr_ok;
+        };
+        for h in missing {
+            let _ = SetStdHandle(h, console);
+        }
+        true
+    }
+}

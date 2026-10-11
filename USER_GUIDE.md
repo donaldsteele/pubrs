@@ -161,6 +161,9 @@ that pubrs uses by itself when there is no graphics driver: About then
 shows "llvmpipe" for window drawing. It still uses more CPU than a graphics
 card. To turn it off, set `PUBRS_NO_MESA=1`.
 
-To measure, start pubrs from a terminal with `PUBRS_PERF=1` set (Windows:
-`set PUBRS_PERF=1` then `"C:\Program Files\pubrs\bin\pubrs-app.exe"`). It
-then prints frames per second and drawing times once a second.
+To measure, start pubrs from a terminal with `PUBRS_PERF=1` set. It then
+prints frames per second and drawing times once a second. On Windows, in a
+Command Prompt: `set PUBRS_PERF=1`, then
+`start /wait "" "C:\Program Files\pubrs\bin\pubrs-app.exe"`. pubrs opens no
+console window of its own, and `start /wait` keeps the prompt from returning
+while pubrs runs.

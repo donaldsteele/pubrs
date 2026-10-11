@@ -73,6 +73,7 @@ jobs:
           Start-Process msiexec.exe -Wait -ArgumentList "/i `"$msi`" /qn /l*v install.log"
           $bin = "C:\Program Files\pubrs\bin"
           if (!(Test-Path "$bin\pubrs-app.exe")) { Get-Content install.log -Tail 50; throw "pubrs-app.exe not installed" }
+          ./packaging/windows/check-subsystem.ps1 -Gui "$bin\pubrs-app.exe", "$bin\mesa\pubrs-app.exe" -Console "$bin\pubrs.exe", "$bin\pubrs-mcp.exe"
           & "$bin\pubrs.exe" --no-system-fonts export "C:\Program Files\pubrs\samples\bakery-trifold.pubrs" -o "$env:RUNNER_TEMP\sample.pdf"
           if (!(Test-Path "$env:RUNNER_TEMP\sample.pdf")) { throw "export failed" }
           foreach ($f in 'pubrs-app.exe', 'opengl32.dll', 'libgallium_wgl.dll', 'THIRD-PARTY-NOTICES.txt') {

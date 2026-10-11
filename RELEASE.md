@@ -46,6 +46,7 @@ Each installer job installs (or mounts) the package and then:
 | Installs | `msiexec /i /qn` | mount + copy `.app` | `apt install ./*.deb` | run in place |
 | Launches the GUI | `pubrs-app --smoke-test`, which must restart with the bundled Mesa llvmpipe (the runner has no GPU) | `pubrs-app --smoke-test` | `xvfb-run pubrs-app --smoke-test` | `--smoke-test` under xvfb |
 | Opens the sample and exports a PDF | `pubrs export samples\bakery-trifold.pubrs` | `pubrs export Resources/samples/…` | `pubrs export /usr/share/doc/pubrs/examples/…` | `--cli export …` |
+| No console window | `check-subsystem.ps1`: pubrs-app GUI, pubrs and pubrs-mcp console | — | — | — |
 | File type registered | `assoc .pubrs` = `pubrs.Publication` | `CFBundleDocumentTypes` in Info.plist | mime XML installed | — |
 | Uninstalls cleanly | `msiexec /x /qn`, binaries gone | remove `.app` | `apt remove`, binaries gone | delete file |
 
@@ -60,7 +61,7 @@ Silicon and on Intel, a GNOME or KDE Linux desktop on X11 and on Wayland):
 
 1. **Install** with the normal double-click flow.
 2. **Launch** pubrs from the Start menu / Applications / app launcher. The
-   template picker appears.
+   template picker appears, and on Windows no command prompt window opens.
 3. **Open the sample**: double-click `bakery-trifold.pubrs` in the sample
    folder (Windows, Linux) or drag it onto the pubrs window (macOS). Both pages show the
    bakery brochure with two photos.

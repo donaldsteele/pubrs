@@ -1,5 +1,9 @@
 //! pubrs desktop app.
 
+// No console window on Windows; a terminal that starts pubrs still gets its
+// output through `platform::console::attach_parent_console`.
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
+
 mod adapter;
 mod app;
 mod autosave;
@@ -109,6 +113,17 @@ fn run(args: &Args, renderer: eframe::Renderer, outcome: &Rc<RefCell<Outcome>>) 
 }
 
 fn main() -> anyhow::Result<()> {
+    let console = platform::console::attach_parent_console();
+    let result = run_app();
+    if let Err(e) = &result
+        && !console
+    {
+        platform::console::show_fatal_error(&format!("{e:#}"));
+    }
+    result
+}
+
+fn run_app() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {

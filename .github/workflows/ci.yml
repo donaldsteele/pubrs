@@ -62,6 +62,10 @@ jobs:
       - name: GUI end-to-end self-test (Windows, macOS)
         if: runner.os != 'Linux'
         run: cargo run -p pubrs-app -- --self-test target/gui-selftest
+      - name: pubrs-app.exe opens no console window (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/windows/check-subsystem.ps1 -Gui target\debug\pubrs-app.exe
       - name: GUI self-test through the Mesa llvmpipe restart (Windows; the runner has no GPU)
         if: runner.os == 'Windows'
         shell: pwsh

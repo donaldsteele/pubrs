@@ -196,6 +196,31 @@ fn native_print() -> Box<dyn PrintBackend> {
     Box::new(NullPlatform)
 }
 
+/// Where pubrs-app's output goes. On Windows it is a GUI program without a
+/// console window; elsewhere these are no-ops.
+pub mod console {
+    /// Attach to the terminal pubrs was started from, if any. Returns whether
+    /// stderr goes somewhere a person can read it.
+    #[cfg(windows)]
+    pub use super::windows::attach_parent_console;
+
+    #[cfg(not(windows))]
+    pub fn attach_parent_console() -> bool {
+        true
+    }
+
+    /// Show an error that ends pubrs before its window opens, for when there
+    /// is no terminal to print it to.
+    pub fn show_fatal_error(message: &str) {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("pubrs could not start")
+            .set_description(message)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+}
+
 /// macOS native menu bar (no-op elsewhere).
 pub mod menu {
     #[cfg(target_os = "macos")]
