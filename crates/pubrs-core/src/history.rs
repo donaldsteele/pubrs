@@ -132,8 +132,31 @@ impl Editor {
     }
 
     fn execute_inner(&mut self, command: Command, key: Option<String>) -> CmdResult<Change> {
+        self.execute_with(command, key, |c, d| c.apply(d))
+    }
+
+    /// Core of `execute`, with the apply step injectable so tests can panic.
+    /// A panic in `apply` rolls the document back and becomes
+    /// [`CommandError::Internal`].
+    fn execute_with(
+        &mut self,
+        command: Command,
+        key: Option<String>,
+        apply: impl FnOnce(&Command, &mut Document) -> CmdResult,
+    ) -> CmdResult<Change> {
         let before = self.doc.clone();
-        if let Err(e) = command.apply(&mut self.doc) {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            apply(&command, &mut self.doc)
+        }));
+        let result = outcome.unwrap_or_else(|payload| {
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "command panicked".to_string());
+            Err(CommandError::Internal { message })
+        });
+        if let Err(e) = result {
             self.doc = before;
             return Err(e);
         }
@@ -251,5 +274,32 @@ impl Editor {
     pub fn check(&self, command: &Command) -> Result<(), CommandError> {
         let mut scratch = self.doc.clone();
         command.apply(&mut scratch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::id::SeqIds;
+    use crate::model::PageSetup;
+
+    #[test]
+    fn panic_in_apply_rolls_back() {
+        let mut ids = SeqIds::new(1);
+        let doc = Document::new(&mut ids, PageSetup::default());
+        let mut ed = Editor::new(doc);
+        let start = ed.doc().clone();
+        let rev = ed.revision();
+        let r = ed.execute_with(Command::Patch(Patch::default()), None, |_, d| {
+            d.pages.clear();
+            panic!("boom {}", 7);
+        });
+        match r {
+            Err(CommandError::Internal { message }) => assert_eq!(message, "boom 7"),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+        assert_eq!(*ed.doc(), start);
+        assert!(!ed.can_undo());
+        assert_eq!(ed.revision(), rev);
     }
 }

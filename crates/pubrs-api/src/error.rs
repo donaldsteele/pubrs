@@ -71,6 +71,7 @@ impl From<CommandError> for ApiError {
             CommandError::Locked { .. } => "unlock it first with frame_lock (locked: false)",
             CommandError::Invalid { .. } => "check the argument ranges in the tool's input schema",
             CommandError::Conflict { .. } => "use a different name or id",
+            CommandError::Internal { .. } => "this is a bug in pubrs; please report it",
         };
         ApiError::new(e.code(), e.to_string(), hint)
     }

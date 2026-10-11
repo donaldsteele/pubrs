@@ -2,6 +2,7 @@
 //! Every tool must have at least one example and every example must behave
 //! as documented. `PUBRS_WRITE_DOCS=1` regenerates MCP.md from the tool
 //! registry and these real results.
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = []
 # GPU raster path (vello on wgpu). Falls back to tiny-skia when no adapter exists.

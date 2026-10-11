@@ -1,4 +1,5 @@
 //! Text flow tests: single frames, linked chains, overflow, columns, wrap.
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 
@@ -414,4 +415,58 @@ fn layout_is_deterministic_across_font_libraries() {
     let b2 = fingerprint(&layout(&doc));
     assert!(!a.is_empty());
     assert_eq!(a, b2);
+}
+
+/// Text frame (100,100,300x100) rotated 90 degrees about (250,150) covers the
+/// page region x 200..300, y 0..300; its local left end is at the page top.
+fn rotated_wrap_doc(obstacle: Rect) -> (Document, FrameId) {
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(100.0, 100.0, 300.0, 100.0), LOREM)
+        .unwrap();
+    let ob = b.shape(p, obstacle, Shape::Ellipse).unwrap();
+    b.wrap(
+        ob,
+        TextWrap {
+            mode: WrapMode::Square,
+            margin: 0.0,
+        },
+    )
+    .unwrap();
+    let mut doc = b.finish();
+    doc.frames.get_mut(&f).unwrap().rotation = 90.0;
+    (doc, f)
+}
+
+#[test]
+fn wrap_around_obstacle_follows_rotated_text_frame() {
+    // Overlaps the top of the rotated frame on the page = its local left end
+    // (local x 0..40), so lines must start at or beyond x = 40.
+    let (doc, f) = rotated_wrap_doc(Rect::new(200.0, 0.0, 100.0, 40.0));
+    let lay = layout(&doc);
+    let ft = lay.frame(f).unwrap();
+    assert!(!ft.lines.is_empty());
+    for l in &ft.lines {
+        assert!(l.rect.x >= 40.0 - 1e-6, "line at x={} overlaps", l.rect.x);
+    }
+}
+
+#[test]
+fn wrap_does_not_cut_rotated_text_frame_where_it_does_not_overlap() {
+    // Beside the rotated frame on the page. Its page-space box coincides with
+    // the unrotated frame's rect, but it does not touch the rotated frame.
+    let (doc, f) = rotated_wrap_doc(Rect::new(320.0, 100.0, 60.0, 60.0));
+    let lay = layout(&doc);
+    let ft = lay.frame(f).unwrap();
+    let mut clear = doc.clone();
+    for fr in clear.frames.values_mut() {
+        fr.wrap.mode = WrapMode::None;
+    }
+    let base = layout(&clear);
+    let base_ft = base.frame(f).unwrap();
+    assert_eq!(ft.lines.len(), base_ft.lines.len());
+    for (a, b) in ft.lines.iter().zip(&base_ft.lines) {
+        assert_eq!(a.rect, b.rect);
+    }
 }

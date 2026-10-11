@@ -1,4 +1,5 @@
 //! End-to-end tests of the Session through its typed methods.
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 

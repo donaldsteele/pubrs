@@ -12,8 +12,8 @@ use parley::{
     LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
 };
 use pubrs_core::{
-    Align, CharAttrs, Color, Document, FrameId, Paragraph, Rect, Run, StoryId, VerticalAlign,
-    WrapMode,
+    Align, CharAttrs, Color, Document, Frame, FrameId, Paragraph, Rect, Run, StoryId,
+    VerticalAlign, WrapMode,
 };
 
 use crate::fonts::FontLibrary;
@@ -611,13 +611,33 @@ fn obstacles_for(doc: &Document, frame: FrameId) -> Vec<Obstacle> {
         .filter(|f| f.wrap.mode != WrapMode::None)
         .filter(|f| f.as_text().map(|t| t.story) != story || story.is_none())
         .map(|f| Obstacle {
-            rect: f
-                .bounds()
+            rect: obstacle_bounds_in(tf, f)
                 .outset(f.wrap.margin)
                 .translate(-tf.rect.x, -tf.rect.y),
             mode: f.wrap.mode,
         })
         .collect()
+}
+
+/// The obstacle's page-space outline mapped into the text frame's unrotated
+/// space (inverse of the text frame's rotation about its centre), as an AABB.
+fn obstacle_bounds_in(tf: &Frame, obstacle: &Frame) -> Rect {
+    if tf.rotation % 360.0 == 0.0 {
+        return obstacle.bounds();
+    }
+    let centre = tf.rect.center();
+    let mut x0 = f64::INFINITY;
+    let mut y0 = f64::INFINITY;
+    let mut x1 = f64::NEG_INFINITY;
+    let mut y1 = f64::NEG_INFINITY;
+    for p in obstacle.rect.rotated_corners(obstacle.rotation) {
+        let q = p.rotated_about(centre, -tf.rotation);
+        x0 = x0.min(q.x);
+        y0 = y0.min(q.y);
+        x1 = x1.max(q.x);
+        y1 = y1.max(q.y);
+    }
+    Rect::new(x0, y0, x1 - x0, y1 - y0)
 }
 
 /// Shift lines down in regions whose frame is middle- or bottom-aligned.

@@ -1,4 +1,5 @@
 //! Save → load → equal, plus format edge cases.
+#![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
 use std::path::PathBuf;

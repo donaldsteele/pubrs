@@ -1,5 +1,6 @@
 //! Golden-image tests for the software renderer. Fonts come only from
 //! `tests/fonts/`; regenerate with `PUBRS_BLESS=1 cargo test -p pubrs-io --test render_golden`.
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

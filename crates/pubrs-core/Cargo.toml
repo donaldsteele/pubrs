@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lints]
+workspace = true
+
 [features]
 default = ["schema", "random-ids"]
 # JSON Schema derives for MCP/tool schemas.
@@ -23,3 +26,4 @@ schemars = { workspace = true, optional = true, features = ["uuid1"] }
 
 [dev-dependencies]
 serde_json.workspace = true
+proptest.workspace = true

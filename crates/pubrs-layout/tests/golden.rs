@@ -1,5 +1,6 @@
 //! Layout golden test: line breaks and positions of a reference document,
 //! using only the fonts in `tests/fonts/`. Regenerate with `PUBRS_BLESS=1`.
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 

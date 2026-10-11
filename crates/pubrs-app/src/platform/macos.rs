@@ -44,6 +44,8 @@ impl PrintBackend for MacPrint {
         let doc = unsafe { PDFDocument::initWithURL(PDFDocument::alloc(), &url) }
             .ok_or("PDFKit could not open the exported PDF")?;
         let info = NSPrintInfo::sharedPrintInfo();
+        // SAFETY: same main-thread and object-validity guarantees as above;
+        // `info` is a live NSPrintInfo.
         let op = unsafe {
             doc.printOperationForPrintInfo_scalingMode_autoRotate(
                 Some(&info),

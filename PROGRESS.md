@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** Phase 2, M10 (T2) Robustness and guard rails, per the plan on branch `plan/publisher-parity`.
+**Next step:** Phase 2, M11 (T3) Incremental layout, per the plan on branch `plan/publisher-parity`.
 
 
 ## Phase 2: Publisher parity
@@ -24,6 +24,7 @@ Plan: `~/.claude/plans/pubrs-publisher-parity.md`, branch `plan/publisher-parity
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | M9 Performance harness in the tree | done | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
+| M10 Robustness and guard rails | done | panic rollback (`CommandError::Internal`), proptest suites (undo/redo, save/load, loader fuzz), wrap around rotated text frames fixed, workspace lints (`unsafe_code` deny, `unwrap_used`, `dbg_macro`, `todo`, `undocumented_unsafe_blocks`), crate layering test; +12 tests (141 tests total, was 129) |
 
 ### Baseline performance (M9)
 

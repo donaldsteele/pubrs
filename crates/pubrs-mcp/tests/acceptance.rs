@@ -3,6 +3,7 @@
 //! frames and verify text_overflow_status is clean → validate with zero
 //! warnings → export_pdf → save as .pubrs → doc_open the saved file →
 //! doc_to_json equals original.
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 

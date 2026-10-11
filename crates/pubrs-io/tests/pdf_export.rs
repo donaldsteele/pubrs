@@ -1,4 +1,5 @@
 //! PDF export tests: the PDF is parsed back with lopdf (we don't trust the writer).
+#![allow(clippy::unwrap_used)]
 
 mod common;
 

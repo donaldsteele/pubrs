@@ -76,6 +76,7 @@ pub struct WindowRenderer {
 }
 
 impl WindowRenderer {
+    #[allow(unsafe_code)]
     fn detect(cc: &eframe::CreationContext<'_>) -> Self {
         if let Some(rs) = &cc.wgpu_render_state {
             let a = rs.adapter.get_info();

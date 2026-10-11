@@ -36,6 +36,9 @@ pub enum CommandError {
     Invalid { message: String },
     #[error("conflict: {message}")]
     Conflict { message: String },
+    /// A command panicked; the document was rolled back. This is a bug.
+    #[error("internal error: {message}")]
+    Internal { message: String },
 }
 
 impl CommandError {
@@ -65,6 +68,7 @@ impl CommandError {
             Self::Locked { .. } => "locked",
             Self::Invalid { .. } => "invalid_argument",
             Self::Conflict { .. } => "conflict",
+            Self::Internal { .. } => "internal",
         }
     }
 }

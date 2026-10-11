@@ -1,4 +1,5 @@
 //! Command system and undo/redo tests.
+#![allow(clippy::unwrap_used)]
 
 use pubrs_core::*;
 

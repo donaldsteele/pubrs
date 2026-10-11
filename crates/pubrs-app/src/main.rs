@@ -13,6 +13,7 @@ mod keymap;
 mod mesa;
 mod panels;
 mod perf;
+#[allow(unsafe_code)]
 mod platform;
 mod selftest;
 mod textedit;
