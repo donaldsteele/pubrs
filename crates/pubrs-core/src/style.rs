@@ -38,6 +38,46 @@ pub struct CharProps {
     /// Extra space between letters in points.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub letter_spacing: Option<f64>,
+    /// Baseline position: normal, superscript, subscript or a shift in
+    /// points (positive raises). Unset inherits (normal).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<Baseline>,
+    /// Capitalisation: none, small caps or all caps (display only; the
+    /// story text is unchanged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caps: Option<Caps>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikethrough: Option<bool>,
+    /// Standard ligatures (default on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ligatures: Option<bool>,
+    /// Pair kerning (default on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kerning: Option<bool>,
+}
+
+/// Baseline position of a run.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Baseline {
+    #[default]
+    Normal,
+    Superscript,
+    Subscript,
+    /// Shift in points, positive up.
+    Shift(f64),
+}
+
+/// Capitalisation of a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Caps {
+    #[default]
+    None,
+    Small,
+    All,
 }
 
 impl CharProps {
@@ -54,6 +94,11 @@ impl CharProps {
             underline: other.underline.or(self.underline),
             color: other.color.clone().or_else(|| self.color.clone()),
             letter_spacing: other.letter_spacing.or(self.letter_spacing),
+            baseline: other.baseline.or(self.baseline),
+            caps: other.caps.or(self.caps),
+            strikethrough: other.strikethrough.or(self.strikethrough),
+            ligatures: other.ligatures.or(self.ligatures),
+            kerning: other.kerning.or(self.kerning),
         }
     }
 
@@ -65,6 +110,10 @@ impl CharProps {
         self.font_size
             .is_none_or(|s| s.is_finite() && s > 0.0 && s <= 1296.0)
             && self.letter_spacing.is_none_or(|s| s.is_finite())
+            && self.baseline.is_none_or(|b| match b {
+                Baseline::Shift(v) => v.is_finite() && v.abs() <= 1296.0,
+                _ => true,
+            })
             && self
                 .font_family
                 .as_deref()
@@ -520,6 +569,11 @@ pub struct CharAttrs {
     pub underline: bool,
     pub color: Ink,
     pub letter_spacing: f64,
+    pub baseline: Baseline,
+    pub caps: Caps,
+    pub strikethrough: bool,
+    pub ligatures: bool,
+    pub kerning: bool,
 }
 
 impl Default for CharAttrs {
@@ -532,6 +586,11 @@ impl Default for CharAttrs {
             underline: false,
             color: Ink::Rgba(Color::BLACK),
             letter_spacing: 0.0,
+            baseline: Baseline::Normal,
+            caps: Caps::None,
+            strikethrough: false,
+            ligatures: true,
+            kerning: true,
         }
     }
 }
@@ -558,6 +617,21 @@ impl CharAttrs {
         }
         if let Some(v) = p.letter_spacing {
             self.letter_spacing = v;
+        }
+        if let Some(v) = p.baseline {
+            self.baseline = v;
+        }
+        if let Some(v) = p.caps {
+            self.caps = v;
+        }
+        if let Some(v) = p.strikethrough {
+            self.strikethrough = v;
+        }
+        if let Some(v) = p.ligatures {
+            self.ligatures = v;
+        }
+        if let Some(v) = p.kerning {
+            self.kerning = v;
         }
     }
 }
@@ -738,6 +812,7 @@ impl StyleSheet {
                     underline: Some(false),
                     color: Some(Paint::Color(Color::BLACK)),
                     letter_spacing: Some(0.0),
+                    ..CharProps::default()
                 },
             ),
             para(

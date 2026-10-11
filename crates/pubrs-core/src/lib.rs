@@ -39,7 +39,8 @@ pub use id::{
 pub use model::*;
 pub use patch::{Patch, Touched};
 pub use style::{
-    Align, CharAttrs, CharProps, JustifyLimits, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet,
+    Align, Baseline, Caps, CharAttrs, CharProps, JustifyLimits, ParaAttrs, ParaProps, Style,
+    StyleKind, StyleSheet,
 };
 pub use swatch::{
     Cmyk, GradientKind, GradientStop, Ink, InkSpec, Paint, ResolvedGradient, ResolvedInk,

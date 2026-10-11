@@ -412,13 +412,14 @@ fn every_schema_fixture_opens_and_round_trips() {
     // A fixture is created only when it is missing and only for the current
     // schema version; an existing fixture is never rewritten, even when
     // blessing, so files written by earlier versions stay frozen.
-    let fixtures: [(u32, Document); 6] = [
+    let fixtures: [(u32, Document); 7] = [
         (2, sheet_document()),
         (3, hyphenation_document()),
         (4, common::colour_document()),
         (5, rich_document()),
         (6, paragraph_controls_document()),
         (7, tabs_lists_document()),
+        (8, char_format_document()),
     ];
     for (v, doc) in &fixtures {
         let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -449,7 +450,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 7, "expected the schema_v1 to v7 fixtures");
+    assert!(n >= 8, "expected the schema_v1 to v8 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -525,7 +526,7 @@ fn every_schema_fixture_opens_and_round_trips() {
     for k in pubrs_core::text::BreakKind::ALL {
         assert!(text.contains(k.char()), "{k:?} break survives the file");
     }
-    // The current fixture: tab stops with leaders, and a nested numbered list.
+    // Tab stops with leaders, and a nested numbered list.
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v7.pubrs")).unwrap();
     let story = doc.stories.values().next().unwrap();
     let price = doc.styles.resolve_para(&story.paragraphs[0]);
@@ -540,6 +541,24 @@ fn every_schema_fixture_opens_and_round_trips() {
     let item = doc.styles.resolve_para(&story.paragraphs[2]).list.unwrap();
     assert_eq!((item.kind, item.level), (ListKind::Number, 1));
     assert_eq!(item.format, ListFormat::LowerAlpha);
+    // The current fixture: super and subscript, baseline shift, caps,
+    // strikethrough and the ligature and kerning switches.
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v8.pubrs")).unwrap();
+    let story = doc.stories.values().next().unwrap();
+    let runs = &story.paragraphs[0].runs;
+    assert!(
+        runs.iter()
+            .any(|r| r.props.baseline == Some(Baseline::Subscript))
+    );
+    assert!(
+        runs.iter()
+            .any(|r| r.props.baseline == Some(Baseline::Shift(3.5)))
+    );
+    assert!(runs.iter().any(|r| r.props.caps == Some(Caps::Small)));
+    assert!(runs.iter().any(|r| r.props.caps == Some(Caps::All)));
+    assert!(runs.iter().any(|r| r.props.strikethrough == Some(true)));
+    assert!(runs.iter().any(|r| r.props.ligatures == Some(false)));
+    assert!(runs.iter().any(|r| r.props.kerning == Some(false)));
 }
 
 /// The document `tests/fixtures/schema_v6.pubrs` is written from: a
@@ -701,6 +720,92 @@ fn tabs_lists_document() -> Document {
                 }),
                 ..Default::default()
             },
+        })
+        .unwrap();
+    }
+    b.finish()
+}
+
+/// The document `tests/fixtures/schema_v8.pubrs` is written from: runs with
+/// superscript, subscript, a custom baseline shift, small caps, all caps,
+/// strikethrough, and ligatures and kerning switched off.
+fn char_format_document() -> Document {
+    use pubrs_core::{Baseline, Caps};
+    let mut b = DocBuilder::new(SeqIds::new(1702), PageSetup::default());
+    let p = b.page(0);
+    let f = b
+        .text(
+            p,
+            Rect::new(36.0, 36.0, 300.0, 200.0),
+            "H2O and x2 raised small CAPS all caps struck office AV",
+        )
+        .unwrap();
+    let story = b.story_of(f);
+    let marks: [(usize, usize, CharProps); 7] = [
+        (
+            1,
+            2,
+            CharProps {
+                baseline: Some(Baseline::Subscript),
+                ..Default::default()
+            },
+        ),
+        (
+            11,
+            12,
+            CharProps {
+                baseline: Some(Baseline::Superscript),
+                ..Default::default()
+            },
+        ),
+        (
+            13,
+            19,
+            CharProps {
+                baseline: Some(Baseline::Shift(3.5)),
+                ..Default::default()
+            },
+        ),
+        (
+            20,
+            31,
+            CharProps {
+                caps: Some(Caps::Small),
+                ..Default::default()
+            },
+        ),
+        (
+            32,
+            40,
+            CharProps {
+                caps: Some(Caps::All),
+                ..Default::default()
+            },
+        ),
+        (
+            41,
+            47,
+            CharProps {
+                strikethrough: Some(true),
+                ligatures: Some(false),
+                ..Default::default()
+            },
+        ),
+        (
+            48,
+            54,
+            CharProps {
+                kerning: Some(false),
+                ..Default::default()
+            },
+        ),
+    ];
+    for (start, end, props) in marks {
+        b.exec(Command::ApplyCharProps {
+            story,
+            start,
+            end,
+            props,
         })
         .unwrap();
     }

@@ -148,6 +148,8 @@ pub struct StoryLayout {
     pub missing_fonts: BTreeSet<String>,
     /// Characters no available font could draw.
     pub missing_glyphs: usize,
+    /// Which characters those were (each once, in code point order).
+    pub missing_chars: BTreeSet<char>,
 }
 
 /// Layout of every story in a document. Stories are shared (`Arc`) so a

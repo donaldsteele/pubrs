@@ -13,6 +13,7 @@ Deferred and partial work. Each entry says what is missing and why.
 
 ## Partial features
 
+- Character formatting caches each face's OS/2 and `smcp` data per (family, bold, italic) in the `Layouter` and never clears it; once fonts can be added at runtime, clear it (or key it on a font-library generation) so a newly added family replaces the fallback face's data.
 - Sheet presets Avery 5376, 5377, 22805, 5305, 8315, C32011, L7651 and the L7161/L7162 margins are from memory of published specs; check them against vendor datasheets.
 - Imposed sheets carry no bleed, and `crop_marks` marks the whole sheet rather than each label.
 - `SetPageSize` does not re-check an existing label sheet; a mismatch is reported at PDF export.
@@ -21,9 +22,9 @@ Deferred and partial work. Each entry says what is missing and why.
 - The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); the design checker (M29) replaces it. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.
 - Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
-- Characters no bundled or installed font covers render as .notdef boxes; `validate` does not yet name them (layout counts them in `missing_glyphs`).
 - GUI: copy/paste of frames works within one publication only (no cross-document or OS-clipboard frame paste).
 - GUI: text editing has no IME composition support (direct key/text input only).
+- Character formatting (M17, ADR 0021): real `smcp` is detected from the GSUB feature list only (not per-letter coverage); a strikethrough through synthesized small caps is stepped; the Character dialog has no preview and no letter-spacing or colour fields (the text panel has them); the super/subscript buttons are in the text panel, not a toolbar.
 - Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
 - macOS: double-clicking a `.pubrs` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events. Workaround: File → Open, or drag the file onto the pubrs window (ADR 0010).
 - Installers are unsigned unless the signing secrets in RELEASE.md are set; macOS notarization is a manual step.

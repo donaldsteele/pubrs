@@ -89,11 +89,8 @@ impl Session {
             }
             if sl.missing_glyphs > 0 {
                 warnings.push(Warning {
-                    code: WarningCode::MissingFont,
-                    message: format!(
-                        "{} characters have no glyph in any available font",
-                        sl.missing_glyphs
-                    ),
+                    code: WarningCode::MissingGlyphs,
+                    message: missing_glyphs_message(sl.missing_glyphs, &sl.missing_chars),
                     hint: "choose a font that covers these characters (fonts_list)".into(),
                     page: story.frames.first().copied().and_then(page_of),
                     frame: story.frames.first().copied(),
@@ -146,4 +143,25 @@ impl Session {
             fallback: pubrs_layout::FALLBACK_SANS.into(),
         })
     }
+}
+
+/// How many characters were named in a missing-glyph warning at most.
+const MISSING_NAMES: usize = 20;
+
+/// "no available font covers: ✓ (U+2713), …" for the characters drawn as
+/// missing-glyph boxes (at most [`MISSING_NAMES`] named).
+fn missing_glyphs_message(count: usize, chars: &std::collections::BTreeSet<char>) -> String {
+    let mut names: Vec<String> = chars
+        .iter()
+        .take(MISSING_NAMES)
+        .map(|c| format!("{c} (U+{:04X})", u32::from(*c)))
+        .collect();
+    if chars.len() > MISSING_NAMES {
+        names.push(format!("and {} more", chars.len() - MISSING_NAMES));
+    }
+    format!(
+        "{count} character{} drawn as missing-glyph boxes; no available font covers: {}",
+        if count == 1 { "" } else { "s" },
+        names.join(", ")
+    )
 }

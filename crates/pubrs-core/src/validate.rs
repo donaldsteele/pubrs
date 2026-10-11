@@ -41,6 +41,9 @@ pub enum WarningCode {
     /// A paragraph asks for hyphenation in a language with no bundled
     /// patterns; its words are not hyphenated.
     HyphenationUnavailable,
+    /// Characters that no bundled or installed font covers (drawn as
+    /// missing-glyph boxes).
+    MissingGlyphs,
 }
 
 /// A validation warning.

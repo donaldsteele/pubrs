@@ -275,6 +275,112 @@ impl FontLibrary {
     }
 }
 
+/// Fallback superscript size (fraction of the base size) when a font's OS/2
+/// table has no usable record.
+pub const FALLBACK_SCRIPT_SCALE: f64 = 0.58;
+/// Fallback super/subscript shift (fraction of the base size).
+pub const FALLBACK_SCRIPT_SHIFT: f64 = 0.33;
+
+/// Size and baseline shift of superscript or subscript text, as fractions of
+/// the base font size. `shift` is positive up.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScriptMetrics {
+    pub scale: f64,
+    pub shift: f64,
+}
+
+/// Typographic facts about one face that character attributes need.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FaceTraits {
+    /// The face's GSUB table has a `smcp` feature.
+    pub smcp: bool,
+    pub sup: ScriptMetrics,
+    pub sub: ScriptMetrics,
+}
+
+impl Default for FaceTraits {
+    fn default() -> Self {
+        Self {
+            smcp: false,
+            sup: ScriptMetrics {
+                scale: FALLBACK_SCRIPT_SCALE,
+                shift: FALLBACK_SCRIPT_SHIFT,
+            },
+            sub: ScriptMetrics {
+                scale: FALLBACK_SCRIPT_SCALE,
+                shift: -FALLBACK_SCRIPT_SHIFT,
+            },
+        }
+    }
+}
+
+/// One OS/2 super/subscript record (`size`, `offset` in font units) as
+/// metrics, or `None` when it is absent (zero) or implausible. The OS/2
+/// subscript offset is positive downward, so `up` says which way to read it.
+pub fn script_from_os2(
+    units_per_em: u16,
+    size: i16,
+    offset: i16,
+    up: bool,
+) -> Option<ScriptMetrics> {
+    if units_per_em == 0 || size <= 0 || offset == 0 {
+        return None;
+    }
+    let em = f64::from(units_per_em);
+    let scale = f64::from(size) / em;
+    let shift = f64::from(offset).abs() / em;
+    ((0.2..=1.0).contains(&scale) && shift <= 1.0).then_some(ScriptMetrics {
+        scale,
+        shift: if up { shift } else { -shift },
+    })
+}
+
+impl FaceTraits {
+    /// Read the traits of the face at `index` in `data`.
+    pub fn from_font(data: &[u8], index: u32) -> Self {
+        use skrifa::raw::TableProvider;
+        let mut t = Self::default();
+        let Ok(f) = skrifa::FontRef::from_index(data, index) else {
+            return t;
+        };
+        if let (Ok(os2), Ok(head)) = (f.os2(), f.head()) {
+            let upem = head.units_per_em();
+            if let Some(m) = script_from_os2(
+                upem,
+                os2.y_superscript_y_size(),
+                os2.y_superscript_y_offset(),
+                true,
+            ) {
+                t.sup = m;
+            }
+            if let Some(m) = script_from_os2(
+                upem,
+                os2.y_subscript_y_size(),
+                os2.y_subscript_y_offset(),
+                false,
+            ) {
+                t.sub = m;
+            }
+        }
+        t.smcp = has_gsub_feature(&f, *b"smcp");
+        t
+    }
+}
+
+/// Whether the font's GSUB feature list names `tag`.
+fn has_gsub_feature(f: &skrifa::FontRef<'_>, tag: [u8; 4]) -> bool {
+    use skrifa::raw::TableProvider;
+    let Ok(gsub) = f.gsub() else {
+        return false;
+    };
+    let Ok(list) = gsub.feature_list() else {
+        return false;
+    };
+    list.feature_records()
+        .iter()
+        .any(|r| r.feature_tag().to_be_bytes() == tag)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

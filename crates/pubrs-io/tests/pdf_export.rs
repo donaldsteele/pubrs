@@ -1223,3 +1223,110 @@ fn print_package_has_the_pdf_the_document_and_a_readme() {
     assert!(readme.contains("Brand Blue: RGB #1E3A8A"), "{readme}");
     assert!(readme.contains("PDF/X-4"), "{readme}");
 }
+
+// ---------------------------------------------------------------- characters
+
+fn char_format_doc(strike: bool, sup: bool) -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(1701), PageSetup::default());
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 100.0), "Hx2 struck")
+        .unwrap();
+    let s = b.story_of(f);
+    let mut apply = |start, end, props| {
+        b.exec(Command::ApplyCharProps {
+            story: s,
+            start,
+            end,
+            props,
+        })
+        .unwrap();
+    };
+    apply(
+        0,
+        10,
+        CharProps {
+            font_size: Some(20.0),
+            ..Default::default()
+        },
+    );
+    if sup {
+        apply(
+            2,
+            3,
+            CharProps {
+                baseline: Some(Baseline::Superscript),
+                ..Default::default()
+            },
+        );
+    }
+    if strike {
+        apply(
+            4,
+            10,
+            CharProps {
+                strikethrough: Some(true),
+                ..Default::default()
+            },
+        );
+    }
+    b.finish()
+}
+
+#[test]
+fn superscript_and_strikethrough_reach_the_pdf() {
+    let plain = export(&char_format_doc(false, false), &PdfOptions::default()).1;
+    let marked = export(&char_format_doc(true, true), &PdfOptions::default()).1;
+    let sizes = |pdf: &lopdf::Document| -> Vec<f64> {
+        let mut v: Vec<f64> = operands(pdf, "Tf")
+            .iter()
+            .filter_map(|o| o.last().copied())
+            .collect();
+        v.dedup();
+        v
+    };
+    assert!(
+        sizes(&plain).iter().all(|s| (s - 20.0).abs() < 1e-3),
+        "{:?}",
+        sizes(&plain)
+    );
+    // The raised "2" is set in a smaller size (the font's OS/2 ratio: 65%).
+    let small: Vec<f64> = sizes(&marked).into_iter().filter(|s| *s < 19.0).collect();
+    assert_eq!(small.len(), 1, "{:?}", sizes(&marked));
+    assert!(small[0] > 10.0 && small[0] < 15.0, "{small:?}");
+    // A thin filled rectangle (the strike rule) the plain page lacks.
+    let rules = thin_filled_rects;
+    assert_eq!(rules(&plain), 0);
+    assert_eq!(rules(&marked), 1);
+}
+
+/// Filled four-point paths (`m l l l h f`) wider than 20 pt and under 3 pt
+/// tall: how the writer draws an underline or strikethrough rule.
+fn thin_filled_rects(pdf: &lopdf::Document) -> usize {
+    let mut n = 0;
+    for (_, id) in pdf.get_pages() {
+        let c = lopdf::content::Content::decode(&pdf.get_page_content(id)).unwrap();
+        let ops: Vec<(&str, Vec<f64>)> = c
+            .operations
+            .iter()
+            .map(|o| {
+                let v = o
+                    .operands
+                    .iter()
+                    .filter_map(|v| v.as_float().ok().map(f64::from));
+                (o.operator.as_str(), v.collect())
+            })
+            .collect();
+        for w in ops.windows(6) {
+            let names: Vec<&str> = w.iter().map(|o| o.0).collect();
+            if names == ["m", "l", "l", "l", "h", "f"] {
+                let (x0, y0) = (w[0].1[0], w[0].1[1]);
+                let (x1, y2) = (w[2].1[0], w[2].1[1]);
+                if (x1 - x0).abs() > 20.0 && (y2 - y0).abs() < 3.0 {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}

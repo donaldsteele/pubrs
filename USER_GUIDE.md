@@ -155,7 +155,9 @@ onto the window to place it in the selected picture frame.
 | Bring forward / to front | Ctrl+], Ctrl+Shift+] | ⌘], ⇧⌘] |
 | Send backward / to back | Ctrl+[, Ctrl+Shift+[ | ⌘[, ⇧⌘[ |
 | Bold, Italic, Underline | Ctrl+B/I/U | ⌘B/I/U |
-| Zoom in / out / fit / 100% | Ctrl+= / Ctrl+- / Ctrl+0 / Ctrl+1 | ⌘= / ⌘- / ⌘0 / ⌘1 |
+| Superscript, Subscript | Ctrl+Shift+=, Ctrl+= | ⇧⌘=, ⌘= |
+| Character…, Paragraph… | Ctrl+Alt+C, Ctrl+Alt+P | ⌥⌘C, ⌥⌘P |
+| Zoom in / out / fit / 100% | Ctrl+Alt+= / Ctrl+- / Ctrl+0 / Ctrl+1 | ⌥⌘= / ⌘- / ⌘0 / ⌘1 |
 | Next / previous page | Page Down / Page Up | Page Down / Page Up |
 | Lock / unlock | Ctrl+L | ⌘L |
 | Find, Replace | Ctrl+F, Ctrl+H | ⌘F, ⌘H |

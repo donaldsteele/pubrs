@@ -126,6 +126,8 @@ struct Data {
     retry: (usize, u32),
     /// M16: the list frame and the price frame.
     m16: Option<(FrameId, FrameId)>,
+    /// M17: the character formatting frame.
+    m17: Option<FrameId>,
 }
 
 pub struct SelfTest {
@@ -368,6 +370,24 @@ impl SelfTest {
             .into_iter()
             .filter(|l| l.chars.start >= start && l.chars.end <= end)
             .collect())
+    }
+
+    /// Font size and height above the line's baseline of the glyph that
+    /// shows story offset `at` in frame `f`.
+    fn m17_glyph(app: &mut PubrsApp, f: FrameId, at: usize) -> Result<(f64, f64), String> {
+        let lines = Self::m15_lines(app, f)?;
+        for line in &lines {
+            for run in &line.runs {
+                if let Some(g) = run
+                    .glyphs
+                    .iter()
+                    .find(|g| g.text.start == at && !g.text.is_empty())
+                {
+                    return Ok((run.font_size, line.baseline - g.y));
+                }
+            }
+        }
+        Err(format!("no glyph shows offset {at}"))
     }
 
     /// The list labels of every line frame `f` shows, one per labelled line.
@@ -941,7 +961,7 @@ impl SelfTest {
             }
             16 => {
                 // A dark rectangle on white near the page corner, where the
-                // view lands when zooming in; then zoom with Cmd+Plus.
+                // view lands when zooming in; then zoom with Cmd+Alt+= (Zoom In).
                 if let Some(v) = app.view_mut() {
                     v.page = 0;
                     v.selection.clear();
@@ -962,14 +982,14 @@ impl SelfTest {
                 let zoom = app.view().map_or(1.0, |v| v.effective_zoom).max(0.05);
                 let presses = ((8.0 / zoom).ln() / 1.25f32.ln()).ceil().max(0.0) as usize + 1;
                 for _ in 0..presses {
-                    self.key(Key::Plus, Modifiers::COMMAND);
+                    self.key(Key::Plus, Modifiers::COMMAND | Modifiers::ALT);
                 }
             }
             17 => {
                 let zoom = app.view().map_or(0.0, |v| v.effective_zoom);
                 if (zoom - 8.0).abs() > 1e-3 {
                     return Err(format!(
-                        "Cmd+Plus reached {:.0}% zoom, not 800%",
+                        "Cmd+Alt+Plus reached {:.0}% zoom, not 800%",
                         zoom * 100.0
                     ));
                 }
@@ -988,7 +1008,7 @@ impl SelfTest {
                 let setup = app.doc().ok_or("no doc")?.setup.clone();
                 let page_w = ((setup.size.width + 2.0 * setup.bleed) * want / 72.0).ceil();
                 self.ok(format!(
-                    "zoomed to 800% with Cmd+Plus: the canvas texture covers {}x{} device pixels of the {page_w:.0} px wide page, one texel per pixel (no 4,096 px cap)",
+                    "zoomed to 800% with Cmd+Alt+Plus: the canvas texture covers {}x{} device pixels of the {page_w:.0} px wide page, one texel per pixel (no 4,096 px cap)",
                     t.key.region.width, t.key.region.height
                 ));
                 self.screenshot(ctx);
@@ -2333,6 +2353,154 @@ impl SelfTest {
                 }
                 self.ok(format!(
                     "Text ▸ Tabs…: a right stop at 250 pt with a dot leader ({dots} dots); the price ends on the stop"
+                ));
+                self.screenshot(ctx);
+            }
+            126 => {
+                // M17: character formatting. A blank publication with one
+                // frame of 24 pt text.
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 40.0, "width": 420.0, "height": 120.0,
+                        "font_size": 24.0,
+                        "text": "Water x2 now small struck",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let f = app
+                    .session
+                    .frame_add_text(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                app.select(vec![f]);
+                self.data.m17 = Some(f);
+            }
+            127 => {
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let lines = Self::m15_lines(app, f)?;
+                let pos = Self::m15_line_pos(app, f, &lines[0])?;
+                self.fresh_double_click(pos);
+            }
+            128 => {
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let editing = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame);
+                if editing != Some(f) {
+                    return Err(format!("double-click did not start editing ({editing:?})"));
+                }
+                // Select "x2": Home, six Right, two Shift+Right.
+                self.key(Key::Home, Modifiers::NONE);
+                for _ in 0..6 {
+                    self.key(Key::ArrowRight, Modifiers::NONE);
+                }
+                for _ in 0..2 {
+                    self.key(Key::ArrowRight, Modifiers::SHIFT);
+                }
+            }
+            129 => {
+                let sel = app
+                    .view()
+                    .and_then(|v| v.edit.as_ref())
+                    .map(TextEdit::range);
+                if sel != Some((6, 8)) {
+                    return Err(format!("the selection is {sel:?}, not x2 (6..8)"));
+                }
+                self.data.hist = Self::done_steps(app);
+                self.click_target(ctx, "char-superscript")?;
+            }
+            130 => {
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let (size, up) = Self::m17_glyph(app, f, 7)?;
+                let (base_size, base_up) = Self::m17_glyph(app, f, 0)?;
+                if size >= 0.7 * base_size || up < 4.0 || base_up.abs() > 0.01 {
+                    return Err(format!(
+                        "after x\u{b2}: '2' is {size:.1} pt raised {up:.1}, 'W' is {base_size:.1} pt raised {base_up:.1}"
+                    ));
+                }
+                let steps = Self::done_steps(app) - self.data.hist;
+                if steps != 1 {
+                    return Err(format!("the x\u{b2} button took {steps} undo steps"));
+                }
+                self.ok(format!(
+                    "x\u{b2} button: the selected word is {size:.1} pt (neighbours {base_size:.1} pt) and raised {up:.1} pt, in one undo step"
+                ));
+                self.screenshot(ctx);
+                // The same shortcut toggles it off again.
+                self.key(Key::Plus, Modifiers::COMMAND | Modifiers::SHIFT);
+            }
+            131 => {
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let (size, up) = Self::m17_glyph(app, f, 7)?;
+                if (size - 24.0).abs() > 0.01 || up.abs() > 0.01 {
+                    return Err(format!(
+                        "Cmd+Shift+= did not undo the superscript: {size:.1} pt raised {up:.1}"
+                    ));
+                }
+                self.ok("Cmd+Shift+= toggled the superscript off");
+                self.key(Key::Equals, Modifiers::COMMAND);
+            }
+            132 => {
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let (size, up) = Self::m17_glyph(app, f, 7)?;
+                if size >= 0.7 * 24.0 || up > -2.0 {
+                    return Err(format!(
+                        "Cmd+= did not lower the word: {size:.1} pt raised {up:.1}"
+                    ));
+                }
+                self.ok(format!(
+                    "Cmd+= made the word a subscript ({size:.1} pt, lowered {:.1} pt)",
+                    -up
+                ));
+                self.key(Key::A, Modifiers::COMMAND);
+            }
+            133 => {
+                self.key(Key::C, Modifiers::COMMAND | Modifiers::ALT);
+            }
+            134 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Character(_))) {
+                    return Err("Cmd+Alt+C did not open the Character dialog".into());
+                }
+                self.data.hist = Self::done_steps(app);
+                self.click_target(ctx, "char-caps-small")?;
+            }
+            135 => {
+                self.click_target(ctx, "char-strike")?;
+            }
+            136 => {
+                self.screenshot(ctx);
+            }
+            137 => {
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            138 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the Character dialog".into());
+                }
+                let f = self.data.m17.ok_or("no M17 frame")?;
+                let lines = Self::m15_lines(app, f)?;
+                let line = lines.first().ok_or("the frame lost its line")?;
+                // "ater" is lower case: synthesized capitals at 70% (24 pt).
+                let small = line
+                    .runs
+                    .iter()
+                    .any(|r| (r.font_size - 24.0 * 0.7).abs() < 0.01);
+                if !small || line.decorations.is_empty() {
+                    return Err(format!(
+                        "small caps + strikethrough: sizes {:?}, {} strike rule(s)",
+                        line.runs.iter().map(|r| r.font_size).collect::<Vec<_>>(),
+                        line.decorations.len()
+                    ));
+                }
+                let text = Self::spell_text(app, Some(f))?;
+                if text != "Water x2 now small struck" {
+                    return Err(format!("the dialog changed the text to {text:?}"));
+                }
+                let steps = Self::done_steps(app) - self.data.hist;
+                if steps != 1 {
+                    return Err(format!("the dialog took {steps} undo steps"));
+                }
+                self.ok(format!(
+                    "Text \u{25b8} Character\u{2026}: small caps (lowercase drawn at 16.8 pt) and strikethrough ({} rules) applied in one undo step; the text is unchanged",
+                    line.decorations.len()
                 ));
                 self.screenshot(ctx);
                 return Ok(true);

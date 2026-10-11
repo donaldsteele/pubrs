@@ -5,8 +5,8 @@ use pubrs_core::style::{
 };
 use pubrs_core::text::BreakKind;
 use pubrs_core::{
-    Align, CharProps, Color, Command, DocumentId, FrameId, Margins, Paint, ParaProps, StoryId,
-    StyleKind, TextFrameProps, VerticalAlign,
+    Align, Baseline, Caps, CharProps, Color, Command, DocumentId, FrameId, Margins, Paint,
+    ParaProps, StoryId, StyleKind, TextFrameProps, VerticalAlign,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -118,6 +118,20 @@ pub struct TextApplyCharStyle {
     /// Extra letter spacing in points.
     #[serde(default)]
     pub letter_spacing: Option<f64>,
+    /// `"normal"`, `"superscript"`, `"subscript"` or `{"shift": points}` (positive raises).
+    #[serde(default)]
+    pub baseline: Option<Baseline>,
+    /// `"none"`, `"small"` (small caps) or `"all"` (all caps). The text itself is unchanged.
+    #[serde(default)]
+    pub caps: Option<Caps>,
+    #[serde(default)]
+    pub strikethrough: Option<bool>,
+    /// Standard ligatures (default on).
+    #[serde(default)]
+    pub ligatures: Option<bool>,
+    /// Pair kerning (default on).
+    #[serde(default)]
+    pub kerning: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -584,6 +598,11 @@ impl Session {
             underline: req.underline,
             color: req.color,
             letter_spacing: req.letter_spacing,
+            baseline: req.baseline,
+            caps: req.caps,
+            strikethrough: req.strikethrough,
+            ligatures: req.ligatures,
+            kerning: req.kerning,
         };
         if !props.is_empty() {
             commands.push(Command::ApplyCharProps {
@@ -702,6 +721,12 @@ impl Session {
             return Err(ApiError::invalid(
                 "kind is bullet or number",
                 "use text_clear_list to remove a list",
+            ));
+        }
+        if req.restart_at.is_some_and(|n| n > 1_000_000) {
+            return Err(ApiError::invalid(
+                "restart_at is at most 1000000",
+                "number the list from a smaller value",
             ));
         }
         let defaults = List::default();

@@ -735,3 +735,86 @@ Count the till\nOpen the doors\nWhat to bake\nSourdough\nRye",
     }
     assert_png_golden("nested_list", &render(&b.finish(), 0, &opts()));
 }
+
+/// M17: every character format on one page: subscript and superscript, a
+/// custom baseline shift, synthesized small caps, all caps, strikethrough,
+/// and kerning off.
+#[test]
+fn character_formats() {
+    let mut b = DocBuilder::new(SeqIds::new(17), small_page());
+    let p = b.page(0);
+    let text = "H2O and E=mc2 up 3 pt\nSmall Caps Bakery\nall caps stra\u{df}e\nStruck through, kept\nKerning AVAVAV tight\nKerning AVAVAV off";
+    let f = b
+        .text(p, Rect::new(18.0, 18.0, 264.0, 164.0), text)
+        .unwrap();
+    let s = b.story_of(f);
+    let mut apply = |start: usize, end: usize, props: CharProps| {
+        b.exec(Command::ApplyCharProps {
+            story: s,
+            start,
+            end,
+            props,
+        })
+        .unwrap();
+    };
+    let len = text.chars().count();
+    apply(
+        0,
+        len,
+        CharProps {
+            font_size: Some(14.0),
+            ..Default::default()
+        },
+    );
+    let sub = Baseline::Subscript;
+    let sup = Baseline::Superscript;
+    let at = |s: &str, needle: &str| -> usize {
+        let byte = s.find(needle).unwrap();
+        s[..byte].chars().count()
+    };
+    let base = |baseline| CharProps {
+        baseline: Some(baseline),
+        ..Default::default()
+    };
+    apply(1, 2, base(sub));
+    apply(12, 13, base(sup));
+    let up = at(text, "up 3 pt");
+    apply(up, up + 7, base(Baseline::Shift(3.0)));
+    let sc = at(text, "Small Caps Bakery");
+    apply(
+        sc,
+        sc + 17,
+        CharProps {
+            caps: Some(Caps::Small),
+            ..Default::default()
+        },
+    );
+    let ac = at(text, "all caps stra\u{df}e");
+    apply(
+        ac,
+        ac + 15,
+        CharProps {
+            caps: Some(Caps::All),
+            ..Default::default()
+        },
+    );
+    let st = at(text, "Struck through");
+    apply(
+        st,
+        st + 14,
+        CharProps {
+            strikethrough: Some(true),
+            ..Default::default()
+        },
+    );
+    let ko = at(text, "Kerning AVAVAV off");
+    apply(
+        ko,
+        ko + 18,
+        CharProps {
+            kerning: Some(false),
+            ..Default::default()
+        },
+    );
+    assert_png_golden("character_formats", &render(&b.finish(), 0, &opts()));
+}

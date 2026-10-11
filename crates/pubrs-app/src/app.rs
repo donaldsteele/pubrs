@@ -34,6 +34,8 @@ use crate::{Args, Outcome};
 const NO_CARET: &str = "Click in the text where the break should go first";
 /// Why Text → Drop Cap… is unavailable.
 const NO_PARAGRAPH: &str = "Click in a paragraph or select a text box first";
+/// Why Text → Character… and the super/subscript buttons are unavailable.
+const NO_CHARS: &str = "Select some text, or a text box, first";
 
 /// The active creation tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -887,6 +889,18 @@ impl PubrsApp {
         match which {
             "bold" => props.bold = Some(!a.bold),
             "italic" => props.italic = Some(!a.italic),
+            "superscript" | "subscript" => {
+                let want = if which == "superscript" {
+                    pubrs_api::core::Baseline::Superscript
+                } else {
+                    pubrs_api::core::Baseline::Subscript
+                };
+                props.baseline = Some(if a.baseline == want {
+                    pubrs_api::core::Baseline::Normal
+                } else {
+                    want
+                });
+            }
             _ => props.underline = Some(!a.underline),
         }
         self.exec(Command::ApplyCharProps {
@@ -942,6 +956,11 @@ impl PubrsApp {
                 Some(NO_CARET)
             }
             Action::DropCap if !editing && !text_selected => Some(NO_PARAGRAPH),
+            Action::Character | Action::Superscript | Action::Subscript
+                if !editing && !text_selected =>
+            {
+                Some(NO_CHARS)
+            }
             Action::Tabs | Action::BulletsNumbering if !editing && !text_selected => {
                 Some(NO_PARAGRAPH)
             }
@@ -1254,6 +1273,12 @@ impl PubrsApp {
             Bold => self.toggle_char("bold"),
             Italic => self.toggle_char("italic"),
             Underline => self.toggle_char("underline"),
+            Superscript => self.toggle_char("superscript"),
+            Subscript => self.toggle_char("subscript"),
+            Character => match crate::dialogs::CharState::for_selection(self) {
+                Some(state) => self.dialog = Some(Dialog::Character(state)),
+                None => self.notify(NO_CHARS),
+            },
             ZoomIn | ZoomOut | ZoomActual | ZoomFit => {
                 if let Some(v) = self.view_mut() {
                     v.zoom = match action {
@@ -1384,7 +1409,13 @@ impl PubrsApp {
             if text_field
                 && matches!(
                     action,
-                    Action::Undo | Action::Redo | Action::Bold | Action::Italic | Action::Underline
+                    Action::Undo
+                        | Action::Redo
+                        | Action::Bold
+                        | Action::Italic
+                        | Action::Underline
+                        | Action::Superscript
+                        | Action::Subscript
                 )
             {
                 continue;

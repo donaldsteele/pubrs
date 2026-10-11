@@ -745,3 +745,100 @@ fn spelling_tools_check_suggest_and_add_words() {
     assert_eq!(e.code, "invalid_argument", "unknown fields are refused");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn validate_names_characters_no_font_covers() {
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    text_frame(
+        &mut s,
+        d.page_ids[0],
+        10.0,
+        10.0,
+        300.0,
+        100.0,
+        "tick \u{2713} and \u{2713}",
+    );
+    let v = s.validate(DocRef::default()).unwrap();
+    let w = v
+        .warnings
+        .iter()
+        .find(|w| w.code == WarningCode::MissingGlyphs)
+        .expect("a missing_glyphs warning");
+    assert!(
+        w.message
+            .contains("no available font covers: \u{2713} (U+2713)"),
+        "{}",
+        w.message
+    );
+    assert!(
+        !v.warnings
+            .iter()
+            .any(|w| w.code == WarningCode::MissingFont)
+    );
+}
+
+#[test]
+fn char_style_tool_takes_the_new_attributes_in_one_undo_step() {
+    use pubrs_api::core::{Baseline, Caps};
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let f = text_frame(
+        &mut s,
+        d.page_ids[0],
+        10.0,
+        10.0,
+        300.0,
+        100.0,
+        "H2O is fine",
+    );
+    let req: TextApplyCharStyle = serde_json::from_value(serde_json::json!({
+        "frame_id": f.frame_id, "start": 1, "end": 2,
+        "baseline": "subscript", "caps": "small", "strikethrough": true,
+        "ligatures": false, "kerning": false
+    }))
+    .unwrap();
+    s.text_apply_char_style(req).unwrap();
+    let shift: TextApplyCharStyle = serde_json::from_value(serde_json::json!({
+        "frame_id": f.frame_id, "start": 3, "end": 4, "baseline": {"shift": 2.5}
+    }))
+    .unwrap();
+    s.text_apply_char_style(shift).unwrap();
+    let doc = s.get(None).unwrap().doc();
+    let runs: Vec<_> = doc.stories.values().next().unwrap().paragraphs[0]
+        .runs
+        .iter()
+        .map(|r| r.props.clone())
+        .collect();
+    assert!(runs.iter().any(|p| p.baseline == Some(Baseline::Subscript)
+        && p.caps == Some(Caps::Small)
+        && p.strikethrough == Some(true)
+        && p.ligatures == Some(false)
+        && p.kerning == Some(false)));
+    assert!(
+        runs.iter()
+            .any(|p| p.baseline == Some(Baseline::Shift(2.5)))
+    );
+    let bad: TextApplyCharStyle = serde_json::from_value(serde_json::json!({
+        "frame_id": f.frame_id, "baseline": {"shift": 1e9}
+    }))
+    .unwrap();
+    assert!(s.text_apply_char_style(bad).is_err());
+    let bad = serde_json::from_value::<TextApplyCharStyle>(serde_json::json!({
+        "frame_id": f.frame_id, "baseline": "sideways"
+    }));
+    assert!(bad.is_err(), "unknown baseline names are rejected");
+}
+
+#[test]
+fn list_restart_is_validated_up_front() {
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let f = text_frame(&mut s, d.page_ids[0], 10.0, 10.0, 300.0, 100.0, "one\ntwo");
+    let req: TextApplyList = serde_json::from_value(serde_json::json!({
+        "frame_id": f.frame_id, "kind": "number", "restart_at": 1_000_001
+    }))
+    .unwrap();
+    let err = s.text_apply_list(req).unwrap_err();
+    assert!(err.to_string().contains("restart_at"), "{err}");
+}

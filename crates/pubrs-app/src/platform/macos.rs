@@ -70,6 +70,7 @@ fn code_for(key: Key) -> Option<Code> {
     Some(match key {
         Key::A => Code::KeyA,
         Key::B => Code::KeyB,
+        Key::C => Code::KeyC,
         Key::D => Code::KeyD,
         Key::E => Code::KeyE,
         Key::F => Code::KeyF,
@@ -87,7 +88,7 @@ fn code_for(key: Key) -> Option<Code> {
         Key::Z => Code::KeyZ,
         Key::Num0 => Code::Digit0,
         Key::Num1 => Code::Digit1,
-        Key::Plus => Code::Equal,
+        Key::Plus | Key::Equals => Code::Equal,
         Key::Minus => Code::Minus,
         Key::OpenBracket => Code::BracketLeft,
         Key::CloseBracket => Code::BracketRight,

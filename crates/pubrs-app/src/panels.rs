@@ -1301,6 +1301,28 @@ fn text_props(
         {
             app.run_action(&ctx, Action::Underline);
         }
+        for (on, label, action, name, tip) in [
+            (
+                a.baseline == pubrs_api::core::Baseline::Superscript,
+                "x\u{b2}",
+                Action::Superscript,
+                "char-superscript",
+                "Superscript (Cmd+Shift+=)",
+            ),
+            (
+                a.baseline == pubrs_api::core::Baseline::Subscript,
+                "x\u{2082}",
+                Action::Subscript,
+                "char-subscript",
+                "Subscript (Cmd+=)",
+            ),
+        ] {
+            let r = ui.selectable_label(on, label).on_hover_text(tip);
+            crate::dialogs::mark(ui, name, &r);
+            if r.clicked() {
+                app.run_action(&ctx, action);
+            }
+        }
     });
     ui.label("Colour");
     if let Some(Some(c)) = paint_edit(

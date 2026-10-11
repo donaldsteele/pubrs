@@ -8,11 +8,13 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use parley::{
-    Affinity, Alignment, AlignmentOptions, BreakReason, Cluster, Cursor, FontFamily, FontStyle,
-    FontWeight, Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
+    Affinity, Alignment, AlignmentOptions, BreakReason, Cluster, Cursor, FontFamily, FontFeatures,
+    FontStyle, FontWeight, Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty,
+    VerticalAlign as ScriptAlign, YieldData,
 };
 use pubrs_core::style::{
-    DEFAULT_TAB_INTERVAL, DropCap, ListKind, MAX_LIST_LEVEL, TabAlign, TabLeader, TabStop,
+    Baseline, Caps, DEFAULT_TAB_INTERVAL, DropCap, ListKind, MAX_LIST_LEVEL, TabAlign, TabLeader,
+    TabStop,
 };
 use pubrs_core::text::{BreakKind, is_break};
 use pubrs_core::{
@@ -20,7 +22,7 @@ use pubrs_core::{
     Paragraph, Parent, Rect, Run, StoryId, VerticalAlign, WrapMode,
 };
 
-use crate::fonts::FontLibrary;
+use crate::fonts::{FaceTraits, FontLibrary};
 use crate::hyphen::{self, BreakParams, LineCx, LineInfo, Shadow};
 use crate::types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
@@ -31,6 +33,8 @@ use crate::types::{
 pub struct Layouter {
     pub fonts: FontLibrary,
     lcx: LayoutContext<Ink>,
+    /// Per (family, bold, italic): OS/2 script metrics and `smcp` support.
+    traits: HashMap<(String, bool, bool), FaceTraits>,
 }
 
 impl std::fmt::Debug for Layouter {
@@ -295,6 +299,7 @@ impl Layouter {
         Self {
             fonts,
             lcx: LayoutContext::new(),
+            traits: HashMap::new(),
         }
     }
 
@@ -411,7 +416,7 @@ impl Layouter {
                     start: para_start,
                     regions,
                     keeps,
-                    label: labels[pi].as_deref(),
+                    label: labels.get(pi).and_then(|l| l.as_deref()),
                 };
                 let (of, m) = self.flow_kept(job, &mut cur, &mut placed, &mut out, start_at);
                 any_moved |= m;
@@ -458,13 +463,15 @@ impl Layouter {
         apply_vertical_align(regions, &mut placed);
         for p in placed {
             let frame = regions[p.region].frame;
-            out.missing_glyphs += p
-                .line
-                .runs
-                .iter()
-                .flat_map(|r| r.glyphs.iter())
-                .filter(|g| g.id == 0)
-                .count();
+            for r in &p.line.runs {
+                for g in r.glyphs.iter().filter(|g| g.id == 0) {
+                    out.missing_glyphs += 1;
+                    if let Some(s) = r.text.get(g.text.clone()) {
+                        out.missing_chars
+                            .extend(s.chars().filter(|c| !c.is_control()));
+                    }
+                }
+            }
             if let Some(ft) = out.frames.get_mut(&frame) {
                 if ft.lines.is_empty() {
                     ft.chars = p.line.chars.clone();
@@ -678,6 +685,68 @@ impl Layouter {
         })
     }
 
+    /// OS/2 script metrics and `smcp` support of the face parley picks for
+    /// `a`'s family, weight and style (found by shaping one letter).
+    fn face_traits(&mut self, a: &CharAttrs) -> FaceTraits {
+        let key = (a.font_family.to_lowercase(), a.bold, a.italic);
+        if let Some(t) = self.traits.get(&key) {
+            return *t;
+        }
+        let probe = CharAttrs {
+            font_size: 16.0,
+            ..a.clone()
+        };
+        let mut buf = [0u8; 4];
+        let shaped = self.shape_one_line('a'.encode_utf8(&mut buf), &probe, 16.0);
+        let t = shaped.first().map_or_else(FaceTraits::default, |(f, _)| {
+            FaceTraits::from_font(f.bytes(), f.index)
+        });
+        self.traits.insert(key, t);
+        t
+    }
+
+    /// What `a` needs from the shaper beyond family, weight and style: the
+    /// size after super/subscript, the baseline shift, font features and the
+    /// case mapping. Plain attributes cost nothing.
+    fn derive(&mut self, a: &CharAttrs) -> Derived {
+        let mut d = Derived {
+            size: a.font_size,
+            shift: 0.0,
+            features: String::new(),
+            caps: CapsMode::Off,
+            strike: a.strikethrough,
+        };
+        let mut feats: Vec<&str> = Vec::new();
+        if !a.ligatures {
+            feats.push("\"liga\" 0, \"clig\" 0");
+        }
+        if !a.kerning {
+            feats.push("\"kern\" 0");
+        }
+        let scripted = matches!(a.baseline, Baseline::Superscript | Baseline::Subscript);
+        let traits = (scripted || a.caps == Caps::Small).then(|| self.face_traits(a));
+        match (a.baseline, traits) {
+            (Baseline::Superscript, Some(t)) => {
+                d.size = a.font_size * t.sup.scale;
+                d.shift = (a.font_size * t.sup.shift) as f32;
+            }
+            (Baseline::Subscript, Some(t)) => {
+                d.size = a.font_size * t.sub.scale;
+                d.shift = (a.font_size * t.sub.shift) as f32;
+            }
+            (Baseline::Shift(v), _) => d.shift = v as f32,
+            _ => {}
+        }
+        match a.caps {
+            Caps::None => {}
+            Caps::All => d.caps = CapsMode::Upper,
+            Caps::Small if traits.is_some_and(|t| t.smcp) => feats.push("\"smcp\" 1"),
+            Caps::Small => d.caps = CapsMode::SmallSynth,
+        }
+        d.features = feats.join(", ");
+        d
+    }
+
     /// Shape `text` on one unbroken line in one style at `size`: per glyph
     /// run its font, and glyphs as (id, x, y from the baseline, advance,
     /// source bytes).
@@ -689,10 +758,19 @@ impl Layouter {
     ) -> Vec<(FontHandle, Shaped)> {
         let mut a = attrs.clone();
         a.font_size = size;
+        let d = Derived::plain(&a, size);
+        // A capitalised drop cap or probe: same byte lengths, so ranges hold.
+        let mapped: String;
+        let text = if matches!(a.caps, Caps::All | Caps::Small) {
+            mapped = text.chars().map(|c| upper1(c).unwrap_or(c)).collect();
+            mapped.as_str()
+        } else {
+            text
+        };
         let mut builder = self
             .lcx
             .ranged_builder(&mut self.fonts.fcx, text, 1.0, false);
-        push_attrs(&mut builder, None, &a);
+        push_attrs(&mut builder, None, &a, &d, None);
         let mut layout: Layout<Ink> = builder.build(text);
         layout.break_all_lines(None);
         let mut out = Vec::new();
@@ -856,6 +934,19 @@ impl Layouter {
         // If the line analysis cannot follow the paragraph (right-to-left
         // text, a line end it cannot place), it is laid out again once
         // without the inserted soft hyphens (ADR 0014).
+        for (_, a) in &run_attrs {
+            if !self.fonts.ensure_family(&a.font_family) {
+                out.missing_fonts.insert(a.font_family.clone());
+            }
+        }
+        let derived: Vec<Derived> = run_attrs.iter().map(|(_, a)| self.derive(a)).collect();
+        let first_attrs = run_attrs
+            .first()
+            .map_or_else(default_attrs, |s| s.1.clone());
+        let first_d = run_attrs.first().map_or_else(
+            || Derived::plain(&first_attrs, first_attrs.font_size),
+            |_| derived[0].clone(),
+        );
         let cur0 = *cur;
         let mut plain = hy_lang.is_none();
         let (shadow, mut layout, mut lcx, line_infos, placements, overflowed, cap_at, first_x) = 'attempt: loop {
@@ -875,31 +966,39 @@ impl Layouter {
             } else {
                 Vec::new()
             };
-            let text: &str = &shadow.text;
-            let spans: Vec<(Range<usize>, &CharAttrs)> = run_attrs
+            let sranges: Vec<Range<usize>> = run_attrs
                 .iter()
-                .map(|(r, a)| (shadow.from_orig(r.start)..shadow.from_orig(r.end), a))
+                .map(|(r, _)| shadow.from_orig(r.start)..shadow.from_orig(r.end))
                 .collect();
-            let first = spans
-                .first()
-                .map(|s| s.1.clone())
-                .unwrap_or_else(default_attrs);
-            for (_, a) in &spans {
-                if !self.fonts.ensure_family(&a.font_family) {
-                    out.missing_fonts.insert(a.font_family.clone());
-                }
+            // All caps and synthesized small caps change letters in place
+            // (same bytes, same characters), never the story text.
+            let mut small: Vec<(Range<usize>, f64)> = Vec::new();
+            if derived.iter().any(|d| d.caps != CapsMode::Off) {
+                let (mapped, s) = apply_caps(&shadow.text, &sranges, &derived);
+                shadow.text = std::borrow::Cow::Owned(mapped);
+                small = s;
             }
+            let text: &str = &shadow.text;
+            let spans: Vec<(Range<usize>, &CharAttrs)> = sranges
+                .iter()
+                .cloned()
+                .zip(run_attrs.iter().map(|(_, a)| a))
+                .collect();
+            let first = first_attrs.clone();
             let mut builder = self
                 .lcx
                 .ranged_builder(&mut self.fonts.fcx, text, 1.0, false);
             builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
                 pa.line_spacing as f32,
             )));
-            push_attrs(&mut builder, None, &first);
-            for (range, a) in &spans {
+            push_attrs(&mut builder, None, &first, &first_d, None);
+            for ((range, a), d) in spans.iter().zip(&derived) {
                 if !range.is_empty() && **a != first {
-                    push_attrs(&mut builder, Some(range.clone()), a);
+                    push_attrs(&mut builder, Some(range.clone()), a, d, Some(&first_d));
                 }
+            }
+            for (range, size) in &small {
+                builder.push(StyleProperty::FontSize(*size as f32), range.clone());
             }
             let mut layout: Layout<Ink> = builder.build(text);
             // Tab segments are never stretched: a paragraph with tabs is
@@ -1117,7 +1216,9 @@ impl Layouter {
                     continue;
                 };
                 let run = gr.run();
-                let key = run.cluster_range().start;
+                // Unique per shaped run on a line (cluster ranges count from
+                // the start of each shaped run, so runs would collide).
+                let key = run.text_range().start;
                 let entry = groups_cache.entry(key).or_insert_with(|| {
                     let mut groups: Vec<ClusterGroup> = Vec::new();
                     let mut last_style = None;
@@ -1218,6 +1319,20 @@ impl Layouter {
                             f64::from(size),
                         ),
                         color: ul.brush,
+                    });
+                }
+                if let Some(st) = &style.strikethrough {
+                    let fm = run.font_metrics();
+                    let off = st.offset.unwrap_or(fm.strikethrough_offset);
+                    let size = st.size.unwrap_or(fm.strikethrough_size).max(0.5);
+                    decorations.push(Decoration {
+                        rect: Rect::new(
+                            f64::from(gr.offset()) + run_shift,
+                            f64::from(gr.baseline() - off),
+                            f64::from(gr.advance()) + run_extra,
+                            f64::from(size),
+                        ),
+                        color: st.brush,
                     });
                 }
             }
@@ -1666,6 +1781,10 @@ fn leader_run(
 /// deeper levels; paragraphs that are not list items change nothing, so a
 /// count continues across them (ADR 0019).
 fn list_labels(pas: &[ParaAttrs]) -> Vec<Option<String>> {
+    // No list in the story: nothing to number (callers index with `get`).
+    if !pas.iter().any(|p| p.list.is_some()) {
+        return Vec::new();
+    }
     let mut counters = [0u32; MAX_LIST_LEVEL as usize + 1];
     pas.iter()
         .map(|pa| {
@@ -1810,10 +1929,114 @@ fn keep_with_next_move(
     (!at_top && r + 1 < regions.len() && !moved.contains(&j)).then_some((j, r + 1))
 }
 
-fn push_attrs(b: &mut parley::RangedBuilder<'_, Ink>, range: Option<Range<usize>>, a: &CharAttrs) {
+/// How a run's letters are mapped for display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapsMode {
+    Off,
+    /// All caps: every letter with a one-character capital.
+    Upper,
+    /// Small caps without an `smcp` feature: lowercase letters become
+    /// capitals at [`SMALL_CAPS_SCALE`] of the run's size.
+    SmallSynth,
+}
+
+/// Size of synthesized small capitals relative to the run.
+const SMALL_CAPS_SCALE: f64 = 0.7;
+
+/// What a run's attributes ask of the shaper beyond family, weight and
+/// style (see [`Layouter::derive`]).
+#[derive(Debug, Clone, PartialEq)]
+struct Derived {
+    /// Font size after super/subscript scaling.
+    size: f64,
+    /// Baseline shift in points, positive up.
+    shift: f32,
+    /// CSS font-feature settings ("" for none).
+    features: String,
+    caps: CapsMode,
+    strike: bool,
+}
+
+impl Derived {
+    /// For text shaped on its own (drop caps, leaders, probes): the size and
+    /// the ligature and kerning switches only.
+    fn plain(a: &CharAttrs, size: f64) -> Self {
+        let mut feats: Vec<&str> = Vec::new();
+        if !a.ligatures {
+            feats.push("\"liga\" 0, \"clig\" 0");
+        }
+        if !a.kerning {
+            feats.push("\"kern\" 0");
+        }
+        Self {
+            size,
+            shift: 0.0,
+            features: feats.join(", "),
+            caps: CapsMode::Off,
+            strike: false,
+        }
+    }
+}
+
+/// The one-character capital of `c`, if it has one of the same UTF-8
+/// length. Mapping only such letters keeps the shadow text a one-to-one,
+/// same-byte-offset copy of the story text ('ß' stays 'ß').
+fn upper1(c: char) -> Option<char> {
+    let mut it = c.to_uppercase();
+    let u = it.next()?;
+    (it.next().is_none() && u != c && u.len_utf8() == c.len_utf8()).then_some(u)
+}
+
+/// Map `text` for display: letters in all-caps and small-caps runs become
+/// capitals (see [`upper1`]). `ranges` are the byte ranges of the runs with
+/// their `derived` data. Returns the new text and the byte ranges that
+/// became synthesized small capitals, with their font size.
+fn apply_caps(
+    text: &str,
+    ranges: &[Range<usize>],
+    derived: &[Derived],
+) -> (String, Vec<(Range<usize>, f64)>) {
+    let mut out = String::with_capacity(text.len());
+    let mut small: Vec<(Range<usize>, f64)> = Vec::new();
+    let mut si = 0;
+    for (i, c) in text.char_indices() {
+        while si < ranges.len() && ranges[si].end <= i {
+            si += 1;
+        }
+        let mode = ranges
+            .get(si)
+            .filter(|r| r.start <= i)
+            .map_or(CapsMode::Off, |_| derived[si].caps);
+        match (mode, upper1(c)) {
+            (CapsMode::Off, _) | (_, None) => out.push(c),
+            (CapsMode::Upper, Some(u)) => out.push(u),
+            (CapsMode::SmallSynth, Some(u)) => {
+                out.push(u);
+                let size = derived[si].size * SMALL_CAPS_SCALE;
+                match small.last_mut() {
+                    Some((r, s)) if r.end == i && *s == size => r.end = i + c.len_utf8(),
+                    _ => small.push((i..i + c.len_utf8(), size)),
+                }
+            }
+        }
+    }
+    (out, small)
+}
+
+/// Push a run's attributes. With no `range` they are the defaults; with a
+/// range they override the defaults, and the properties beyond the original
+/// seven are pushed only where they differ from `base` (the defaults), so
+/// text without the newer attributes is shaped exactly as before.
+fn push_attrs(
+    b: &mut parley::RangedBuilder<'_, Ink>,
+    range: Option<Range<usize>>,
+    a: &CharAttrs,
+    d: &Derived,
+    base: Option<&Derived>,
+) {
     let props: [StyleProperty<'_, Ink>; 7] = [
         StyleProperty::FontFamily(FontFamily::named(&a.font_family)),
-        StyleProperty::FontSize(a.font_size as f32),
+        StyleProperty::FontSize(d.size as f32),
         StyleProperty::FontWeight(if a.bold {
             FontWeight::BOLD
         } else {
@@ -1828,7 +2051,22 @@ fn push_attrs(b: &mut parley::RangedBuilder<'_, Ink>, range: Option<Range<usize>
         StyleProperty::Brush(a.color),
         StyleProperty::LetterSpacing(a.letter_spacing as f32),
     ];
-    for p in props {
+    let (b_shift, b_feat, b_strike) = base.map_or((0.0, "", false), |x| {
+        (x.shift, x.features.as_str(), x.strike)
+    });
+    let mut more: Vec<StyleProperty<'_, Ink>> = Vec::new();
+    if d.shift != b_shift {
+        more.push(StyleProperty::VerticalAlign(ScriptAlign::length(d.shift)));
+    }
+    if d.features != b_feat {
+        more.push(StyleProperty::FontFeatures(FontFeatures::from(
+            d.features.as_str(),
+        )));
+    }
+    if d.strike != b_strike {
+        more.push(StyleProperty::Strikethrough(d.strike));
+    }
+    for p in props.into_iter().chain(more) {
         match &range {
             Some(r) => b.push(p, r.clone()),
             None => b.push_default(p),

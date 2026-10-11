@@ -86,7 +86,8 @@ false), `language` (BCP 47, default `en-US`), `justify_limits`
 Run text may contain the column, frame and page break characters (see below).
 Run objects may carry
 `style` (character style id) and overrides `font_family`, `font_size`, `bold`,
-`italic`, `underline`, `color`, `letter_spacing`.
+`italic`, `underline`, `color`, `letter_spacing`, `baseline`, `caps`, `strikethrough`,
+`ligatures`, `kerning` (the last five are described below).
 
 ### Style
 
@@ -117,6 +118,7 @@ version.
 | 5 | `alt_text` on picture frames (written to tagged PDF). Optional and omitted when empty, so older files are valid version 5 files and are only stamped. |
 | 6 | Paragraph fields `keep_with_next`, `keep_together`, `widow_orphan` and `drop_cap` (on paragraphs and paragraph styles), and the break characters U+000E (column), U+001D (frame) and U+000C (page) in run text. All fields are optional and older files hold no break characters, so older files are valid version 6 files; migration only stamps the version. |
 | 7 | Paragraph fields `tab_stops` and `list` (on paragraphs and paragraph styles); tab characters in run text now move to tab stops. Both fields are optional, so older files are valid version 7 files; migration only stamps the version. |
+| 8 | Character fields `baseline`, `caps`, `strikethrough`, `ligatures` and `kerning` (on runs and character styles). All are optional, so older files are valid version 8 files; migration only stamps the version. |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -241,3 +243,18 @@ text after it to a tab stop; before version 7 it was only a glyph.
   `max(left_indent, indent)`. Labels are generated, never stored in run text.
   Numbering counts per level through the story, continuing across paragraphs
   that are not list items and across linked frames (ADR 0019).
+
+### Character formatting (version 8)
+
+Five optional fields on a run's `props` and a character style's `character`.
+**Absent means the version 7 layout, unchanged** (Locked Decision 2).
+
+- `baseline`: `"normal"`, `"superscript"`, `"subscript"` or `{"shift": 3.5}`
+  (points, positive raises). Super and subscript use the font's OS/2 size and
+  offset, else 58% size and a 33% shift. A raised run makes its line taller.
+- `caps`: `"none"`, `"small"` or `"all"`. Display only: the text is stored as
+  typed. Small caps use the font's `smcp` feature, else lowercase letters are
+  drawn as capitals at 70% size.
+- `strikethrough`, `ligatures` (default on), `kerning` (default on): booleans.
+
+See ADR 0021.

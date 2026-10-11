@@ -19,6 +19,8 @@ pub enum Dialog {
     ConfirmDeletePage(PageId),
     Recovery(Vec<Recoverable>),
     PageSetup(PageSetupState),
+    /// Text → Character…
+    Character(CharState),
     Paragraph(ParagraphState),
     DropCap(DropCapState),
     /// Text → Tabs…
@@ -366,6 +368,7 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             }
         }
         Dialog::PageSetup(state) => page_setup_ui(app, ui, state),
+        Dialog::Character(state) => char_ui(app, ui, state),
         Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
         Dialog::DropCap(state) => drop_cap_ui(app, ui, state),
         Dialog::Tabs(state) => tabs_ui(app, ui, state),
@@ -2503,4 +2506,237 @@ fn drop_cap_preview(ui: &mut egui::Ui, st: &DropCapState) {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Character
+
+use pubrs_api::core::{Baseline, Caps, CharAttrs, CharProps};
+
+/// Which baseline choice the Character dialog shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BaselineKind {
+    Normal,
+    Super,
+    Sub,
+    Custom,
+}
+
+/// The Character dialog's edits for the selected text (or the whole text
+/// box), applied as one undo step on OK.
+pub struct CharState {
+    story: StoryId,
+    start: usize,
+    end: usize,
+    initial: CharAttrs,
+    family: String,
+    size: f64,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+    baseline: BaselineKind,
+    /// Points, positive up (used when the baseline is custom).
+    shift: f64,
+    caps: Caps,
+    ligatures: bool,
+    kerning: bool,
+}
+
+impl CharState {
+    /// For the selected text, or all the text of the selected text box.
+    /// Without a selection while editing there is nothing to format.
+    pub fn for_selection(app: &PubrsApp) -> Option<Self> {
+        let doc = app.doc()?;
+        let edit = app.view().and_then(|v| v.edit.as_ref());
+        let story = match edit {
+            Some(e) => e.story,
+            None => app.selection().iter().find_map(|f| doc.story_of(*f))?,
+        };
+        let s = doc.story(story)?;
+        let (start, end) = match edit {
+            Some(e) if e.has_selection() => e.range(),
+            Some(_) => return None,
+            None => (0, s.char_len()),
+        };
+        if end <= start {
+            return None;
+        }
+        let para = &s.paragraphs[s.locate(start).0];
+        let fmt = s.format_at(start + 1);
+        let run = pubrs_api::core::Run {
+            text: String::new(),
+            style: fmt.style,
+            props: fmt.props,
+        };
+        let a = doc.styles.resolve_char(para, &run);
+        let (baseline, shift) = match a.baseline {
+            Baseline::Normal => (BaselineKind::Normal, 0.0),
+            Baseline::Superscript => (BaselineKind::Super, 0.0),
+            Baseline::Subscript => (BaselineKind::Sub, 0.0),
+            Baseline::Shift(v) => (BaselineKind::Custom, v),
+        };
+        Some(Self {
+            story,
+            start,
+            end,
+            family: a.font_family.clone(),
+            size: a.font_size,
+            bold: a.bold,
+            italic: a.italic,
+            underline: a.underline,
+            strike: a.strikethrough,
+            baseline,
+            shift,
+            caps: a.caps,
+            ligatures: a.ligatures,
+            kerning: a.kerning,
+            initial: a,
+        })
+    }
+
+    /// The overrides that differ from what the text has now.
+    fn props(&self) -> CharProps {
+        let i = &self.initial;
+        let baseline = match self.baseline {
+            BaselineKind::Normal => Baseline::Normal,
+            BaselineKind::Super => Baseline::Superscript,
+            BaselineKind::Sub => Baseline::Subscript,
+            BaselineKind::Custom => Baseline::Shift(self.shift),
+        };
+        CharProps {
+            font_family: (self.family != i.font_family).then(|| self.family.clone()),
+            font_size: ((self.size - i.font_size).abs() > 1e-9).then_some(self.size),
+            bold: (self.bold != i.bold).then_some(self.bold),
+            italic: (self.italic != i.italic).then_some(self.italic),
+            underline: (self.underline != i.underline).then_some(self.underline),
+            color: None,
+            letter_spacing: None,
+            baseline: (baseline != i.baseline).then_some(baseline),
+            caps: (self.caps != i.caps).then_some(self.caps),
+            strikethrough: (self.strike != i.strikethrough).then_some(self.strike),
+            ligatures: (self.ligatures != i.ligatures).then_some(self.ligatures),
+            kerning: (self.kerning != i.kerning).then_some(self.kerning),
+        }
+    }
+}
+
+fn char_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut CharState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Character");
+    egui::Grid::new("char-grid").num_columns(2).show(ui, |ui| {
+        ui.label("Font");
+        let fonts = app.fonts.clone();
+        let r = egui::ComboBox::from_id_salt("char-font")
+            .selected_text(st.family.clone())
+            .height(300.0)
+            .show_ui(ui, |ui| {
+                for fam in &fonts {
+                    ui.selectable_value(&mut st.family, fam.clone(), fam);
+                }
+            });
+        mark(ui, "char-font", &r.response);
+        ui.end_row();
+        ui.label("Size");
+        let r = ui.add(
+            egui::DragValue::new(&mut st.size)
+                .speed(0.5)
+                .range(1.0..=999.0)
+                .suffix(" pt"),
+        );
+        mark(ui, "char-size", &r);
+        ui.end_row();
+        ui.label("Style");
+        ui.horizontal(|ui| {
+            let r = ui.checkbox(&mut st.bold, "Bold");
+            mark(ui, "char-bold", &r);
+            let r = ui.checkbox(&mut st.italic, "Italic");
+            mark(ui, "char-italic", &r);
+            let r = ui.checkbox(&mut st.underline, "Underline");
+            mark(ui, "char-underline", &r);
+            let r = ui.checkbox(&mut st.strike, "Strikethrough");
+            mark(ui, "char-strike", &r);
+        });
+        ui.end_row();
+        ui.label("Baseline");
+        ui.horizontal(|ui| {
+            for (kind, label, name) in [
+                (BaselineKind::Normal, "Normal", "char-base-normal"),
+                (BaselineKind::Super, "Superscript", "char-base-super"),
+                (BaselineKind::Sub, "Subscript", "char-base-sub"),
+                (BaselineKind::Custom, "Shift", "char-base-custom"),
+            ] {
+                let r = ui.radio_value(&mut st.baseline, kind, label);
+                mark(ui, name, &r);
+            }
+            let r = ui.add_enabled(
+                st.baseline == BaselineKind::Custom,
+                egui::DragValue::new(&mut st.shift)
+                    .speed(0.25)
+                    .range(-200.0..=200.0)
+                    .suffix(" pt"),
+            );
+            mark(ui, "char-shift", &r);
+            r.on_hover_text("Points above the baseline (negative lowers)")
+                .on_disabled_hover_text("Choose Shift to enter an amount");
+        });
+        ui.end_row();
+        ui.label("Capitals");
+        ui.horizontal(|ui| {
+            for (caps, label, name) in [
+                (Caps::None, "None", "char-caps-none"),
+                (Caps::Small, "Small caps", "char-caps-small"),
+                (Caps::All, "All caps", "char-caps-all"),
+            ] {
+                let r = ui.radio_value(&mut st.caps, caps, label);
+                mark(ui, name, &r);
+            }
+        });
+        ui.end_row();
+        ui.label("Typography");
+        ui.horizontal(|ui| {
+            let r = ui.checkbox(&mut st.ligatures, "Ligatures");
+            mark(ui, "char-ligatures", &r);
+            r.on_hover_text("Join letter pairs such as fi into one glyph where the font has them");
+            let r = ui.checkbox(&mut st.kerning, "Kerning");
+            mark(ui, "char-kerning", &r);
+            r.on_hover_text("Tighten letter pairs such as AV using the font's kerning");
+        });
+        ui.end_row();
+    });
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            let props = st.props();
+            out = if props.is_empty()
+                || app.exec(Command::ApplyCharProps {
+                    story: st.story,
+                    start: st.start,
+                    end: st.end,
+                    props,
+                }) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
 }

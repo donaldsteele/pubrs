@@ -10,7 +10,7 @@ type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
 const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [
-    v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5, v5_to_v6, v6_to_v7,
+    v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5, v5_to_v6, v6_to_v7, v7_to_v8,
 ];
 
 /// The schema version a document JSON declares (absent = 0).
@@ -109,6 +109,16 @@ fn v6_to_v7(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(7));
+    Ok(v)
+}
+
+/// Version 8 adds the character fields `baseline`, `caps`, `strikethrough`,
+/// `ligatures` and `kerning` (ADR 0021), all optional: unset keeps v0.1
+/// layout. Only the version changes.
+fn v7_to_v8(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(8));
     Ok(v)
 }
 

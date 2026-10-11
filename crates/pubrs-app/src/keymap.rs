@@ -63,6 +63,10 @@ pub enum Action {
     Bold,
     Italic,
     Underline,
+    Superscript,
+    Subscript,
+    /// Text → Character…
+    Character,
     ZoomIn,
     ZoomOut,
     ZoomFit,
@@ -126,11 +130,17 @@ pub fn shortcut(a: Action) -> Option<KeyboardShortcut> {
         Bold => cmd(Key::B),
         Italic => cmd(Key::I),
         Underline => cmd(Key::U),
+        // As in Publisher: Ctrl+Shift+= raises, Ctrl+= lowers. egui reports
+        // the shifted key as Plus.
+        Superscript => cmd_shift(Key::Plus),
+        Subscript => cmd(Key::Equals),
+        Character => KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::C),
         Paragraph => KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::P),
         // As in Publisher and Word.
         InsertPageBreak => cmd(Key::Enter),
         InsertColumnBreak => cmd_shift(Key::Enter),
-        ZoomIn => cmd(Key::Plus),
+        // Cmd+= and Cmd+Shift+= are subscript and superscript.
+        ZoomIn => KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::Plus),
         ZoomOut => cmd(Key::Minus),
         ZoomFit => cmd(Key::Num0),
         ZoomActual => cmd(Key::Num1),
@@ -261,10 +271,13 @@ pub const MENUS: &[MenuSpec] = &[
             A("Bold", Action::Bold),
             A("Italic", Action::Italic),
             A("Underline", Action::Underline),
+            A("Superscript", Action::Superscript),
+            A("Subscript", Action::Subscript),
             Sep,
             A("Link to Next Text Box", Action::LinkTextFrames),
             A("Break Link", Action::UnlinkTextFrames),
             Sep,
+            A("Character…", Action::Character),
             A("Paragraph…", Action::Paragraph),
             A("Drop Cap…", Action::DropCap),
             A("Tabs…", Action::Tabs),

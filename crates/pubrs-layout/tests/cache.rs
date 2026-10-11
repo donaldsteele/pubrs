@@ -302,6 +302,20 @@ fn command(ids: &mut SeqIds, ed: &Editor, op: &Op) -> Option<Command> {
             props: CharProps {
                 bold: Some(op.flag),
                 font_size: Some(w.abs() / 20.0 + 6.0),
+                baseline: match op.c % 4 {
+                    0 => None,
+                    1 => Some(pubrs_core::Baseline::Superscript),
+                    2 => Some(pubrs_core::Baseline::Subscript),
+                    _ => Some(pubrs_core::Baseline::Shift(y / 40.0)),
+                },
+                caps: match op.b % 3 {
+                    0 => None,
+                    1 => Some(pubrs_core::Caps::Small),
+                    _ => Some(pubrs_core::Caps::All),
+                },
+                strikethrough: op.a.is_multiple_of(3).then_some(op.flag),
+                ligatures: op.a.is_multiple_of(2).then_some(op.flag),
+                kerning: op.b.is_multiple_of(2).then_some(op.flag),
                 ..Default::default()
             },
         },
@@ -595,6 +609,51 @@ fn tab_stops_and_lists_recompose_only_their_story() {
     ];
     for e in edits {
         t.ed.execute(e).unwrap();
+        let lay2 = check(&mut cache, &mut lay, t.ed.doc());
+        assert_eq!(cache.stats().recomposed, 1, "only story b is recomposed");
+        assert!(Arc::ptr_eq(&start.stories[&t.a], &lay2.stories[&t.a]));
+    }
+    while t.ed.undo().is_some() {
+        check(&mut cache, &mut lay, t.ed.doc());
+    }
+    assert_eq!(check(&mut cache, &mut lay, t.ed.doc()), start);
+}
+
+#[test]
+fn character_attributes_recompose_only_their_story() {
+    use pubrs_core::{Baseline, Caps};
+    let mut t = two_stories();
+    let (mut lay, mut cache) = (layouter(), StoryLayoutCache::new());
+    let start = check(&mut cache, &mut lay, t.ed.doc());
+    let props = [
+        CharProps {
+            baseline: Some(Baseline::Superscript),
+            ..Default::default()
+        },
+        CharProps {
+            baseline: Some(Baseline::Shift(-3.0)),
+            caps: Some(Caps::Small),
+            ..Default::default()
+        },
+        CharProps {
+            caps: Some(Caps::All),
+            strikethrough: Some(true),
+            ..Default::default()
+        },
+        CharProps {
+            ligatures: Some(false),
+            kerning: Some(false),
+            ..Default::default()
+        },
+    ];
+    for p in props {
+        t.ed.execute(Command::ApplyCharProps {
+            story: t.b,
+            start: 10,
+            end: 90,
+            props: p,
+        })
+        .unwrap();
         let lay2 = check(&mut cache, &mut lay, t.ed.doc());
         assert_eq!(cache.stats().recomposed, 1, "only story b is recomposed");
         assert!(Arc::ptr_eq(&start.stories[&t.a], &lay2.stories[&t.a]));

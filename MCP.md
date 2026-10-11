@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 159280,
+  "bytes": 159330,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 159280,
+  "bytes": 159330,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 68
+  "revision": 72
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 69
+  "revision": 73
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 65
+  "revision": 69
 }
 ```
 
@@ -1519,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 45
+  "revision": 49
 }
 ```
 
@@ -1560,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 46
+  "revision": 50
 }
 ```
 
@@ -1598,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 47
+  "revision": 51
 }
 ```
 
@@ -1637,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 52
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001f",
-  "revision": 62
+  "revision": 66
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 58
+  "revision": 62
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 60
+  "revision": 64
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 61
+  "revision": 65
 }
 ```
 
@@ -1911,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 53
 }
 ```
 
@@ -1941,7 +1941,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 53
+  "revision": 57
 }
 ```
 
@@ -1979,7 +1979,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 56
+  "revision": 60
 }
 ```
 
@@ -2019,7 +2019,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 57
+  "revision": 61
 }
 ```
 
@@ -2087,7 +2087,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 65
+  "revision": 69
 }
 ```
 
@@ -2152,7 +2152,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 65,
+  "revision": 69,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2212,7 +2212,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
-  "revision": 64
+  "revision": 68
 }
 ```
 
@@ -2257,7 +2257,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": true,
-  "revision": 35,
+  "revision": 39,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2344,7 +2344,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 220,
   "overflowing": false,
-  "revision": 29,
+  "revision": 33,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2397,13 +2397,15 @@ Result:
 
 ### `text_apply_char_style`
 
-Format characters start..end (default all): character style by name, font_family, font_size (points), bold, italic, underline, colour, letter_spacing. clear: true removes local formatting first.
+Format characters start..end (default all): character style by name, font_family, font_size (points), bold, italic, underline, strikethrough, colour, letter_spacing, baseline (normal, superscript, subscript or {shift: points}), caps (none, small, all), ligatures, kerning. clear: true removes local formatting first.
 
 **Arguments**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `baseline` | "normal" \| "superscript" \| "subscript" \| object |  | `"normal"`, `"superscript"`, `"subscript"` or `{"shift": points}` (positive raises). |
 | `bold` | boolean |  |  |
+| `caps` | "none" \| "small" \| "all" \| null |  | `"none"`, `"small"` (small caps) or `"all"` (all caps). The text itself is unchanged. |
 | `clear` | boolean |  | Remove local character formatting first. |
 | `color` | string \| object \| object |  | Text colour: hex or `{"swatch": id, "tint": 0-100}`. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
@@ -2412,9 +2414,12 @@ Format characters start..end (default all): character style by name, font_family
 | `font_size` | number |  | Points. |
 | `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
 | `italic` | boolean |  |  |
+| `kerning` | boolean |  | Pair kerning (default on). |
 | `letter_spacing` | number |  | Extra letter spacing in points. |
+| `ligatures` | boolean |  | Standard ligatures (default on). |
 | `start` | integer |  | Range start (character offset). Default 0. |
 | `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+| `strikethrough` | boolean |  |  |
 | `style` | string |  | Character style name or id ("" removes the character style). |
 | `underline` | boolean |  |  |
 
@@ -2450,16 +2455,15 @@ Result:
 }
 ```
 
-**Example**
+**Example** — baseline is "normal", "superscript", "subscript" or {"shift": points} (positive raises). Super and subscript use the font's own OS/2 size and offset, else 58% size and a 33% shift. A raised run makes its line taller; the story text is unchanged.
 
 ```json
 {
   "arguments": {
-    "color": {
-      "swatch": "00000000-0000-87ea-8000-00000000001e",
-      "tint": 80
-    },
-    "frame_id": "00000000-0000-87ea-8000-000000000017"
+    "baseline": "superscript",
+    "end": 1,
+    "frame_id": "00000000-0000-87ea-8000-00000000000f",
+    "start": 0
   },
   "name": "text_apply_char_style"
 }
@@ -2469,12 +2473,14 @@ Result:
 
 ```json
 {
-  "affected_ids": [],
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000010"
+  ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "length": 0,
+  "length": 43,
   "overflowing": false,
-  "revision": 54,
-  "story_id": "00000000-0000-87ea-8000-000000000019"
+  "revision": 25,
+  "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
 
@@ -2534,7 +2540,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 219,
   "overflowing": false,
-  "revision": 25,
+  "revision": 29,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2564,7 +2570,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 219,
   "overflowing": false,
-  "revision": 26,
+  "revision": 30,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2616,7 +2622,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 220,
   "overflowing": false,
-  "revision": 30,
+  "revision": 34,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2645,7 +2651,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 220,
   "overflowing": false,
-  "revision": 31,
+  "revision": 35,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2699,7 +2705,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 220,
   "overflowing": false,
-  "revision": 32,
+  "revision": 36,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2768,7 +2774,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 220,
   "overflowing": false,
-  "revision": 33,
+  "revision": 37,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2851,7 +2857,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "new_story_id": "00000000-0000-87ea-8000-000000000019",
-  "revision": 36
+  "revision": 40
 }
 ```
 
@@ -3104,7 +3110,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 34
+  "revision": 38
 }
 ```
 
@@ -3341,7 +3347,7 @@ Result:
 
 ```json
 {
-  "revision": 36,
+  "revision": 40,
   "styles": [
     {
       "character": {
@@ -3393,7 +3399,7 @@ Result:
 
 ### `style_create`
 
-Create a named paragraph (default) or character style, optionally based_on another style. Properties: paragraph {align, line_spacing, space_before, space_after, indents}, character {font_family, font_size, bold, italic, underline, color, letter_spacing}.
+Create a named paragraph (default) or character style, optionally based_on another style. Properties: paragraph {align, line_spacing, space_before, space_after, indents}, character {font_family, font_size, bold, italic, underline, strikethrough, color, letter_spacing, baseline, caps, ligatures, kerning}.
 
 **Arguments**
 
@@ -3432,7 +3438,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37,
+  "revision": 41,
   "style_id": "00000000-0000-87ea-8000-00000000001a"
 }
 ```
@@ -3476,7 +3482,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 38
+  "revision": 42
 }
 ```
 
@@ -3503,7 +3509,7 @@ Result:
     "00000000-0000-87ea-8000-000000000005"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 43
 }
 ```
 
@@ -3543,7 +3549,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 44
 }
 ```
 
@@ -3576,7 +3582,7 @@ Result:
 
 ```json
 {
-  "revision": 54,
+  "revision": 58,
   "swatches": [
     {
       "name": "Brand Cyan",
@@ -3641,7 +3647,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 50,
+  "revision": 54,
   "swatch_id": "00000000-0000-87ea-8000-00000000001d"
 }
 ```
@@ -3676,7 +3682,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 51,
+  "revision": 55,
   "swatch_id": "00000000-0000-87ea-8000-00000000001e"
 }
 ```
@@ -3723,7 +3729,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 56
 }
 ```
 
@@ -3788,7 +3794,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 56
+  "revision": 60
 }
 ```
 
@@ -3909,7 +3915,7 @@ Result:
     "… 3 more"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 55
+  "revision": 59
 }
 ```
 
@@ -3958,7 +3964,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 44
+  "revision": 48
 }
 ```
 
@@ -4000,7 +4006,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 45
 }
 ```
 
@@ -4037,7 +4043,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 45
 }
 ```
 
@@ -4085,7 +4091,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000013",
   "pixel_height": 1200,
   "pixel_width": 1800,
-  "revision": 42
+  "revision": 46
 }
 ```
 
@@ -4123,7 +4129,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43
+  "revision": 47
 }
 ```
 
@@ -4500,7 +4506,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -4525,7 +4531,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -4563,7 +4569,7 @@ Result:
 
 ```json
 {
-  "bytes": 668612,
+  "bytes": 668662,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4571,7 +4577,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -4616,7 +4622,7 @@ Result:
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 67,
+  "revision": 71,
   "width": 596
 }
 ```
@@ -4658,7 +4664,7 @@ Result:
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAf3ElEQVR4nO2d… (10952 characters)",
-  "revision": 67,
+  "revision": 71,
   "width": 249
 }
 ```
@@ -4699,7 +4705,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 66
+  "revision": 70
 }
 ```
 
@@ -4737,7 +4743,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 67
+  "revision": 71
 }
 ```
 
@@ -4790,9 +4796,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 60 more"
+    "… 64 more"
   ],
-  "revision": 65
+  "revision": 69
 }
 ```
 
@@ -4974,7 +4980,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 7,
+    "schema_version": 8,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -4999,9 +5005,11 @@ Result:
           {
             "runs": [
               {
+                "baseline": "normal",
+                "caps": "none",
                 "color": "#C2410C",
                 "font_size": 40.0,
-                "text": "Spring Fair"
+                "…": "4 more keys"
               }
             ],
             "style": "00000000-0000-87ea-8000-000000000005"
@@ -5009,15 +5017,18 @@ Result:
           {
             "runs": [
               {
+                "baseline": "normal",
+                "caps": "none",
                 "color": "#C2410C",
                 "font_size": 40.0,
-                "text": "Saturday 12 May · "
+                "…": "4 more keys"
               },
               {
+                "baseline": "normal",
                 "bold": true,
+                "caps": "none",
                 "color": "#C2410C",
-                "font_size": 40.0,
-                "text": "Village Green"
+                "…": "5 more keys"
               }
             ],
             "style": "00000000-0000-87ea-8000-000000000005"
@@ -5132,13 +5143,13 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 67
+  "revision": 71
 }
 ```
 
 ### `validate`
 
-Check print readiness. Warnings: overflow, missing_font, low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame — each with a hint.
+Check print readiness. Warnings: overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame — each with a hint.
 
 _read-only_
 
@@ -5165,7 +5176,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 67,
+  "revision": 71,
   "warnings": [
     {
       "code": "overflow",
