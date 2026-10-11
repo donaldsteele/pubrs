@@ -116,10 +116,12 @@ onto the window to place it in the selected picture frame.
 
 **File → Import Publisher File…** (or dragging a `.pub` file onto the window)
 turns a Publisher 98, 2000, 2002 or later file into a new, unsaved publication.
-Pages, text boxes with their formatting and links, pictures (PNG, JPEG and GIF),
-rectangles, ellipses and lines with their colours, tables, the colour scheme
-(as swatches) and the master page come across. A report then lists everything
-that did not: pictures drawn as Windows metafiles are left as empty picture
+From Publisher 2002 and later files, pages, text boxes with their formatting
+and links, pictures (PNG, JPEG and GIF), rectangles, ellipses and lines with
+their colours, tables, the colour scheme (as swatches) and the master page come
+across. From Publisher 98 and 2000 files, pages, text boxes with their
+formatting and links, and the colour scheme come across; their pictures and
+shapes are not imported yet. A report then lists everything that did not: pictures drawn as Windows metafiles are left as empty picture
 frames, shapes of other kinds are skipped, and fonts you do not have are drawn
 with Liberation Sans. Save the result with **Save** to keep it as a `.pubrs`
 file. On the command line: `pubrs import old.pub -o new.pubrs`.
