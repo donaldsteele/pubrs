@@ -6,7 +6,14 @@
 //! story (double-click, Cmd+A, typing) → link it into the continuation frame
 //! so it flows → place and crop two photos → drag a frame on the canvas and
 //! undo it → export a PDF with bleed and embedded fonts → save, close,
-//! reopen → identical document JSON and byte-identical page renders.
+//! reopen → identical document JSON and byte-identical page renders →
+//! zoom to 800% with the keyboard and check a shape edge on screen is sharp
+//! (one texel per device pixel) → type into a 50-page publication and check
+//! the frame times `PUBRS_PERF` reports: no page is rasterised on the UI
+//! thread, and the UI thread's own work per frame stays small.
+//!
+//! Before each step the self-test waits until the render worker has drawn
+//! the current revision, so screenshots show the page.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -34,6 +41,27 @@ Easter, stollen and mince pies in December, and summer fruit tarts while the ber
 about our bread subscription, which brings a fresh loaf to your door twice a week.\n\
 Thank you for keeping a small bakery busy for more than thirty years.";
 
+/// Frames a step waits at most for the render worker (about 15 s at 60 Hz;
+/// software-rendered CI frames are slower, so this is a frame count).
+const SETTLE_FRAMES: u32 = 900;
+
+/// At 800% a pixel-aligned shape edge must put at least this share of its
+/// contrast between two neighbouring screen pixels. One texel per device
+/// pixel gives 100%; the old page texture capped at 4,096 px was magnified
+/// about 1.6x at 800% and spread an edge over two pixels (about 60%).
+const SHARP_EDGE: f32 = 0.9;
+
+/// Keystrokes typed into the 50-page publication.
+const KEYSTROKES: usize = 24;
+
+/// Most UI-thread time one frame may spend on its own work while typing,
+/// besides the command and the relayout: the canvas, panels, thumbnail
+/// checks and texture uploads (painting is not UI time, so slow software
+/// GPUs do not count). Before M13 each keystroke also rasterised the page
+/// here. Measured about 2.5 ms in this debug build on the development
+/// machine; the bound leaves room for slow CI runners.
+const MAX_UI_OVERHEAD_MS: f64 = 50.0;
+
 #[derive(Default)]
 struct Data {
     body: Option<FrameId>,
@@ -43,6 +71,14 @@ struct Data {
     images: Vec<FrameId>,
     json: Option<serde_json::Value>,
     pngs: Vec<Vec<u8>>,
+    /// The last screenshot taken.
+    shot: Option<std::sync::Arc<egui::ColorImage>>,
+    /// The shape whose edge is checked at 800%.
+    edge_frame: Option<FrameId>,
+    /// The 50-page publication and the text frame typed into.
+    big_doc: Option<pubrs_api::core::DocumentId>,
+    typed_frame: Option<FrameId>,
+    typed_from: u64,
 }
 
 pub struct SelfTest {
@@ -59,6 +95,14 @@ pub struct SelfTest {
     /// Input clock, one 60 Hz tick per frame, so double-clicks and drags do
     /// not depend on how fast this machine renders (software GPUs on CI).
     clock: f64,
+    /// Frames spent waiting for the render worker before the current step.
+    settling: u32,
+    /// The scenario ended; only the input clock still runs.
+    pub finished: bool,
+    /// A screenshot was asked for: taken once the canvas has caught up.
+    want_shot: bool,
+    /// Screenshots saved when the last one was requested, and frames waited.
+    shot_wait: Option<(usize, u32)>,
 }
 
 fn png(w: u32, h: u32, seed: u8) -> Vec<u8> {
@@ -85,6 +129,10 @@ impl SelfTest {
             started: Instant::now(),
             drop: None,
             clock: 0.0,
+            settling: 0,
+            finished: false,
+            want_shot: false,
+            shot_wait: None,
         }
     }
 
@@ -108,8 +156,10 @@ impl SelfTest {
         self.log.push(format!("ok  {m}"));
     }
 
-    fn screenshot(&mut self, ctx: &egui::Context) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+    /// Take a screenshot once the render worker has drawn the current state
+    /// (before the next step runs).
+    fn screenshot(&mut self, _ctx: &egui::Context) {
+        self.want_shot = true;
     }
 
     fn save_screenshots(&mut self, ctx: &egui::Context) {
@@ -123,6 +173,7 @@ impl SelfTest {
                 .collect()
         });
         for img in shots {
+            self.data.shot = Some(img.clone());
             self.shots += 1;
             let [w, h] = img.size;
             if let Some(mut pm) = tiny_skia::Pixmap::new(w as u32, h as u32) {
@@ -136,6 +187,26 @@ impl SelfTest {
                 }
             }
         }
+    }
+
+    /// The canvas shows the current revision at the current view: the render
+    /// worker has caught up with the document, the zoom and the page, and the
+    /// thumbnails the pages panel shows first are current.
+    fn rendered(app: &PubrsApp) -> bool {
+        let Some(v) = app.view() else {
+            return true;
+        };
+        let Ok(open) = app.session.get(Some(v.doc_id)) else {
+            return true;
+        };
+        let rev = open.revision();
+        let pages = open.doc().pages.len();
+        let canvas = v.page_tex.as_ref().is_some_and(|t| {
+            t.revision == rev
+                && t.key.page_index == v.page
+                && v.requested.is_none_or(|(k, r)| k == t.key && r == rev)
+        });
+        canvas && (0..pages.min(8)).all(|i| v.thumbs.get(&i).is_some_and(|t| t.revision == rev))
     }
 
     fn screen_of(app: &PubrsApp, p: Point) -> Option<Pos2> {
@@ -204,7 +275,8 @@ impl SelfTest {
         ctx: &egui::Context,
     ) -> Option<Result<String, String>> {
         self.save_screenshots(ctx);
-        if self.started.elapsed().as_secs() > 180 {
+        // Generous: CI draws the window in software, several frames a second.
+        if self.started.elapsed().as_secs() > 300 {
             return Some(Err(format!(
                 "timed out at step {}\n{}",
                 self.step,
@@ -213,6 +285,26 @@ impl SelfTest {
         }
         if !self.pending.is_empty() || self.wait > 0 {
             self.wait = self.wait.saturating_sub(1);
+            return None;
+        }
+        // Let the render worker catch up (bounded: a step that needs the
+        // pixels checks them itself).
+        if let Some((n, waited)) = self.shot_wait {
+            if self.shots <= n && waited < 120 {
+                self.shot_wait = Some((n, waited + 1));
+                return None;
+            }
+            self.shot_wait = None;
+        }
+        if !Self::rendered(app) && self.settling < SETTLE_FRAMES {
+            self.settling += 1;
+            return None;
+        }
+        self.settling = 0;
+        if self.want_shot {
+            self.want_shot = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            self.shot_wait = Some((self.shots, 0));
             return None;
         }
         let r = self.run_step(app, ctx);
@@ -562,10 +654,212 @@ impl SelfTest {
                 }
                 app.autosave.forget(id);
                 self.ok("autosave wrote a recovery copy for unsaved changes");
+                self.ok(format!("canvas rendering: {}", app.renderer.describe()));
+            }
+            16 => {
+                // A dark rectangle on white near the page corner, where the
+                // view lands when zooming in; then zoom with Cmd+Plus.
+                if let Some(v) = app.view_mut() {
+                    v.page = 0;
+                    v.selection.clear();
+                }
+                for (fill, x, y, w, h) in [
+                    ("#FFFFFF", 16.0, 16.0, 60.0, 44.0),
+                    ("#1E3A8A", 24.0, 24.0, 30.0, 20.0),
+                ] {
+                    let req: pubrs_api::tools::frames::FrameAddShape =
+                        serde_json::from_value(serde_json::json!({
+                            "shape": "rectangle", "x": x, "y": y, "width": w, "height": h,
+                            "fill": fill, "stroke": "none",
+                        }))
+                        .map_err(|e| e.to_string())?;
+                    let out = app.session.frame_add_shape(req).map_err(|e| e.message)?;
+                    self.data.edge_frame = Some(out.frame_id);
+                }
+                let zoom = app.view().map_or(1.0, |v| v.effective_zoom).max(0.05);
+                let presses = ((8.0 / zoom).ln() / 1.25f32.ln()).ceil().max(0.0) as usize + 1;
+                for _ in 0..presses {
+                    self.key(Key::Plus, Modifiers::COMMAND);
+                }
+            }
+            17 => {
+                let zoom = app.view().map_or(0.0, |v| v.effective_zoom);
+                if (zoom - 8.0).abs() > 1e-3 {
+                    return Err(format!(
+                        "Cmd+Plus reached {:.0}% zoom, not 800%",
+                        zoom * 100.0
+                    ));
+                }
+                let ppp = ctx.pixels_per_point();
+                let t = app
+                    .view()
+                    .and_then(|v| v.page_tex.as_ref())
+                    .ok_or("no page texture at 800%")?;
+                let want = 72.0 * 8.0 * f64::from(ppp);
+                if (t.key.dpi - want).abs() > 1e-6 {
+                    return Err(format!(
+                        "the texture is at {:.0} dpi, not one texel per device pixel ({want:.0} dpi)",
+                        t.key.dpi
+                    ));
+                }
+                let setup = app.doc().ok_or("no doc")?.setup;
+                let page_w = ((setup.size.width + 2.0 * setup.bleed) * want / 72.0).ceil();
                 self.ok(format!(
-                    "page rendering backend: {}",
-                    app.session.render_backend()
+                    "zoomed to 800% with Cmd+Plus: the canvas texture covers {}x{} device pixels of the {page_w:.0} px wide page, one texel per pixel (no 4,096 px cap)",
+                    t.key.region.width, t.key.region.height
                 ));
+                self.screenshot(ctx);
+            }
+            18 => {
+                let shot = self.data.shot.clone().ok_or("no screenshot at 800%")?;
+                let edge = self.data.edge_frame.ok_or("no probe")?;
+                let r = app
+                    .doc()
+                    .and_then(|d| d.frame(edge))
+                    .map(|f| f.rect)
+                    .ok_or("probe missing")?;
+                let p = Self::screen_of(app, Point::new(r.x, r.y + r.height / 2.0))
+                    .ok_or("no canvas")?;
+                let ppp = ctx.pixels_per_point();
+                let (ex, ey) = ((p.x * ppp).round() as i64, (p.y * ppp).round() as i64);
+                let [w, h] = shot.size;
+                let lum = |x: i64| -> Option<f32> {
+                    if x < 0 || ey < 0 || x >= w as i64 || ey >= h as i64 {
+                        return None;
+                    }
+                    let c = shot.pixels[ey as usize * w + x as usize];
+                    Some(
+                        0.2126 * f32::from(c.r())
+                            + 0.7152 * f32::from(c.g())
+                            + 0.0722 * f32::from(c.b()),
+                    )
+                };
+                let row: Vec<f32> = (ex - 6..=ex + 6)
+                    .map(lum)
+                    .collect::<Option<_>>()
+                    .ok_or("the probe edge is off screen")?;
+                let outside = row[..3].iter().sum::<f32>() / 3.0;
+                let inside = row[row.len() - 3..].iter().sum::<f32>() / 3.0;
+                let contrast = (outside - inside).abs();
+                if contrast < 60.0 {
+                    return Err(format!(
+                        "no edge where the probe should be ({contrast:.0} levels of contrast)"
+                    ));
+                }
+                let step = row
+                    .windows(2)
+                    .map(|p| (p[1] - p[0]).abs())
+                    .fold(0.0f32, f32::max);
+                let sharp = step / contrast;
+                if sharp < SHARP_EDGE {
+                    return Err(format!(
+                        "at 800% the edge is blurred: the largest step between neighbouring pixels is {:.0}% of its contrast (need {:.0}%)",
+                        sharp * 100.0,
+                        SHARP_EDGE * 100.0
+                    ));
+                }
+                self.ok(format!(
+                    "at 800% a shape edge is sharp on screen: {:.0}% of its contrast lies between two neighbouring pixels",
+                    sharp * 100.0
+                ));
+                // Remove the probe (two undo steps) and fit the page again.
+                self.key(Key::Z, Modifiers::COMMAND);
+                self.key(Key::Z, Modifiers::COMMAND);
+                self.key(Key::Num0, Modifiers::COMMAND);
+            }
+            19 => {
+                let (doc, _) = pubrs_api::perf::build(&pubrs_api::perf::PerfSpec::scaled(50, 1))
+                    .map_err(|e| e.message)?;
+                let id = app.session.insert(doc, None);
+                app.add_view(id);
+                self.data.big_doc = Some(id);
+                let d = app.doc().ok_or("no doc")?;
+                self.data.typed_frame = d.pages[0].frames.iter().copied().find(|f| {
+                    d.frame(*f)
+                        .is_some_and(|f| f.kind() == pubrs_api::core::FrameKind::Text)
+                });
+                let n = d.pages.len();
+                self.ok(format!(
+                    "opened a {n}-page publication ({} frames, {} stories)",
+                    d.frames.len(),
+                    d.stories.len()
+                ));
+            }
+            20 => {
+                let frame = self.data.typed_frame.ok_or("no text frame on page 1")?;
+                let r = app
+                    .doc()
+                    .and_then(|d| d.frame(frame))
+                    .map(|f| f.rect)
+                    .ok_or("no text frame")?;
+                let pos = Self::screen_of(app, r.center()).ok_or("canvas not laid out")?;
+                self.click(pos, true);
+            }
+            21 => {
+                let editing = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame);
+                if editing != self.data.typed_frame {
+                    return Err(format!(
+                        "double-click did not start editing the 50-page publication ({editing:?})"
+                    ));
+                }
+                let stats = app.perf.get_or_insert_with(crate::perf::FrameStats::fresh);
+                stats.reset_totals();
+                self.data.typed_from = app.session.get(None).map_or(0, |o| o.revision());
+                for _ in 0..KEYSTROKES {
+                    self.pending.push_back(vec![Event::Text("x".to_string())]);
+                }
+            }
+            22 => {
+                // The step only runs once the worker has drawn the last
+                // keystroke (or the settle limit passed).
+                if !Self::rendered(app) {
+                    return Err("the canvas did not catch up with typing".into());
+                }
+                let rev = app.session.get(None).map_or(0, |o| o.revision());
+                let typed = rev.saturating_sub(self.data.typed_from);
+                if typed < KEYSTROKES as u64 {
+                    return Err(format!(
+                        "{typed} of {KEYSTROKES} keystrokes reached the document"
+                    ));
+                }
+                let t = app.perf.as_ref().map(|p| p.totals()).ok_or("no stats")?;
+                let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+                let line = format!(
+                    "perf while typing {KEYSTROKES} keys into 50 pages: {} frames, ui {:.2} ms avg / {:.2} ms max (without commands and layout {:.2} ms max; commands {:.1} ms, layout {:.1} ms), ui-thread rasters {}, worker renders {} ({:.1} ms), uploaded {} kpx",
+                    t.frames,
+                    ms(t.ui) / f64::from(t.frames.max(1)),
+                    ms(t.ui_max),
+                    ms(t.overhead_max),
+                    ms(t.command),
+                    ms(t.layout),
+                    t.ui_rasters,
+                    t.worker_renders,
+                    ms(t.worker_time),
+                    t.uploaded_px / 1000,
+                );
+                tracing::info!("{line}");
+                if t.ui_rasters > 0 {
+                    return Err(format!(
+                        "{} page(s) were rasterised on the UI thread while typing\n{line}",
+                        t.ui_rasters
+                    ));
+                }
+                if t.worker_renders == 0 {
+                    return Err(format!(
+                        "the render worker drew nothing while typing\n{line}"
+                    ));
+                }
+                if ms(t.overhead_max) > MAX_UI_OVERHEAD_MS {
+                    return Err(format!(
+                        "a frame spent {:.1} ms of UI-thread time besides commands and layout (limit {MAX_UI_OVERHEAD_MS} ms)\n{line}",
+                        ms(t.overhead_max)
+                    ));
+                }
+                self.ok(format!(
+                    "typed {KEYSTROKES} keys into a 50-page publication: no page rasterised on the UI thread, worst frame {:.1} ms besides commands and layout (limit {MAX_UI_OVERHEAD_MS} ms)",
+                    ms(t.overhead_max)
+                ));
+                self.ok(line);
                 return Ok(true);
             }
             _ => return Ok(true),

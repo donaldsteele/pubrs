@@ -124,7 +124,16 @@ pub struct PubrsApp {
     saved_settings: Option<Settings>,
     pub perf: Option<crate::perf::FrameStats>,
     pub window: WindowRenderer,
+    /// Draws the canvas and thumbnails off the UI thread.
+    pub renderer: crate::render_worker::RenderWorker,
+    /// Times the render worker was started again after its thread died.
+    renderer_restarts: u32,
 }
+
+/// Failed renders of one view retried before giving up until it changes.
+pub const MAX_RENDER_RETRIES: u32 = 3;
+/// Times a dead render worker is started again.
+const MAX_RENDERER_RESTARTS: u32 = 3;
 
 impl PubrsApp {
     pub fn new(
@@ -173,6 +182,8 @@ impl PubrsApp {
             saved_settings: None,
             perf: crate::perf::FrameStats::from_env(),
             window: WindowRenderer::detect(cc),
+            renderer: crate::render_worker::RenderWorker::new(cc.egui_ctx.clone()),
+            renderer_restarts: 0,
         };
         app.load_settings();
         app.fonts = app
@@ -187,7 +198,7 @@ impl PubrsApp {
                 "no GPU driver for the window: drawing on the CPU is slow and uses a lot of it"
             );
         }
-        tracing::info!(backend = %app.session.render_backend(), "page rendering backend");
+        tracing::info!(canvas = %app.renderer.describe(), "page rendering");
         for f in &args.files {
             app.open_path(f);
         }
@@ -243,7 +254,7 @@ impl PubrsApp {
         self.status = Some((format!("{} — {}", e.message, e.hint), Instant::now()));
     }
 
-    fn add_view(&mut self, doc_id: DocumentId) {
+    pub(crate) fn add_view(&mut self, doc_id: DocumentId) {
         self.views.push(DocView::new(doc_id));
         self.active = Some(self.views.len() - 1);
         self.session.set_current(doc_id);
@@ -262,7 +273,11 @@ impl PubrsApp {
         let Some(id) = self.doc_id() else {
             return false;
         };
+        let t0 = Instant::now();
         let r = self.session.exec(Some(id), command);
+        if let Some(p) = &mut self.perf {
+            p.command(t0.elapsed());
+        }
         self.report(r).is_some()
     }
 
@@ -271,8 +286,152 @@ impl PubrsApp {
         let Some(id) = self.doc_id() else {
             return false;
         };
+        let t0 = Instant::now();
         let r = self.session.exec_coalesced(Some(id), command, key);
+        if let Some(p) = &mut self.perf {
+            p.command(t0.elapsed());
+        }
         self.report(r).is_some()
+    }
+
+    /// Bring a document's layout up to date, timed for the frame statistics
+    /// (layout is the one cost of an edit the UI thread keeps).
+    pub fn layout_timed(&mut self, doc_id: DocumentId) -> Result<(), ApiError> {
+        let t0 = Instant::now();
+        let r = self.session.layout(Some(doc_id)).map(drop);
+        if let Some(p) = &mut self.perf {
+            p.layout(t0.elapsed());
+        }
+        r
+    }
+
+    /// Put what the render worker finished on screen: full renders replace
+    /// a view's texture, damage repaints update parts of it, thumbnails
+    /// replace theirs. Only uploads happen here.
+    fn apply_renders(&mut self, ctx: &egui::Context) {
+        use crate::render_worker::Rendered;
+        use crate::view::{PageTexture, Thumb};
+        let opts = egui::TextureOptions::LINEAR;
+        let polled = self.renderer.poll();
+        for r in polled.results {
+            match r {
+                Rendered::View(v) => {
+                    if let Some(p) = &mut self.perf {
+                        p.worker(v.spent);
+                        p.upload(v.patches.iter().map(|(r, _)| r.area()).sum());
+                    }
+                    let Some(view) = self.views.iter_mut().find(|d| d.doc_id == v.key.doc_id)
+                    else {
+                        continue;
+                    };
+                    if v.key.generation != view.tex_generation {
+                        continue;
+                    }
+                    view.render_failures = 0;
+                    if v.full {
+                        let Some((_, img)) = v.patches.into_iter().next() else {
+                            continue;
+                        };
+                        match &mut view.page_tex {
+                            Some(t) => {
+                                t.texture.set(img, opts);
+                                t.key = v.key;
+                                t.revision = v.revision;
+                            }
+                            None => {
+                                let texture =
+                                    ctx.load_texture(format!("page-{}", v.key.doc_id), img, opts);
+                                view.page_tex = Some(PageTexture {
+                                    key: v.key,
+                                    revision: v.revision,
+                                    texture,
+                                });
+                            }
+                        }
+                    } else if let Some(t) = &mut view.page_tex
+                        && t.key == v.key
+                    {
+                        for (r, img) in v.patches {
+                            t.texture
+                                .set_partial([r.x as usize, r.y as usize], img, opts);
+                        }
+                        t.revision = v.revision;
+                    } else {
+                        // Out of step with the worker: start over in full.
+                        view.tex_generation += 1;
+                        view.requested = None;
+                    }
+                }
+                Rendered::Thumb(t) => {
+                    if let Some(p) = &mut self.perf {
+                        p.worker(t.spent);
+                    }
+                    let Some(view) = self.views.iter_mut().find(|d| d.doc_id == t.doc_id) else {
+                        continue;
+                    };
+                    let texture = ctx.load_texture(
+                        format!("thumb-{}-{}", t.doc_id, t.page_index),
+                        t.image,
+                        opts,
+                    );
+                    view.thumbs.insert(
+                        t.page_index,
+                        Thumb {
+                            revision: t.revision,
+                            fingerprint: t.fingerprint,
+                            texture,
+                        },
+                    );
+                }
+                Rendered::Failed {
+                    doc_id,
+                    page_index,
+                    message,
+                } => {
+                    tracing::warn!("page render failed: {message}");
+                    let view = doc_id.and_then(|d| self.views.iter_mut().find(|v| v.doc_id == d));
+                    if let Some(view) = view {
+                        // Ask again (the worker now draws in full), a few
+                        // times: a render that always fails must not spin.
+                        if view.render_failures < MAX_RENDER_RETRIES {
+                            view.render_failures += 1;
+                            match page_index {
+                                Some(i) => {
+                                    view.thumbs_requested.remove(&i);
+                                }
+                                None => view.requested = None,
+                            }
+                        }
+                    }
+                    self.status = Some((
+                        format!("Could not draw the page: {message}"),
+                        Instant::now(),
+                    ));
+                }
+            }
+        }
+        if polled.stopped {
+            tracing::error!("the render worker stopped");
+            if self.renderer_restarts < MAX_RENDERER_RESTARTS {
+                self.renderer_restarts += 1;
+                self.renderer = crate::render_worker::RenderWorker::new(ctx.clone());
+                // The new worker has drawn nothing: every view asks again.
+                for v in &mut self.views {
+                    v.requested = None;
+                    v.thumbs_requested.clear();
+                    v.tex_generation += 1;
+                }
+                self.status = Some((
+                    "Page drawing stopped unexpectedly and was restarted".into(),
+                    Instant::now(),
+                ));
+            } else {
+                self.status = Some((
+                    "Page drawing stopped; save your work and restart pubrs".into(),
+                    Instant::now(),
+                ));
+            }
+        }
     }
 
     pub fn selection(&self) -> Vec<FrameId> {
@@ -1096,6 +1255,7 @@ impl eframe::App for PubrsApp {
                 self.run_action(&ctx, a);
             }
         }
+        self.apply_renders(&ctx);
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close {
             if self.dirty_docs().is_empty() || self.args.smoke_test {
                 self.allow_close = true;
@@ -1128,15 +1288,18 @@ impl eframe::App for PubrsApp {
             self.save_settings();
         }
         if let Some(mut t) = self.selftest.take() {
-            let done = t.step(self, &ctx);
-            if let Some(result) = done {
-                self.outcome.borrow_mut().self_test = Some(result);
-                self.allow_close = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            } else {
-                self.selftest = Some(t);
+            if !t.finished {
+                if let Some(result) = t.step(self, &ctx) {
+                    self.outcome.borrow_mut().self_test = Some(result);
+                    self.allow_close = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    // Keep feeding its clock until the window closes: egui
+                    // must not see time go back to the real clock.
+                    t.finished = true;
+                }
+                ctx.request_repaint();
             }
-            ctx.request_repaint();
+            self.selftest = Some(t);
         }
         if self.args.smoke_test {
             if self.frames_drawn >= 3 {
@@ -1152,7 +1315,12 @@ impl eframe::App for PubrsApp {
             self.status = None;
         }
         if let Some(p) = &mut self.perf {
-            p.frame(&ctx, started.elapsed(), frame.info().cpu_usage);
+            p.frame(
+                &ctx,
+                started.elapsed(),
+                frame.info().cpu_usage,
+                self.session.rasters_drawn(),
+            );
         }
     }
 }

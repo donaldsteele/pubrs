@@ -95,9 +95,20 @@ rotation).
 
 ## Rendering paths
 
-- Raster: tiny-skia, deterministic, used for PNG export, previews, golden
-  tests and the GUI when no GPU adapter exists. vello (wgpu) is used by the
-  GUI when an adapter is available; the active path is logged.
+- Raster: tiny-skia, deterministic. `RasterRenderer` draws a page (or a
+  `Region` of the page raster) on one thread: PNG export, previews,
+  thumbnails stored in files and golden tests. `TileRenderer`
+  (`pubrs-render/src/tiles.rs`) draws a region as parallel tiles on
+  `std::thread::scope` and is byte-identical to the untiled render (plan
+  Locked Decision 4, `crates/pubrs-render/tests/tiles.rs`). Every tile is
+  drawn into a scratch the size of the whole region with the region's own
+  transform, so tiny-skia sees the same coordinates, clip and pixel centres
+  as the untiled render; primitives that miss a tile are skipped, axis-aligned
+  rectangles and image clips are cut to the tile, and opacity layers and SVGs
+  are composited over the tile only. A memory budget caps how many
+  region-sized scratches exist at once (ADR 0013).
+- vello (wgpu, feature `gpu`): only `Session::page_rgba`, one-shot whole
+  pages for API clients. The GUI does not use it (ADR 0013).
 - PDF: krilla, with subset/embedded fonts, bleed, crop marks and
   MediaBox/BleedBox/TrimBox/CropBox set. Printing on every OS prints this PDF.
 
@@ -155,13 +166,50 @@ folder. A text placeholder counts as unfilled while its text equals its hint.
 
 `pubrs-app` (egui/eframe) is a client of the same `Session`: every edit is an
 API call or a `Command` executed through `Session::exec` (typing uses
-`exec_coalesced` so a burst of keystrokes is one undo step). Pages are
-rendered by `Session::page_rgba` (vello on the GPU when available, else
-tiny-skia) into a texture; selection handles, guides, the text caret and
-selection are egui overlays computed from the layout (`textedit.rs`). Each
-egui frame, the canvas reads a snapshot of the current page only (the page,
-its master, their frames, the stories they show, the selection and the story
-being edited), never a copy of the whole document.
+`exec_coalesced` so a burst of keystrokes is one undo step). Selection
+handles, guides, the text caret and selection are egui overlays computed from
+the layout (`textedit.rs`).
+
+### Render pipeline (M13, ADR 0013)
+
+No page is rasterised on the UI thread while editing. Per edit:
+
+1. The command is applied to the `Arc`-shared model; `Change.touched` names
+   what it changed and `Session` keeps the last 256 in a change log
+   (`OpenDoc::changes_since`).
+2. The layout cache recomposes the changed stories (ADR 0012).
+3. Each egui frame the canvas takes a `PageSnapshot` (`Session::page_snapshot`):
+   an `Arc<Document>` holding only the page, its master, their frames, the
+   stories they show, the selection and the story being edited, plus the
+   `Arc<DocumentLayout>` and an `ImageSnapshot` of the decoded images.
+   It costs what the page holds.
+4. When the revision, page, zoom or visible area changes, the canvas sends a
+   `ViewRequest` to the render worker (`render_worker.rs`, one thread,
+   newest request wins). The request names a region of the page raster at
+   device resolution (72 × zoom × pixels per point): the visible pixels plus
+   25% of the viewport on each side, clipped to the page and to the GPU's
+   largest texture (the margin gives way first). The texture keeps its
+   region while the visible pixels stay inside it and the page raster size
+   is unchanged.
+5. The worker keeps the snapshot behind the pixels it last sent. For the same
+   region it computes the page damage (`pubrs-render/src/damage.rs`) from the
+   logged `Touched` and the old and new layouts and renders only the damaged
+   rectangles as tiles; otherwise the whole region. It never touches the
+   `Session`. Each job runs under `catch_unwind`: a failure is reported and
+   the next request is drawn in full; a dead worker thread is restarted.
+6. The UI applies results in order: a full render replaces the texture, a
+   damage repaint updates parts of it with `TextureHandle::set_partial`.
+   Until a new texture lands the previous one is drawn, scaled and offset.
+   The page origin is snapped to device pixels, so the texture is one texel
+   per screen pixel (sharp at 800%; there is no texture size cap).
+7. Page thumbnails are drawn by the same worker behind the viewport. A
+   thumbnail is redrawn only when the page's fingerprint
+   (`page_fingerprint`) changed.
+
+Images keep half-size mip levels (`RasterImage::mips`, built on first use)
+that only the GUI (the viewport and the page panel's thumbnails) samples, when
+an image is drawn at less than half its size; exports, the thumbnail stored in
+saved files and goldens never do.
 
 - `keymap.rs` is the single table of actions, shortcuts (`Modifiers::COMMAND`
   = Cmd on macOS, Ctrl elsewhere) and menus; the egui menu bar and the native

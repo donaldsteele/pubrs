@@ -16,9 +16,14 @@ use std::fmt;
 use std::time::Instant;
 
 use pubrs_core::*;
-use pubrs_render::raster::RasterOptions;
+use pubrs_render::raster::{MAX_PIXELS_PER_SIDE, RasterOptions};
+use pubrs_render::{
+    PageScene, PixelRect, Region, RenderError, TileOptions, TileRenderer, pixel_size,
+};
 
 use crate::error::{ApiError, ApiResult};
+use crate::session::touched_between;
+use crate::tools::export::{damage_pixels, viewport_region};
 use crate::{Session, SessionConfig};
 
 /// The page count the informational budgets were recorded at (M9).
@@ -94,6 +99,18 @@ pub const BUDGETS: &[(usize, &str, Budget)] = &[
     // bound at 200 pages (ADR 0001 addendum).
     (50, "keystroke.command", enforced(2.0)),
     (200, "keystroke.command", enforced(0.5)),
+    // M13: viewport rendering off the UI thread (ADR 0013). A full repaint
+    // of a 2880x1800 device-pixel viewport at 100% on a HiDPI screen (the
+    // whole page at 144 dpi plus the 25% margin, clipped to the page) in
+    // parallel tiles. Plan bounds: 16 ms on the development machine (16
+    // cores) at 200 pages, 40 ms on CI at 50 pages.
+    (200, "viewport.100", enforced(16.0)),
+    (50, "viewport.100", enforced(40.0)),
+    // The keystroke is now command + layout + damage repaint (only the
+    // lines that changed, tiled), as the GUI's render worker draws it. The
+    // 50-page CI bound (60 ms, M11) stays; the plan's dev-machine bound at
+    // 200 pages is 30 ms.
+    (200, "keystroke.total", enforced(30.0)),
 ];
 
 fn budget_for(key: &str, pages: usize) -> Option<Budget> {
@@ -351,7 +368,9 @@ const FRAMES_PER_PAGE: usize = 10;
 const FRAMES_PER_STORY: usize = 50;
 const ASSETS: usize = 25;
 
-fn build(spec: &PerfSpec) -> ApiResult<(Document, Vec<StoryId>)> {
+/// Build the synthetic document (and the head story of every chain). Used
+/// by `run` and by the GUI self-test, which types into a 50-page copy.
+pub fn build(spec: &PerfSpec) -> ApiResult<(Document, Vec<StoryId>)> {
     let mut b = DocBuilder::new(SeqIds::new(1), PageSetup::default());
     let mut rng = Rng(0x5eed);
     let (aw, ah) = (800u32, 600u32);
@@ -459,6 +478,60 @@ fn opts(dpi: f64) -> RasterOptions {
     }
 }
 
+/// Device pixels of the viewport the budgets are set for (a 15-inch
+/// 2880x1800 HiDPI screen).
+const VIEWPORT: (u32, u32) = (2880, 1800);
+
+/// The region the render worker draws for a `VIEWPORT` centred on the page
+/// at `dpi`: the visible pixels plus a 25% margin, clipped to the page.
+fn viewport(scene: &PageScene, dpi: f64) -> ApiResult<Region> {
+    let opts = opts(dpi);
+    let (pw, ph) = pixel_size(scene, &opts);
+    let visible = PixelRect::new(
+        (pw as i32 - VIEWPORT.0 as i32) / 2,
+        (ph as i32 - VIEWPORT.1 as i32) / 2,
+        VIEWPORT.0,
+        VIEWPORT.1,
+    );
+    let rect = viewport_region(visible, (pw, ph), MAX_PIXELS_PER_SIDE)
+        .ok_or_else(|| ApiError::internal("the viewport misses the page"))?;
+    Ok(Region {
+        opts,
+        rect,
+        mips: true,
+    })
+}
+
+fn render_error(e: RenderError) -> ApiError {
+    ApiError::new("export_failed", e.to_string(), "try a smaller zoom")
+}
+
+/// Index of the page whose frame shows story offset `at`.
+fn page_showing(
+    s: &mut Session,
+    doc_id: DocumentId,
+    story: StoryId,
+    at: usize,
+) -> ApiResult<usize> {
+    let layout = s.layout(Some(doc_id))?;
+    let doc = s.get(Some(doc_id))?.doc();
+    let frame = layout
+        .stories
+        .get(&story)
+        .and_then(|l| {
+            l.frames
+                .iter()
+                .find(|(_, t)| t.chars.contains(&at))
+                .map(|(f, _)| *f)
+        })
+        .ok_or_else(|| ApiError::internal("the typed-on text is not shown"))?;
+    match doc.owner_of(frame) {
+        Some(Owner::Page(p)) => doc
+            .page_index(p)
+            .ok_or_else(|| ApiError::internal("the typed-on page is missing")),
+        _ => Err(ApiError::internal("the typed-on frame is not on a page")),
+    }
+}
 /// Build the document and take every measurement (software raster, bundled
 /// fonts only).
 pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
@@ -543,15 +616,19 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
     // Warm image decode and glyph caches.
     s.page_rgba(Some(doc_id), mid, &opts(144.0))?;
     for (key, label, dpi) in [
-        ("render.25", "render page at 25% (36 dpi)", 36.0),
+        (
+            "render.25",
+            "render page at 25% (36 dpi, one-shot page_rgba)",
+            36.0,
+        ),
         (
             "render.100",
-            "render page at 100% on HiDPI (144 dpi, 1224x1584)",
+            "render page at 100% on HiDPI (144 dpi, one-shot page_rgba)",
             144.0,
         ),
         (
             "render.400",
-            "render page at 400% on HiDPI (capped 4096 px texture)",
+            "render page 4096 px tall (one-shot page_rgba)",
             4096.0 * 72.0 / 792.0,
         ),
     ] {
@@ -573,21 +650,57 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         ms,
     );
 
-    // Keystroke, as the GUI does it: one coalesced InsertText, then the page
-    // texture is re-rendered because the revision changed.
+    // The viewport (M13): what the GUI's render worker does for a full
+    // repaint, in parallel tiles off the UI thread.
+    let mut tiles = TileRenderer::new(TileOptions::auto());
+    let threads = tiles.options().threads;
+    let snap = s.page_snapshot(Some(doc_id), mid, &[], None)?;
+    for (key, label, zoom) in [
+        (
+            "viewport.100",
+            format!("render 2880x1800 viewport at 100% on HiDPI ({threads} threads)"),
+            1.0,
+        ),
+        (
+            "viewport.400",
+            format!("render 2880x1800 viewport at 400% on HiDPI ({threads} threads)"),
+            4.0,
+        ),
+    ] {
+        let ms = median_ms(runs, || {
+            let scene = snap.scene()?;
+            let region = viewport(&scene, 144.0 * zoom)?;
+            let full = PixelRect::new(0, 0, region.rect.width, region.rect.height);
+            tiles
+                .render_rects(&scene, &snap.images, &region, &[full])
+                .map_err(render_error)?;
+            Ok(())
+        })?;
+        push(&mut rep, key, label, ms);
+    }
+
+    // Keystroke, as the GUI does it: one coalesced InsertText, relayout,
+    // then the render worker redraws what changed on the page being typed
+    // on (damage repaint, tiled) in the 100% viewport.
     let story = *stories
         .get(stories.len() / 2)
         .ok_or_else(|| ApiError::internal("the test document has no stories"))?;
-    let (mut t_exec, mut t_layout, mut t_raster, mut t_total) = (vec![], vec![], vec![], vec![]);
-    let (mut t_keys, mut recomposed) = (vec![], 0);
-    for k in 0..runs {
-        let t0 = Instant::now();
-        let len = s
-            .get(Some(doc_id))?
+    let story_len = |s: &Session| -> ApiResult<usize> {
+        Ok(s.get(Some(doc_id))?
             .doc()
             .story(story)
             .ok_or_else(|| ApiError::not_found("story", "perf", "internal"))?
-            .char_len();
+            .char_len())
+    };
+    let middle = story_len(&s)? / 2;
+    let typed_on = page_showing(&mut s, doc_id, story, middle)?;
+    let mut shown = s.page_snapshot(Some(doc_id), typed_on, &[], None)?;
+    let (mut t_exec, mut t_layout, mut t_raster, mut t_total) = (vec![], vec![], vec![], vec![]);
+    let (mut t_keys, mut recomposed) = (vec![], 0);
+    let (mut damaged_px, mut region_px) = (0u64, 0u64);
+    for k in 0..runs {
+        let t0 = Instant::now();
+        let len = story_len(&s)?;
         s.exec_coalesced(
             Some(doc_id),
             Command::InsertText {
@@ -604,13 +717,30 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         let stats = s.layout_stats(Some(doc_id))?;
         t_keys.push(stats.key_time.as_secs_f64() * 1000.0);
         recomposed = recomposed.max(stats.recomposed);
-        s.page_rgba(Some(doc_id), mid, &opts(144.0))?;
+        let snap = s.page_snapshot(Some(doc_id), typed_on, &[], None)?;
+        let changes = s.get(Some(doc_id))?.changes_since(shown.revision);
+        let touched = touched_between(&changes, shown.revision, snap.revision);
+        let damage = snap.damage_since(&shown, touched.as_ref());
+        let scene = snap.scene()?;
+        let region = viewport(&scene, 144.0)?;
+        let full = PixelRect::new(0, 0, region.rect.width, region.rect.height);
+        let rects = damage_pixels(&damage, &scene, &region).unwrap_or_else(|| vec![full]);
+        tiles
+            .render_rects(&scene, &snap.images, &region, &rects)
+            .map_err(render_error)?;
         let t3 = Instant::now();
+        damaged_px += rects.iter().map(PixelRect::area).sum::<u64>();
+        region_px += full.area();
+        shown = snap;
         t_exec.push((t1 - t0).as_secs_f64() * 1000.0);
         t_layout.push((t2 - t1).as_secs_f64() * 1000.0);
         t_raster.push((t3 - t2).as_secs_f64() * 1000.0);
         t_total.push((t3 - t0).as_secs_f64() * 1000.0);
     }
+    rep.notes.push(format!(
+        "keystroke damage: {:.1}% of the page redrawn on average",
+        100.0 * damaged_px as f64 / region_px.max(1) as f64
+    ));
     push(
         &mut rep,
         "keystroke.command",
@@ -636,7 +766,7 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
     push(
         &mut rep,
         "keystroke.render",
-        "keystroke: re-render page at 144 dpi".into(),
+        "keystroke: damage repaint, tiled (worker, 144 dpi)".into(),
         median(t_raster),
     );
     push(

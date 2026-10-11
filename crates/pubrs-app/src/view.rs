@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use eframe::egui::{self, Pos2, Vec2};
 use pubrs_api::core::{Document, FrameId, Owner, Parent, Point, Rect};
 
+use crate::render_worker::ViewKey;
 use crate::textedit::TextEdit;
 
 /// Page-space ↔ screen-space mapping for the page being shown.
@@ -255,12 +256,36 @@ pub enum Drag {
     TextSelect,
 }
 
-/// Rendered page texture and what it was rendered for.
+/// The canvas texture: a viewport-sized region of the page raster at
+/// device resolution, filled by the render worker.
 pub struct PageTexture {
-    pub key: (u64, usize, u32),
+    /// What it shows (page, resolution, region of the page raster).
+    pub key: ViewKey,
+    /// The document revision its pixels show.
+    pub revision: u64,
     pub texture: egui::TextureHandle,
-    /// Size in page points covered by the texture (trim + 2 × bleed).
-    pub covers: Vec2,
+}
+
+impl PageTexture {
+    /// Screen rectangle the texture covers, for a page whose bleed box
+    /// starts at `bleed_min` (screen points) shown at `zoom`. When the zoom
+    /// changed since it was drawn, the old pixels are shown scaled.
+    pub fn screen_rect(&self, bleed_min: Pos2, zoom: f32) -> egui::Rect {
+        let k = (72.0 / self.key.dpi) as f32 * zoom;
+        let r = self.key.region;
+        egui::Rect::from_min_size(
+            bleed_min + Vec2::new(r.x as f32 * k, r.y as f32 * k),
+            Vec2::new(r.width as f32 * k, r.height as f32 * k),
+        )
+    }
+}
+
+/// A page thumbnail and what it shows.
+pub struct Thumb {
+    pub revision: u64,
+    /// `PageSnapshot::fingerprint` of the page it shows.
+    pub fingerprint: u64,
+    pub texture: egui::TextureHandle,
 }
 
 /// View state of one open document.
@@ -275,7 +300,16 @@ pub struct DocView {
     pub edit: Option<TextEdit>,
     pub drag: Option<Drag>,
     pub page_tex: Option<PageTexture>,
-    pub thumbs: HashMap<usize, (u64, egui::TextureHandle)>,
+    /// Generation of `page_tex` (see `ViewKey::generation`).
+    pub tex_generation: u64,
+    /// The last viewport render asked of the worker, and for which revision.
+    pub requested: Option<(ViewKey, u64)>,
+    pub thumbs: HashMap<usize, Thumb>,
+    /// Thumbnails asked of the worker: page → (revision, fingerprint).
+    pub thumbs_requested: HashMap<usize, (u64, u64)>,
+    /// Renders of this view that failed in a row (retried up to
+    /// `MAX_RENDER_RETRIES` times).
+    pub render_failures: u32,
     pub xf: Option<PageXf>,
 }
 
@@ -290,7 +324,11 @@ impl DocView {
             edit: None,
             drag: None,
             page_tex: None,
+            tex_generation: 0,
+            requested: None,
             thumbs: HashMap::new(),
+            thumbs_requested: HashMap::new(),
+            render_failures: 0,
             xf: None,
         }
     }

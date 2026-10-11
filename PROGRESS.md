@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** Phase 2, M13 (T5) Viewport rendering off the UI thread, per the plan on branch `plan/publisher-parity`.
+**Next step:** Phase 2, M14 (T6) Hyphenation and bounded justification, per the plan on branch `plan/publisher-parity`.
 
 
 ## Phase 2: Publisher parity
@@ -25,8 +25,9 @@ Plan: `~/.claude/plans/pubrs-publisher-parity.md`, branch `plan/publisher-parity
 |-----------|--------|-------|
 | M9 Performance harness in the tree | done; CI green (run 38110112006) | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
 | M10 Robustness and guard rails | done; CI green (run 38110596754) | panic rollback (`CommandError::Internal`), proptest suites (undo/redo, save/load, loader fuzz), wrap around rotated text frames fixed, workspace lints (`unsafe_code` deny, `unwrap_used`, `dbg_macro`, `todo`, `undocumented_unsafe_blocks`), crate layering test; +12 tests (141 tests total, was 129) |
-| M11 Incremental layout | done | `StoryLayoutCache` (per-story snapshot keys compared by equality, ADR 0012), `PUBRS_LAYOUT_VERIFY=1`, carets from one cluster-offset table per paragraph (bit-identical to parley), no whole-document clones in export or the canvas, budgets keyed by page count and enforced (CI: `perf --pages 50 --check`); keystroke layout 8.54 ms at 200 pages (budget 20); +7 layout tests (148 tests total, was 141) |
+| M11 Incremental layout | done; CI green (run 38112507559) | `StoryLayoutCache` (per-story snapshot keys compared by equality, ADR 0012), `PUBRS_LAYOUT_VERIFY=1`, carets from one cluster-offset table per paragraph (bit-identical to parley), no whole-document clones in export or the canvas, budgets keyed by page count and enforced (CI: `perf --pages 50 --check`); keystroke layout 8.54 ms at 200 pages (budget 20); +7 layout tests (148 tests total, was 141) |
 | M12 Commands cost what they change | done | frames, stories, pages and masters shared by `Arc` (serde `rc`, JSON unchanged, pinned by a golden patch corpus `crates/pubrs-core/tests/fixtures/patch_corpus.json` blessed before the refactor), `Patch::diff_pair` and `compose_pair` (one diff per command, coalesced typing included), shallow `check()`, layout keys compare stories by `Arc::ptr_eq`; keystroke command 0.12 ms at 50 pages (was 0.54) and 0.23 ms at 200 (was 2.13), enforced 2 ms at 50 and 0.5 ms at 200; +1 core test, plus a sharing property in the undo/redo proptest (149 tests total, was 148) |
+| M13 Viewport rendering off the UI thread | done | render worker thread (newest request wins) draws the canvas from `Arc` page snapshots, never touching `Session`; viewport-sized textures at device resolution (no 4,096 px cap, sharp at 800%), previous texture shown scaled until the new one lands; damage repaint from `Change.touched` and old/new layouts (`pubrs-render/src/damage.rs`) uploaded with `set_partial`; parallel tiles byte-identical to the untiled render (`pubrs-render/src/tiles.rs`, every golden page tiled at 1/2/7/16 threads and odd tile sizes); image mips for the viewport only; thumbnails on the worker; vello leaves the GUI (ADR 0013); viewport at 100% 6.4 ms at 200 pages (budget 16) and 6.3 ms at 50 (CI budget 40), keystroke total 8.4 ms at 200 pages (budget 30, was 31.4) and 7.8 ms at 50 (CI budget 60); self-test checks 800% sharpness and typing frame times; +25 tests (194 tests total; was 169 after the M31 part-1 fast-forward b1d609d, 149 at M12) |
 
 ### Baseline performance (M9)
 
@@ -62,6 +63,18 @@ Same machine and command, `--runs 5`. Full table and before/after: `demos/m11_in
 | PDF export | 412.14 | 477.31 | 774.00 |
 
 Layout per keystroke at 200 pages on the development machine: 8.54 ms (budget 20 ms, enforced by `perf --pages 200 --check`). At 50 pages: layout 7.23 ms (budget 25) and total 31.32 ms (budget 60), enforced in CI.
+
+### After M13 (viewport rendering off the UI thread)
+
+Same machine and command, `--runs 5`. Full table: `demos/m13_viewport_rendering.md`.
+
+| Measurement | 50 pages | 200 pages |
+|-------------|---------:|----------:|
+| viewport 2880x1800 at 100% on HiDPI (8 tile threads) | 6.26 | 6.41 |
+| keystroke: command | 0.06 | 0.15 |
+| keystroke: layout | 6.94 | 7.55 |
+| keystroke: damage repaint (tiled, off the UI thread) | 0.70 | 0.70 |
+| keystroke: total | 7.80 | 8.39 |
 
 ## Verification per milestone
 

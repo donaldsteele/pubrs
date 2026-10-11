@@ -6,7 +6,6 @@ use pubrs_api::core::{
     Margins, PageSizePreset, ParaProps, Rect, Shape, Size, Stroke, TextFrameProps, VerticalAlign,
     WrapMode,
 };
-use pubrs_api::render::RasterOptions;
 
 use crate::app::{PubrsApp, Tool, Units};
 use crate::keymap::{self, Action, MenuItem};
@@ -188,36 +187,38 @@ pub fn pages_panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 Err(_) => return,
             };
             let current = app.view().map_or(0, |v| v.page);
-            // Refresh at most one stale thumbnail per frame.
+            // Check at most one stale thumbnail per frame: a page the edit
+            // did not reach (same fingerprint) is just marked current; a
+            // changed one is drawn by the render worker, off the UI thread.
             let stale = (0..n).find(|i| {
-                app.view()
-                    .is_some_and(|v| v.thumbs.get(i).is_none_or(|(r, _)| *r != rev))
+                app.view().is_some_and(|v| {
+                    v.thumbs.get(i).is_none_or(|t| t.revision != rev)
+                        && v.thumbs_requested.get(i).is_none_or(|(r, _)| *r != rev)
+                })
             });
-            if let Some(i) = stale {
+            if let Some(i) = stale
+                && app.layout_timed(doc_id).is_ok()
+                && let Ok(snap) = app.session.page_snapshot(Some(doc_id), i, &[], None)
+            {
+                let fp = snap.fingerprint();
                 let dpi = (96.0 * 72.0 / size.width.max(size.height)).clamp(4.0, 72.0);
-                let t0 = std::time::Instant::now();
-                let r = app.session.page_rgba(
-                    Some(doc_id),
-                    i,
-                    &RasterOptions {
-                        dpi,
-                        ..Default::default()
-                    },
-                );
-                if let Some(p) = &mut app.perf {
-                    p.raster(t0.elapsed());
-                }
-                if let Ok((w, h, px)) = r {
-                    let img =
-                        egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px);
-                    let tex = ui.ctx().load_texture(
-                        format!("thumb-{doc_id}-{i}"),
-                        img,
-                        egui::TextureOptions::LINEAR,
-                    );
-                    if let Some(v) = app.view_mut() {
-                        v.thumbs.insert(i, (rev, tex));
+                let mut ask = false;
+                if let Some(v) = app.view_mut() {
+                    match v.thumbs.get_mut(&i) {
+                        Some(t) if t.fingerprint == fp => t.revision = rev,
+                        _ => {
+                            ask = v.thumbs_requested.get(&i).is_none_or(|(_, f)| *f != fp);
+                            v.thumbs_requested.insert(i, (rev, fp));
+                        }
                     }
+                }
+                if ask {
+                    app.renderer
+                        .request_thumb(crate::render_worker::ThumbRequest {
+                            snapshot: snap,
+                            dpi,
+                            fingerprint: fp,
+                        });
                 }
                 ui.ctx().request_repaint();
             }
@@ -225,7 +226,7 @@ pub fn pages_panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 for i in 0..n {
                     let tex = app
                         .view()
-                        .and_then(|v| v.thumbs.get(&i).map(|(_, t)| t.clone()));
+                        .and_then(|v| v.thumbs.get(&i).map(|t| t.texture.clone()));
                     let w = 96.0f32;
                     let h = w * (size.height / size.width) as f32;
                     let (rect, resp) =

@@ -15,6 +15,7 @@ mod panels;
 mod perf;
 #[allow(unsafe_code)]
 mod platform;
+mod render_worker;
 mod selftest;
 mod textedit;
 mod view;

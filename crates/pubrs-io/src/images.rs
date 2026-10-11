@@ -6,7 +6,7 @@ use std::sync::{Arc, OnceLock};
 
 use image::ImageDecoder;
 use pubrs_core::{AssetId, Document, ImageFormat};
-use pubrs_render::{ImageContent, ImageResolver, RasterImage, pixmap_from_rgba};
+use pubrs_render::{ImageContent, ImageResolver, ImageSnapshot, RasterImage, pixmap_from_rgba};
 
 use crate::error::IoError;
 
@@ -71,17 +71,22 @@ pub fn decode_asset(format: ImageFormat, bytes: &Arc<[u8]>) -> Result<ImageConte
                 encoded: bytes.clone(),
                 format,
                 passthrough: !rotated,
+                mips: OnceLock::new(),
             })))
         }
     }
 }
 
 /// Decoded images of a document, keyed by asset id. Asset bytes never change
-/// for a given id, so entries stay valid until the asset is removed.
+/// for a given id, so entries stay valid until the asset is removed. Raster
+/// entries keep half-size mip levels for zoomed-out drawing in the GUI
+/// ([`RasterImage::mips`], built on first use by the render worker).
 #[derive(Default)]
 pub struct ImageCache {
     entries: HashMap<AssetId, ImageContent>,
     failed: HashMap<AssetId, String>,
+    /// Shared copy of `entries` for render threads, until they change.
+    snapshot: Option<ImageSnapshot>,
 }
 
 impl std::fmt::Debug for ImageCache {
@@ -100,7 +105,11 @@ impl ImageCache {
 
     /// Decode any new assets of `doc` and forget removed ones.
     pub fn sync(&mut self, doc: &Document) {
+        let before = self.entries.len();
         self.entries.retain(|id, _| doc.assets.contains_key(id));
+        if self.entries.len() != before {
+            self.snapshot = None;
+        }
         self.failed.retain(|id, _| doc.assets.contains_key(id));
         for (id, asset) in &doc.assets {
             if self.entries.contains_key(id) || self.failed.contains_key(id) {
@@ -112,6 +121,7 @@ impl ImageCache {
             match decode_asset(asset.format, bytes) {
                 Ok(c) => {
                     self.entries.insert(*id, c);
+                    self.snapshot = None;
                 }
                 Err(e) => {
                     tracing::warn!(asset = %id, "cannot decode image: {e}");
@@ -124,6 +134,15 @@ impl ImageCache {
     /// Assets that failed to decode, with the reason.
     pub fn failures(&self) -> &HashMap<AssetId, String> {
         &self.failed
+    }
+
+    /// The decoded images as an immutable snapshot for render threads. Cheap
+    /// to call again: the snapshot is rebuilt only after `sync` changed the
+    /// cache.
+    pub fn snapshot(&mut self) -> ImageSnapshot {
+        self.snapshot
+            .get_or_insert_with(|| ImageSnapshot::new(self.entries.clone()))
+            .clone()
     }
 }
 

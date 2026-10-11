@@ -1,12 +1,12 @@
 //! The session: open documents, command dispatch and shared caches.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use pubrs_core::{
     Change, Command, Document, DocumentId, Editor, FrameId, IdSource, MasterId, Owner, PageId,
-    RandomIds, SeqIds, StoryId, StyleId, StyleKind,
+    RandomIds, SeqIds, StoryId, StyleId, StyleKind, Touched,
 };
 use pubrs_io::ExportContext;
 use pubrs_layout::{CacheStats, DocumentLayout, FontLibrary, StoryLayoutCache};
@@ -43,7 +43,13 @@ pub struct OpenDoc {
     layout: Option<(u64, Arc<DocumentLayout>)>,
     /// Per-story layouts reused across revisions (ADR 0012).
     stories: StoryLayoutCache,
+    /// What the most recent commands touched, by the revision they made
+    /// (newest last), for damage repaint (ADR 0013).
+    changes: VecDeque<(u64, Touched)>,
 }
+
+/// Commands remembered per document for damage repaint.
+const CHANGE_LOG: usize = 256;
 
 impl OpenDoc {
     pub fn doc(&self) -> &Document {
@@ -53,6 +59,50 @@ impl OpenDoc {
     pub fn revision(&self) -> u64 {
         self.editor.revision()
     }
+
+    /// Changes recorded after revision `since` (oldest first). Revisions
+    /// made outside `Session::exec` (undo, redo) are missing; see
+    /// [`touched_between`].
+    pub fn changes_since(&self, since: u64) -> Vec<(u64, Touched)> {
+        self.changes
+            .iter()
+            .filter(|(r, _)| *r > since)
+            .cloned()
+            .collect()
+    }
+}
+
+/// The union of what changed between revisions `from` (exclusive) and `to`
+/// (inclusive), or `None` when `changes` lacks one of those revisions (an
+/// undo, a redo or an evicted entry): then the caller must compare the
+/// whole page.
+pub fn touched_between(changes: &[(u64, Touched)], from: u64, to: u64) -> Option<Touched> {
+    let mut out = Touched::default();
+    let mut expect = from + 1;
+    for (r, t) in changes.iter().filter(|(r, _)| *r > from && *r <= to) {
+        if *r != expect {
+            return None;
+        }
+        expect += 1;
+        out.frames.extend(&t.frames);
+        out.stories.extend(&t.stories);
+        out.pages.extend(&t.pages);
+        out.assets.extend(&t.assets);
+        out.styles |= t.styles;
+        out.setup |= t.setup;
+    }
+    if expect != to + 1 {
+        return None;
+    }
+    out.frames.sort();
+    out.frames.dedup();
+    out.stories.sort();
+    out.stories.dedup();
+    out.pages.sort();
+    out.pages.dedup();
+    out.assets.sort();
+    out.assets.dedup();
+    Some(out)
 }
 
 /// What a mutating call changed. Included in every mutating tool's result.
@@ -74,6 +124,8 @@ pub struct Session {
     pub(crate) ids: Box<dyn IdSource + Send>,
     pub(crate) config: SessionConfig,
     pub(crate) rasterizer: Option<pubrs_render::Rasterizer>,
+    /// Pages rasterised by `page_png` / `page_rgba` on the calling thread.
+    pub(crate) rasters: u64,
     pub(crate) templates: pubrs_io::templates::TemplateLibrary,
 }
 
@@ -118,7 +170,14 @@ impl Session {
             templates: pubrs_io::templates::TemplateLibrary::new(config.user_templates_dir.clone()),
             config,
             rasterizer: None,
+            rasters: 0,
         }
+    }
+
+    /// How many pages this session rasterised synchronously (`page_png`,
+    /// `page_rgba`) so far. The GUI checks that editing adds none.
+    pub fn rasters_drawn(&self) -> u64 {
+        self.rasters
     }
 
     pub fn config(&self) -> &SessionConfig {
@@ -163,6 +222,7 @@ impl Session {
                 path,
                 layout: None,
                 stories: StoryLayoutCache::new(),
+                changes: VecDeque::new(),
             },
         );
         self.order.push(doc_id);
@@ -245,10 +305,19 @@ impl Session {
     ) -> ApiResult<Changed> {
         let id = self.resolve(doc_id)?;
         let open = self.docs.get_mut(&id).expect("resolved");
+        let before = open.editor.revision();
         let change = match key {
             Some(k) => open.editor.execute_coalesced(command, k)?,
             None => open.editor.execute(command)?,
         };
+        // A command that changed nothing keeps the revision: nothing to log.
+        if change.revision != before {
+            if open.changes.len() == CHANGE_LOG {
+                open.changes.pop_front();
+            }
+            open.changes
+                .push_back((change.revision, change.touched.clone()));
+        }
         self.current = Some(id);
         Ok(changed(id, &change))
     }
@@ -479,6 +548,60 @@ mod tests {
         );
         assert_eq!(verbatim_separators("C:/a/b.jpg"), "C:/a/b.jpg");
         assert_eq!(verbatim_separators("/home/a/b.jpg"), "/home/a/b.jpg");
+    }
+
+    #[test]
+    fn changes_are_logged_for_damage_and_gaps_are_reported() {
+        use pubrs_core::{DocBuilder, PageSetup, Rect, Shape};
+        let mut b = DocBuilder::new(SeqIds::new(1), PageSetup::default());
+        let p = b.page(0);
+        let f = b
+            .shape(
+                p,
+                Rect::new(10.0, 10.0, 20.0, 20.0),
+                Shape::Rectangle { corner_radius: 0.0 },
+            )
+            .expect("shape");
+        let mut s = Session::new(SessionConfig::default());
+        let id = s.insert(b.finish(), None);
+        let start = s.get(Some(id)).expect("doc").revision();
+        for x in [20.0, 30.0] {
+            s.exec(
+                Some(id),
+                Command::SetFrameRect {
+                    frame: f,
+                    rect: Rect::new(x, 10.0, 20.0, 20.0),
+                },
+            )
+            .expect("move");
+        }
+        // A command that changes nothing is not logged.
+        s.exec(
+            Some(id),
+            Command::SetFrameRect {
+                frame: f,
+                rect: Rect::new(30.0, 10.0, 20.0, 20.0),
+            },
+        )
+        .expect("no-op");
+        let open = s.get(Some(id)).expect("doc");
+        let now = open.revision();
+        let changes = open.changes_since(start);
+        assert_eq!(changes.len(), 2);
+        let t = touched_between(&changes, start, now).expect("contiguous");
+        assert_eq!(t.frames, vec![f]);
+        assert_eq!(
+            touched_between(&changes[1..], start, now),
+            None,
+            "a missing revision (undo, redo) is a gap"
+        );
+        s.get_mut(Some(id)).expect("doc").editor.undo();
+        let open = s.get(Some(id)).expect("doc");
+        assert_eq!(
+            touched_between(&open.changes_since(start), start, open.revision()),
+            None,
+            "undo is not logged, so the caller compares the whole page"
+        );
     }
 
     #[test]

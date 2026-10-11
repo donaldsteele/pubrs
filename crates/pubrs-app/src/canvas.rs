@@ -1,27 +1,25 @@
 //! The page canvas: rendering, overlays and direct manipulation.
 
-use std::collections::BTreeMap;
-
 use eframe::egui::{self, Color32, Pos2, Sense, Stroke, Vec2};
 use pubrs_api::core::{
-    Color, Command, Document, Frame, FrameContent, FrameId, FrameKind, LineDirection, Owner, Point,
-    Rect, RunFormat, Story, StoryId,
+    Color, Command, Document, FrameContent, FrameId, FrameKind, LineDirection, Owner, Point, Rect,
+    RunFormat,
 };
-use pubrs_api::render::RasterOptions;
+use pubrs_api::render::PixelRect;
+use pubrs_api::tools::export::{PageSnapshot, viewport_region};
 use pubrs_api::tools::frames::{FrameAddImage, FrameAddShape, FrameAddText, ShapeKind};
 use pubrs_api::tools::text::TextRef;
 
 use crate::app::{PubrsApp, Tool};
+use crate::render_worker::{ViewKey, ViewRequest};
 use crate::textedit::{self, TextEdit};
 use crate::view::{
-    Drag, Handle, PageTexture, PageXf, frames_in_rect, handle_point, hit_leaf, resize_rect,
-    top_level,
+    Drag, Handle, PageXf, frames_in_rect, handle_point, hit_leaf, resize_rect, top_level,
 };
 
 const PAD: f32 = 32.0;
 const HANDLE: f32 = 4.5;
 const ROTATE_OFFSET_PX: f32 = 22.0;
-const MAX_TEXTURE: f64 = 4096.0;
 const SELECT: Color32 = Color32::from_rgb(37, 99, 235);
 const GUIDE: Color32 = Color32::from_rgb(6, 182, 212);
 const MARGIN: Color32 = Color32::from_rgb(217, 70, 239);
@@ -69,77 +67,90 @@ fn welcome(app: &mut PubrsApp, ui: &mut egui::Ui) {
     });
 }
 
-/// The part of a document the canvas reads for one page: the page and its
-/// master, every frame on them (with group members), the stories their text
-/// frames show and the frames of those chains, plus the selected frames and
-/// the story being edited. Built each egui frame instead of a copy of the
-/// whole document, so its cost follows the page, not the publication (plan
-/// Locked Decision 3). Image assets stay out: the page itself is drawn from
-/// the session's texture.
-fn page_snapshot(
-    doc: &Document,
+/// What the canvas shows this frame, in texture terms.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Wanted {
+    doc_id: pubrs_api::core::DocumentId,
     page_index: usize,
-    selection: &[FrameId],
-    editing: Option<StoryId>,
-) -> Document {
-    fn add_story(
-        doc: &Document,
-        story: StoryId,
-        frames: &mut BTreeMap<FrameId, std::sync::Arc<Frame>>,
-        stories: &mut BTreeMap<StoryId, std::sync::Arc<Story>>,
-    ) {
-        if stories.contains_key(&story) {
-            return;
-        }
-        let Some(s) = doc.stories.get(&story) else {
-            return;
-        };
-        for f in &s.frames {
-            if let Some(frame) = doc.frames.get(f) {
-                frames.entry(*f).or_insert_with(|| frame.clone());
-            }
-        }
-        stories.insert(story, s.clone());
+    /// Texture pixels per inch.
+    dpi: f64,
+    /// The whole page raster at `dpi`.
+    page_px: (u32, u32),
+    /// Visible page-raster pixels at `dpi`.
+    visible: PixelRect,
+    generation: u64,
+    /// The largest texture the GPU takes (`max_texture_side`).
+    max_side: u32,
+}
+
+/// Texture resolution for a view: one texel per device pixel, unless the
+/// visible pixels (`visible_w` × `visible_h` at that resolution) would not
+/// fit in the largest texture; then lower, and the texture is drawn scaled.
+fn texture_dpi(device_dpi: f64, visible_w: u32, visible_h: u32, max_side: u32) -> f64 {
+    let largest = visible_w.max(visible_h);
+    if largest <= max_side || largest == 0 {
+        device_dpi
+    } else {
+        // A little under, so rounding the visible pixels up still fits.
+        device_dpi * (f64::from(max_side) - 2.0).max(1.0) / f64::from(largest)
     }
-    let page = doc.pages[page_index].clone();
-    let masters: Vec<_> = page
-        .master
-        .and_then(|m| doc.master(m))
-        .cloned()
-        .into_iter()
-        .collect();
-    let mut frames = BTreeMap::new();
-    let mut stories = BTreeMap::new();
-    let seeds = page
-        .frames
-        .iter()
-        .chain(masters.iter().flat_map(|m| m.frames.iter()))
-        .chain(selection);
-    for id in seeds.flat_map(|f| doc.descendants(*f)) {
-        let Some(f) = doc.frames.get(&id) else {
-            continue;
-        };
-        frames.insert(id, f.clone());
-        if let Some(t) = f.as_text() {
-            add_story(doc, t.story, &mut frames, &mut stories);
-        }
+}
+
+/// The key to ask the worker for: the pending or shown key while it still
+/// fits (same page, resolution, page raster size and texture generation,
+/// and its region holds the visible pixels), else a new region around the
+/// visible pixels. `None` when nothing of the page is visible.
+fn choose_key(want: &Wanted, pending: Option<ViewKey>, shown: Option<ViewKey>) -> Option<ViewKey> {
+    let page = PixelRect::new(0, 0, want.page_px.0, want.page_px.1);
+    let visible = want.visible.intersect(&page)?;
+    let fits = |k: &ViewKey| {
+        k.doc_id == want.doc_id
+            && k.page_index == want.page_index
+            && k.dpi == want.dpi
+            && k.page_px == want.page_px
+            && k.generation == want.generation
+            && k.region.contains(&visible)
+            && page.contains(&k.region)
+    };
+    if let Some(k) = pending.filter(fits).or(shown.filter(fits)) {
+        return Some(k);
     }
-    if let Some(s) = editing {
-        add_story(doc, s, &mut frames, &mut stories);
+    let region = viewport_region(visible, want.page_px, want.max_side)?;
+    Some(ViewKey {
+        doc_id: want.doc_id,
+        page_index: want.page_index,
+        dpi: want.dpi,
+        page_px: want.page_px,
+        region,
+        generation: want.generation,
+    })
+}
+
+/// Ask the render worker for the page when the revision or the view
+/// changed. Nothing is rasterised here.
+fn request_view(app: &mut PubrsApp, snap: &PageSnapshot, want: &Wanted) {
+    let Some(v) = app.view() else { return };
+    let pending = v.requested.map(|(k, _)| k);
+    let shown = v.page_tex.as_ref().map(|t| t.key);
+    let Some(key) = choose_key(want, pending, shown) else {
+        return;
+    };
+    if v.requested == Some((key, snap.revision)) {
+        return;
     }
-    Document {
-        schema_version: doc.schema_version,
-        id: doc.id,
-        meta: doc.meta.clone(),
-        setup: doc.setup,
-        grid: doc.grid,
-        pages: std::sync::Arc::new(vec![page]),
-        masters: std::sync::Arc::new(masters),
-        frames,
-        stories,
-        styles: doc.styles.clone(),
-        assets: BTreeMap::new(),
-        blobs: BTreeMap::new(),
+    let since = v.page_tex.as_ref().map_or(0, |t| t.revision);
+    let changes = app
+        .session
+        .get(Some(snap.doc_id))
+        .map(|o| o.changes_since(since))
+        .unwrap_or_default();
+    app.renderer.request_view(ViewRequest {
+        key,
+        snapshot: snap.clone(),
+        changes,
+    });
+    if let Some(v) = app.view_mut() {
+        v.requested = Some((key, snap.revision));
     }
 }
 
@@ -148,17 +159,32 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
     let Ok(open) = app.session.get(Some(doc_id)) else {
         return;
     };
-    let revision = open.revision();
     let page_index = app
         .view()
         .map_or(0, |v| v.page)
         .min(open.doc().pages.len() - 1);
-    let doc: Document = {
+    // The page's slice of the document (with the selection and the story
+    // being edited, for the overlays), its layout and images: what the
+    // render worker draws from. Costs what the page holds.
+    if let Err(e) = app.layout_timed(doc_id) {
+        app.show_error(&e);
+        return;
+    }
+    let snap = {
         let view = app.view();
-        let selection = view.map_or(&[][..], |v| v.selection.as_slice());
+        let selection: Vec<FrameId> = view.map_or_else(Vec::new, |v| v.selection.clone());
         let editing = view.and_then(|v| v.edit.as_ref().map(|e| e.story));
-        page_snapshot(open.doc(), page_index, selection, editing)
+        app.session
+            .page_snapshot(Some(doc_id), page_index, &selection, editing)
     };
+    let snap = match snap {
+        Ok(s) => s,
+        Err(e) => {
+            app.show_error(&e);
+            return;
+        }
+    };
+    let doc: &Document = &snap.doc;
     let page = doc.pages[0].clone();
     let owner = Owner::Page(page.id);
     let (pw, ph, bleed) = (
@@ -187,10 +213,14 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
             let size = content.max(ui.available_size());
             let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
             let canvas_id = resp.id;
-            let origin = Pos2::new(
-                rect.center().x - pw * zoom / 2.0,
-                rect.center().y - ph * zoom / 2.0,
+            // The bleed box starts on a device pixel, so the texture (one
+            // texel per device pixel) is drawn unfiltered and sharp.
+            let snap_px = |v: f32| (v * ppp).round() / ppp;
+            let bleed_min = Pos2::new(
+                snap_px(rect.center().x - (pw / 2.0 + bleed) * zoom),
+                snap_px(rect.center().y - (ph / 2.0 + bleed) * zoom),
             );
+            let origin = bleed_min + Vec2::splat(bleed * zoom);
             let xf = PageXf {
                 origin,
                 scale: zoom,
@@ -198,74 +228,65 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
             if let Some(v) = app.view_mut() {
                 v.xf = Some(xf);
             }
-            // ---- page texture
-            let mut dpi = 72.0 * f64::from(zoom * ppp);
-            let max_side = f64::from(pw.max(ph) + 2.0 * bleed);
-            dpi = dpi.min(MAX_TEXTURE * 72.0 / max_side);
-            let key = (revision, page_index, (dpi * 10.0) as u32);
-            let needs = app
-                .view()
-                .is_none_or(|v| v.page_tex.as_ref().is_none_or(|t| t.key != key));
-            if needs {
-                let t0 = std::time::Instant::now();
-                let r = app.session.page_rgba(
-                    Some(doc_id),
-                    page_index,
-                    &RasterOptions {
-                        dpi,
-                        include_bleed: true,
-                        background: Some(Color::WHITE),
-                    },
-                );
-                if let Some(p) = &mut app.perf {
-                    p.raster(t0.elapsed());
-                }
-                match r {
-                    Ok((w, h, px)) => {
-                        let img =
-                            egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px);
-                        let ctx = ui.ctx().clone();
-                        if let Some(v) = app.view_mut() {
-                            match &mut v.page_tex {
-                                Some(t) => {
-                                    t.texture.set(img, egui::TextureOptions::LINEAR);
-                                    t.key = key;
-                                }
-                                None => {
-                                    let texture = ctx.load_texture(
-                                        format!("page-{doc_id}"),
-                                        img,
-                                        egui::TextureOptions::LINEAR,
-                                    );
-                                    v.page_tex = Some(PageTexture {
-                                        key,
-                                        texture,
-                                        covers: Vec2::new(pw + 2.0 * bleed, ph + 2.0 * bleed),
-                                    });
-                                }
-                            }
-                            if let Some(t) = &mut v.page_tex {
-                                t.covers = Vec2::new(pw + 2.0 * bleed, ph + 2.0 * bleed);
-                            }
-                        }
-                    }
-                    Err(e) => app.show_error(&e),
-                }
-            }
-            let painter = ui.painter_at(rect);
             let bleed_rect = egui::Rect::from_min_size(
-                origin - Vec2::splat(bleed * zoom),
+                bleed_min,
                 Vec2::new((pw + 2.0 * bleed) * zoom, (ph + 2.0 * bleed) * zoom),
             );
+            // ---- page texture: ask the render worker for what is visible
+            let visible = ui.clip_rect().intersect(bleed_rect);
+            if visible.is_positive() {
+                let device_dpi = 72.0 * f64::from(zoom) * f64::from(ppp);
+                // The GPU's texture limit, but never more than the rasterizer renders.
+                let max_side = (ui.ctx().input(|i| i.max_texture_side) as u32)
+                    .min(pubrs_api::render::raster::MAX_PIXELS_PER_SIDE);
+                let span = |dpi: f64| {
+                    let k = dpi / device_dpi * f64::from(ppp);
+                    let to_px = |a: f32, b: f32| f64::from(a - b) * k;
+                    PixelRect::covering(
+                        to_px(visible.min.x, bleed_min.x),
+                        to_px(visible.min.y, bleed_min.y),
+                        to_px(visible.max.x, bleed_min.x),
+                        to_px(visible.max.y, bleed_min.y),
+                    )
+                };
+                let full = span(device_dpi);
+                let dpi = texture_dpi(device_dpi, full.width, full.height, max_side);
+                let s = dpi / 72.0;
+                let want = Wanted {
+                    doc_id,
+                    page_index,
+                    dpi,
+                    page_px: (
+                        ((doc.setup.size.width + 2.0 * doc.setup.bleed) * s)
+                            .ceil()
+                            .max(1.0) as u32,
+                        ((doc.setup.size.height + 2.0 * doc.setup.bleed) * s)
+                            .ceil()
+                            .max(1.0) as u32,
+                    ),
+                    visible: span(dpi),
+                    generation: app.view().map_or(0, |v| v.tex_generation),
+                    max_side,
+                };
+                request_view(app, &snap, &want);
+            }
+            let painter = ui.painter_at(rect);
             painter.rect_filled(
                 bleed_rect.translate(Vec2::new(3.0, 4.0)),
                 0.0,
                 Color32::from_black_alpha(40),
             );
-            if let Some(t) = app.view().and_then(|v| v.page_tex.as_ref()) {
-                painter.image(
+            // Paper first: parts the worker has not drawn yet show white.
+            painter.rect_filled(bleed_rect, 0.0, Color32::WHITE);
+            if let Some(t) = app.view().and_then(|v| v.page_tex.as_ref())
+                && t.key.page_index == page_index
+            {
+                // The previous texture, scaled and offset, until the new one
+                // lands; never outside the page (it may be from before a
+                // page size or bleed change).
+                painter.with_clip_rect(bleed_rect.intersect(rect)).image(
                     t.texture.id(),
-                    bleed_rect,
+                    t.screen_rect(bleed_min, zoom),
                     egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                     Color32::WHITE,
                 );
@@ -330,7 +351,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     }
                 }
             }
-            let layout = app.session.layout(Some(doc_id)).ok();
+            let layout = Some(snap.layout.clone());
             // ---- frame outlines (text boxes and empty picture frames are otherwise invisible)
             for id in doc.paint_order(owner) {
                 let Some(f) = doc.frame(id) else { continue };
@@ -419,7 +440,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
             let edit = app.view().and_then(|v| v.edit.clone());
             if let (Some(e), Some(layout)) = (&edit, &layout) {
                 let (s, t) = e.range();
-                for q in textedit::selection_quads(&doc, layout, e.story, s, t) {
+                for q in textedit::selection_quads(doc, layout, e.story, s, t) {
                     painter.add(quad(
                         q.map(|p| xf.to_screen(p)),
                         Color32::from_rgba_unmultiplied(59, 130, 246, 70),
@@ -427,7 +448,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     ));
                 }
                 if let Some((f, top, bottom)) =
-                    textedit::caret_segment(&doc, layout, e.story, e.caret)
+                    textedit::caret_segment(doc, layout, e.story, e.caret)
                     && doc.owner_of(f) == Some(owner)
                 {
                     let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
@@ -509,7 +530,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 ui,
                 &resp,
                 canvas_id,
-                &doc,
+                doc,
                 owner,
                 xf,
                 rotate_offset,
@@ -1262,4 +1283,68 @@ pub fn story_text(app: &mut PubrsApp, frame: FrameId) -> Option<String> {
         })
         .ok()
         .map(|t| t.text)
+}
+
+#[cfg(test)]
+mod view_key_tests {
+    use pubrs_api::core::{DocumentId, SeqIds};
+
+    use super::*;
+
+    fn want(page_px: (u32, u32), visible: PixelRect) -> Wanted {
+        Wanted {
+            doc_id: DocumentId::new(&mut SeqIds::new(1)),
+            page_index: 0,
+            dpi: 144.0,
+            page_px,
+            visible,
+            generation: 0,
+            max_side: 8192,
+        }
+    }
+
+    #[test]
+    fn small_pans_keep_the_region() {
+        let w = want((1224, 1584), PixelRect::new(100, 100, 800, 600));
+        let k = choose_key(&w, None, None).expect("key");
+        let panned = Wanted {
+            visible: PixelRect::new(140, 120, 800, 600),
+            ..w
+        };
+        assert_eq!(choose_key(&panned, None, Some(k)), Some(k));
+        let far = Wanted {
+            visible: PixelRect::new(400, 900, 800, 600),
+            ..w
+        };
+        assert_ne!(choose_key(&far, None, Some(k)), Some(k));
+    }
+
+    /// Letter → A5 (or less bleed) at the same zoom is a new key whose
+    /// region lies inside the new page raster.
+    #[test]
+    fn a_page_size_change_is_a_new_key() {
+        let letter = want((1224, 1584), PixelRect::new(0, 0, 1224, 1584));
+        let k = choose_key(&letter, None, None).expect("key");
+        let a5 = want((840, 1191), PixelRect::new(0, 0, 840, 1191));
+        let k2 = choose_key(&a5, Some(k), Some(k)).expect("key");
+        assert_ne!(k2, k);
+        assert_eq!(k2.page_px, (840, 1191));
+        assert!(PixelRect::new(0, 0, 840, 1191).contains(&k2.region));
+    }
+
+    #[test]
+    fn regions_fit_the_largest_texture() {
+        // A 6K portrait screen at 2x and a high zoom: the margin gives way.
+        let w = Wanted {
+            max_side: 8192,
+            ..want((40_000, 50_000), PixelRect::new(9000, 9000, 3384, 6016))
+        };
+        let k = choose_key(&w, None, None).expect("key");
+        assert!(k.region.width <= 8192 && k.region.height <= 8192, "{k:?}");
+        assert!(k.region.contains(&w.visible));
+        // Visible pixels beyond the limit lower the texture resolution.
+        assert_eq!(texture_dpi(144.0, 3000, 2000, 8192), 144.0);
+        let dpi = texture_dpi(144.0, 10_000, 2000, 8192);
+        assert!(dpi < 144.0 && 10_000.0 * dpi / 144.0 <= 8190.0, "{dpi}");
+    }
 }
