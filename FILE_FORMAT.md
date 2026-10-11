@@ -1,6 +1,6 @@
 # The `.pubrs` file format
 
-Status: version 4 (M21). The model is defined by the Rust types in
+Status: version 12 (M24). The model is defined by the Rust types in
 `crates/pubrs-core/src/model.rs`; a JSON Schema generated from them is
 published with the MCP docs.
 
@@ -309,7 +309,7 @@ See ADR 0021.
 ### Text wrap (version 10)
 
 `wrap` on a frame is `{"mode", "margin", "both_sides"}`. `mode` is `none`,
-`square`, `top_bottom`, and now `tight` and `through`; `both_sides` (default
+`square`, `top_bottom`, `tight` or `through`; `both_sides` (default
 false, omitted when false) fills every gap beside the frame that is wider than
 three em instead of only the widest. **Absent or default means the version 8
 layout, unchanged.**
@@ -366,7 +366,7 @@ Two optional additions. **Absent means the version 11 document, unchanged.**
   every record has exactly one cell per field. Limits: 100,000 records,
   1 MB per cell, 512 fields. `preview_index` is the record fields show while
   `preview` is true (clamped to the data); with `preview` false fields show
-  as {ab}Name{bb}.
+  as «Name».
 
 The text a field shows is a display matter: the story keeps the U+FFFC. An
 empty value takes one adjacent space with it (the one after the field, else

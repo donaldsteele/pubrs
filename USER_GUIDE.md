@@ -88,10 +88,10 @@ Printing on Linux uses CUPS; install it if you want to print.
 
    The nine templates after Newsletter (greeting card, postcard, certificate,
    menu, letterhead, envelope, calendar, address labels and business cards)
-   are new in 0.2.0 and always win over a template of your own saved under the
-   same name: if an earlier version saved `menu` or `postcard` in your
-   templates folder, the built-in one is what you get and yours is hidden (the
-   file is still there; save yours under another name to use it). `Save as
+   are new in 0.2.0. A built-in template always wins over one of your own with
+   the same name. If an earlier version saved `menu` or `postcard` in your
+   templates folder, you get the built-in one and yours is hidden. The file is
+   still there; save yours under another name to use it. `Save as
    Template…` refuses these names.
 2. **Change the text:** double-click a text box and type. Ctrl+A selects
    all the text in the box. Press Esc when you are done.
@@ -286,13 +286,13 @@ tabs and one OK for the whole dialog (one undo step).
     off until you turn it on, templates included. **Language** picks the
     pattern: English (US), German, Spanish, French, Polish or Portuguese. Other
     languages are not hyphenated, and the dialog says so.
-  - **Limit word and letter spacing** decides how far a justified line may be
-    stretched before it is left short instead. **Word space up to** defaults to
+  - **Limit word and letter spacing** sets how far a justified line may
+    stretch before it is left short instead. **Word space up to** defaults to
     133% of a normal space and **Letter spacing up to** to 5% of the font size.
     The built-in templates have it ticked; unticked, justified lines stretch as
     far as needed. Justify itself is the **Justify** button in the Text section
     of the properties panel.
-- **Keeps** controls breaks between columns, linked frames and pages:
+- **Keeps** controls how a paragraph breaks across columns, linked frames and pages:
   **Keep with next** (the last line stays with the next paragraph), **Keep
   lines together** (the paragraph is not split if it fits in one column), and
   **Widow and orphan control** with a minimum of 2 to 10 lines. A paragraph
@@ -361,8 +361,8 @@ unavailable; place the cursor in one cell.
 ### Text wrap
 
 Select a picture or shape and choose **Text wrap** in the properties panel:
-**None**, **Square** (round the frame's box, on the wider side), **Tight**
-(round the shape's outline, which for an ellipse follows the curve and for a
+**None**, **Square** (around the frame's box, on the wider side), **Tight**
+(around the shape's outline, which for an ellipse follows the curve and for a
 picture follows its non-transparent pixels), **Through** (like Tight, but the
 text also fills notches and holes in the outline) or **Top and bottom** (no text
 beside it). **Margin** sets the clearance in points. **Text on both sides**
@@ -376,7 +376,7 @@ size, margins and bleed, which you change in the properties panel with nothing
 selected) and a **Labels, Cards, Booklet** tab:
 
 - **Labels or cards on a sheet.** Choose a **Sheet** from 26 presets: Avery US
-  address, shipping, return-address, business-card, postcard and square labels
+  address, shipping, return-address, business-card, postcard, note-card and square labels
   (5160, 5161, 5162, 5163, 5164, 5167, 5371, 5376, 5377, 8160, 8163, 22805,
   5305, 8315), A4 labels and cards (L7160, L7161, L7162, L7163, L7173, L7651,
   C32011, J8160) and generic 2-up and 4-up Letter and A4 sheets. Each page of
@@ -403,7 +403,7 @@ postcards, name badges or address labels.
 1. **Mailings → Mail Merge…** opens a four-step window. On **1 Data** type the
    path of a `.csv` or `.xlsx` file, or **Choose file…**, then **Load**. The
    first row names the fields. CSV must be UTF-8; the separator (comma,
-   semicolon or tab) is found by itself. For a workbook pick the **Sheet**
+   semicolon or tab) is detected automatically. For a workbook pick the **Sheet**
    (default the first). The data is stored in the publication, so it reopens
    without the file.
 2. **2 Fields** lists each field with the first record's value. Click in a text
@@ -444,8 +444,8 @@ a 5160 sheet with Name, Address, City, State and Zip already in place.
 - **Commercial printing (PDF/X-4)**: PDF 1.6 with a CMYK output intent (a
   bundled generic CMYK, SWOP-like, profile), the bleed (if the publication has
   one), crop marks and embedded fonts, checked before it is written. CMYK colours are written as CMYK and spot
-  colours as separate inks. Use CMYK or spot swatches: RGB colours are listed
-  by the check (see *Design Checker*) and are written with the profile's RGB
+  colours as separate inks. Use CMYK or spot swatches: the check lists RGB
+  colours (see *Design Checker*), and they are written with the profile's RGB
   equivalent.
 - **Archive (PDF/A-2b)**: for long-term storage.
 
@@ -499,17 +499,17 @@ from a PDF viewer at 100% instead, and test on plain paper first.
 
 ### Copying, pasting and international text
 
-- **Copy and paste frames.** Copy puts the selected frames on the system clipboard, and Paste puts them on the
-  current page: into the same publication (nudged 18 pt), or into another open publication, with their text,
+- **Copy and paste frames.** Copy puts the selected frames on the system clipboard. Paste puts them on the
+  current page, in the same publication (nudged 18 pt) or another open one, with their text,
   linked frames, groups and pictures. Styles are matched by name (missing ones are added); colours from a swatch the
   other publication lacks are kept as plain colours. One undo step.
-- **Paste from other programs.** A picture on the clipboard becomes a picture frame (larger than 8,000 pixels a side
-  it is scaled down, and the status bar says so). Text pasted while editing keeps bold, italic, underline, size and
-  colour from web pages and rich text; with no text being edited it goes into a new text frame. Copied frames pasted while editing text give their text. For a
+- **Paste from other programs.** A picture on the clipboard becomes a picture frame. One larger than 8,000 pixels a side
+  is scaled down, and the status bar says so. Text pasted while editing keeps bold, italic, underline, size and
+  colour from web pages and rich text; with no text being edited it goes into a new text frame. Pasting copied frames while editing text inserts their text. For a
   picture use Edit > Paste (on Windows and Linux Ctrl+V pastes text only).
 - **Input methods.** Chinese, Japanese and Korean input works while editing text: the text you are composing shows
-  at the cursor with an underline and the candidate window opens beside it; it becomes part of the text, in one undo
-  step with the typing around it, when you confirm it.
+  at the cursor with an underline and the candidate window opens beside it; when you confirm it, it becomes part of the text, in one undo
+  step with the typing around it.
 - **Right-to-left text.** Hebrew and Arabic read right to left. The arrow keys move the cursor the way they point on
   the screen (in a Hebrew word, Right goes one letter back in the text), Home and End go to the start and end of the
   line (the right end, for a right-to-left line), and clicking and selecting follow the letters you see. Tab stops

@@ -47,7 +47,7 @@ for x86_64 and aarch64) as workflow artifacts, named with the version in
 `Cargo.toml`. It does not create a release or a tag: the `release` job runs only
 when the ref is a tag (`refs/tags/v*`). The workflow file must exist on that
 branch. Use this to rehearse a release (for 0.2.0, on `plan/publisher-parity`)
-before tagging; the artifacts are kept for the repository's retention period.
+before tagging. The artifacts are kept for the repository's retention period.
 
 ## What the workflow checks automatically
 
@@ -104,8 +104,8 @@ macOS PDFKit, Linux CUPS):
     real Avery 5160 sheet against a window: every address should sit inside
     its label with equal margins. On Windows, note whether the printer's
     printable area shrank the page (see USER_GUIDE.md, Printing). Repeat
-    with another preset if you have the stock, and look at the presets
-    listed in ASSETS.md as unchecked.
+    with another preset if you have the stock, and test the presets
+    ASSETS.md lists as unchecked.
 11. **Print an 8-page booklet.** Make an 8-page publication, Page Setup →
     Labels, Cards, Booklet → Booklet (saddle stitch), **Print…** double-sided,
     flipping on the short edge. Fold the stack in half: the pages must read
@@ -132,7 +132,7 @@ Paste this into the GitHub release draft and trim it.
   orphan control; drop caps; tab stops with leaders; bullets and numbering with
   nested levels; character formatting (small and all caps, strikethrough,
   superscript, subscript, baseline shift, ligatures, kerning); tight, through
-  and both-sides text wrap; text that follows into linked frames and columns
+  and both-sides text wrap; text that flows through linked frames and columns,
   with page, column and frame breaks.
 - *Objects.* Tables (insert, type, merge and split cells, resize, cell
   properties, Tab between cells); WordArt, drop shadows and BorderArt.
@@ -164,8 +164,8 @@ Paste this into the GitHub release draft and trim it.
 **Template names.** The nine new built-in templates (`greeting_card`,
 `postcard`, `certificate`, `menu`, `letterhead`, `envelope`, `calendar`,
 `address_labels`, `business_cards`) take precedence over any template of your
-own saved earlier under the same name: the built-in is listed and used, and
-yours is hidden (its file is untouched; save it under another name to use it).
+own saved earlier under the same name. The built-in is listed and used, and
+yours is hidden. Its file is untouched; save it under another name to use it.
 
 **Known limitations** (see TODO.md for the full list)
 
