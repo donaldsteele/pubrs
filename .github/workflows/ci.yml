@@ -44,6 +44,9 @@ jobs:
         run: cargo build -p pubrs-core --no-default-features
       - name: tests (unit, goldens, PDF, MCP integration)
         run: cargo test --workspace
+      - name: Performance table (Linux, 16 pages, informational)
+        if: runner.os == 'Linux'
+        run: cargo run --release -p pubrs-cli -- perf --pages 16 --runs 3
       - name: Golden images byte-identical on this OS?
         shell: bash
         run: |

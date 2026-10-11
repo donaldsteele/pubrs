@@ -106,3 +106,22 @@ fn bundled_sample_validates_and_exports() {
     assert!(bytes.starts_with(b"%PDF-"));
     assert!(bytes.windows(9).any(|w| w == b"/BleedBox"));
 }
+
+#[test]
+fn perf_table_prints_keystroke_rows() {
+    let out = bin()
+        .args(["perf", "--pages", "2", "--runs", "1", "--check"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("measurement"), "{text}");
+    assert!(text.contains("verdict"), "{text}");
+    assert!(text.contains("keystroke: command"), "{text}");
+    assert!(text.contains("keystroke: relayout"), "{text}");
+    assert!(text.contains("keystroke: total"), "{text}");
+}

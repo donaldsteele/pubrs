@@ -3998,6 +3998,7 @@ name = "pubrs-api"
 version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
+ "image",
  "lopdf",
  "pubrs-core",
  "pubrs-io",

@@ -87,6 +87,24 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Measure performance on a synthetic publication (software rendering).
+    Perf {
+        /// Letter pages in the test document.
+        #[arg(long, default_value_t = 200)]
+        pages: usize,
+        /// Characters of text (default: 5,000 a page).
+        #[arg(long)]
+        chars: Option<usize>,
+        /// Placed images (default: 2.5 a page, at least 1).
+        #[arg(long)]
+        images: Option<usize>,
+        /// Repetitions per measurement (the median is reported).
+        #[arg(long, default_value_t = 7)]
+        runs: usize,
+        /// Exit with code 1 if an enforced budget is exceeded.
+        #[arg(long)]
+        check: bool,
+    },
     /// List the available tools.
     Tools {
         /// Include input schemas.
@@ -267,6 +285,28 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
             if !report.ok {
                 bail!("script failed");
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Cmd::Perf {
+            pages,
+            chars,
+            images,
+            runs,
+            check,
+        } => {
+            let mut spec = pubrs_api::perf::PerfSpec::scaled(*pages, *runs);
+            if let Some(c) = chars {
+                spec.chars = *c;
+            }
+            if let Some(i) = images {
+                spec.images = *i;
+            }
+            let report = api(pubrs_api::perf::run(spec))?;
+            say!("{report}");
+            if *check && let Err(e) = report.check() {
+                eprintln!("error: {}", e.message);
+                return Ok(ExitCode::from(1));
             }
             Ok(ExitCode::SUCCESS)
         }

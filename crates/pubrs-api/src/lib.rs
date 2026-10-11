@@ -8,6 +8,7 @@
 
 pub mod error;
 pub mod markup;
+pub mod perf;
 pub mod registry;
 pub mod script;
 pub mod session;

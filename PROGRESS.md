@@ -14,7 +14,35 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** `v0.1.1` is tagged (GPU adapter choice, bundled Mesa llvmpipe in the x64 MSI, no console window on Windows); its release workflow drafts the GitHub release. Before publishing: the manual per-installer check in RELEASE.md on real desktops. The older `v0.1.0` draft is superseded. Further work is listed in TODO.md.
+**Next step:** Phase 2, M10 (T2) Robustness and guard rails, per the plan on branch `plan/publisher-parity`.
+
+
+## Phase 2: Publisher parity
+
+Plan: `~/.claude/plans/pubrs-publisher-parity.md`, branch `plan/publisher-parity`.
+
+| Milestone | Status | Notes |
+|-----------|--------|-------|
+| M9 Performance harness in the tree | done | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
+
+### Baseline performance (M9)
+
+Release build, software raster, 16-core Linux box, median ms. `pubrs perf --pages N --runs R` (16: R=3; 50 and 200: R=5).
+
+| Measurement | 16 pages | 50 pages | 200 pages |
+|-------------|---------:|---------:|----------:|
+| build document | 178.98 | 296.39 | 2499.63 |
+| layout (warm) | 46.39 | 147.92 | 598.17 |
+| render page at 100% (144 dpi) | 23.08 | 23.82 | 24.09 |
+| keystroke: command | 0.20 | 0.56 | 2.37 |
+| keystroke: layout | 47.14 | 146.70 | 594.46 |
+| keystroke: render | 23.25 | 23.89 | 24.17 |
+| keystroke: total | 70.54 | 171.13 | 621.01 |
+| move frame | 0.08 | 0.20 | 0.94 |
+| undo | 0.00 | 0.01 | 0.05 |
+| save | 3.54 | 7.89 | 28.49 |
+| open | 1.47 | 3.56 | 15.57 |
+| PDF export | 441.53 | 559.58 | 1071.18 |
 
 ## Verification per milestone
 
