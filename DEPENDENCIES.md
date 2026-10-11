@@ -27,4 +27,7 @@ Any dependency outside that stack has a one-line justification below.
 - `cfb` (pubrs-io, MIT): reads the OLE compound file container of Microsoft Publisher `.pub` files (T23).
 - `hypher` 0.1.8 (pubrs-layout, MIT OR Apache-2.0): TeX-pattern hyphenation with patterns compiled in at build time; `default-features = false` with only the languages whose pattern licences are recorded in `ASSETS.md` (en, de, es, fr, pl, pt). Used by Typst.
 - `sha2` (dev, pubrs-io, MIT OR Apache-2.0): verifies the SHA-256 hashes in `ASSETS.md` in the assets listing test; already in the tree through lopdf.
+- `spellbook` 0.4.2 (pubrs-io, MPL-2.0; `default-features = false`): Hunspell-compatible spell checking and suggestions (Owner decision 6), pure Rust, used by the Helix editor. Its only dependency, `hashbrown`, is already in the tree.
+- `foldhash` 0.2 (pubrs-io, Zlib; `default-features = false`): the fixed-seed hasher handed to `spellbook`, so suggestions come out in the same order in every run (its default hasher is randomly seeded). Already in the tree through `hashbrown`.
+- `unicode-segmentation` 1.13 (pubrs-io, MIT OR Apache-2.0): Unicode word boundaries (UAX #29) for the spell checker's word splitting. Already in the tree.
 - `hayro-syntax` 0.8 (pubrs-render, MIT OR Apache-2.0; `default-features = false`): parses an exported PDF's objects and content streams so `pdfx::check` can find device RGB under a CMYK output intent (PDF/X-4). Already in the tree through the dev-only `hayro`.

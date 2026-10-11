@@ -122,8 +122,27 @@ fn parse_var(s: &str) -> Result<(String, String), String> {
 fn session(cli: &Cli) -> Session {
     Session::new(SessionConfig {
         system_fonts: !cli.no_system_fonts,
+        dictionaries_dir: dictionaries_dir(),
         ..Default::default()
     })
+}
+
+/// The app's spelling folder, `<config dir>/pubrs/dictionaries` (user
+/// Hunspell dictionaries and added words), so `spell_*` tools in scripts see
+/// what the app sees. The config dir follows the platform's convention, as
+/// the app's does: %APPDATA% on Windows, ~/Library/Application Support on
+/// macOS, $XDG_CONFIG_HOME or ~/.config elsewhere.
+fn dictionaries_dir() -> Option<PathBuf> {
+    let var = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    #[cfg(target_os = "windows")]
+    let base = var("APPDATA");
+    #[cfg(target_os = "macos")]
+    let base = var("HOME").map(|h| h.join("Library").join("Application Support"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = var("XDG_CONFIG_HOME")
+        .filter(|p| p.is_absolute())
+        .or_else(|| var("HOME").map(|h| h.join(".config")));
+    base.map(|b| b.join("pubrs").join("dictionaries"))
 }
 
 fn open(s: &mut Session, file: &Path) -> Result<()> {

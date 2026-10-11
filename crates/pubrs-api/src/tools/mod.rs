@@ -18,6 +18,7 @@ pub mod images;
 pub mod pages;
 pub mod query;
 pub mod sheets;
+pub mod spell;
 pub mod styles;
 pub mod templates;
 pub mod text;

@@ -1,5 +1,5 @@
 //! `pubrs-io`: the `.pubrs` file format, schema migration, image import and
-//! decoding, templates and export orchestration.
+//! decoding, templates, spell checking and export orchestration.
 
 pub mod assets;
 pub mod error;
@@ -9,6 +9,7 @@ pub mod images;
 pub mod migrate;
 pub mod presets;
 pub mod pubfile;
+pub mod spell;
 pub mod templates;
 
 pub use assets::{ImageInfo, image_info, import_image, sniff_format};

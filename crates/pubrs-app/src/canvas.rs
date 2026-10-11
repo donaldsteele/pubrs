@@ -196,6 +196,9 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
             return;
         }
     };
+    // Spelling: check what the page shows, off the UI thread.
+    let editing = app.view().and_then(|v| v.edit.as_ref().map(|e| e.story));
+    crate::spell::request_page(app, &snap, editing);
     let doc: &Document = &snap.doc;
     let page = doc.pages[0].clone();
     let owner = Owner::Page(page.id);
@@ -457,6 +460,20 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     }
                 }
             }
+            // ---- spelling: squiggles under misspelt words
+            if let Some(layout) = &layout {
+                crate::spell::draw_squiggles(
+                    app,
+                    &painter,
+                    doc_id,
+                    doc,
+                    layout,
+                    owner,
+                    xf,
+                    ppp,
+                    ui.visuals().error_fg_color,
+                );
+            }
             // ---- text editing overlays
             let edit = app.view().and_then(|v| v.edit.clone());
             if let (Some(e), Some(layout)) = (&edit, &layout) {
@@ -557,6 +574,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 rotate_offset,
                 layout.as_deref(),
             );
+            crate::spell::context_menu(app, ui);
         });
 }
 
@@ -628,6 +646,20 @@ fn handle_input(
         {
             ctx.set_cursor_icon(egui::CursorIcon::Text);
         }
+    }
+    // ---- right click: the spelling menu on a misspelt word
+    if resp.secondary_clicked()
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let p = xf.to_page(pos);
+        if let (Some(leaf), Some(layout), Some(doc_id)) =
+            (hit_leaf(doc, owner, p, pad), layout, app.doc_id())
+            && let Some(story) = doc.story_of(leaf)
+            && let Some(at) = textedit::offset_at(doc, layout, story, leaf, p)
+        {
+            crate::spell::open_menu(app, doc_id, doc, story, at, pos, false);
+        }
+        return;
     }
     // ---- double click: edit text / place picture
     if resp.double_clicked()
@@ -937,6 +969,10 @@ fn handle_input(
     if ctx.text_edit_focused() || !canvas_focus {
         return;
     }
+    // The spelling menu or the Spelling window has the keyboard.
+    if app.spell.wants_keys() {
+        return;
+    }
     if app.dialog.is_some() {
         // A modal dialog (Paragraph…, Drop Cap… opened while editing) owns
         // the keyboard: its Enter must not also type a paragraph break.
@@ -1089,6 +1125,15 @@ fn text_keys(
                     // paragraph break.
                     egui::Key::Enter if types_paragraph_break(modifiers) => {
                         edit_insert(app, &e, "\n")
+                    }
+                    egui::Key::F10 if modifiers.shift => {
+                        // The spelling menu for the word at the caret.
+                        let anchor = textedit::caret_segment(doc, layout, story, e.caret)
+                            .zip(app.view().and_then(|v| v.xf))
+                            .map(|((_, _, bottom), xf)| xf.to_screen(bottom));
+                        if let (Some(anchor), Some(doc_id)) = (anchor, app.doc_id()) {
+                            crate::spell::open_menu(app, doc_id, doc, story, e.caret, anchor, true);
+                        }
                     }
                     egui::Key::Tab => edit_insert(app, &e, "\t"),
                     egui::Key::Backspace => edit_delete(app, &e, false, word, &chars),

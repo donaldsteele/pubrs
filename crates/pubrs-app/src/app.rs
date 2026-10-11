@@ -137,6 +137,8 @@ pub struct PubrsApp {
     pub renderer: crate::render_worker::RenderWorker,
     /// Times the render worker was started again after its thread died.
     renderer_restarts: u32,
+    /// Spell checking off the UI thread, squiggles, menu and window.
+    pub spell: crate::spell::SpellState,
 }
 
 /// Failed renders of one view retried before giving up until it changes.
@@ -156,10 +158,13 @@ impl PubrsApp {
             None if args.smoke_test => Platform::null(&std::env::temp_dir().join("pubrs-smoke")),
             None => Platform::native(),
         };
+        // User Hunspell dictionaries and added words (M28).
+        let dictionaries = platform.paths.config_dir().join("dictionaries");
         let session = Session::new(SessionConfig {
             system_fonts: platform.fonts.use_system_fonts(),
             user_templates_dir: Some(platform.paths.user_templates_dir()),
             output_dir: Some(platform.paths.documents_dir()),
+            dictionaries_dir: Some(dictionaries.clone()),
             ..Default::default()
         });
         let mut visuals = egui::Visuals::light();
@@ -196,6 +201,7 @@ impl PubrsApp {
             window: WindowRenderer::detect(cc),
             renderer: crate::render_worker::RenderWorker::new(cc.egui_ctx.clone()),
             renderer_restarts: 0,
+            spell: crate::spell::SpellState::new(&cc.egui_ctx, Some(dictionaries)),
         };
         app.load_settings();
         app.fonts = app
@@ -1293,6 +1299,7 @@ impl PubrsApp {
             }
             About => self.dialog = Some(Dialog::About),
             McpHelp => self.dialog = Some(Dialog::McpHelp),
+            Spelling => crate::spell::open_dialog(self),
         }
     }
 
@@ -1415,6 +1422,7 @@ impl eframe::App for PubrsApp {
             }
         }
         self.apply_renders(&ctx);
+        crate::spell::poll(self, &ctx);
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close {
             if self.dirty_docs().is_empty() || self.args.smoke_test {
                 self.allow_close = true;
@@ -1430,6 +1438,7 @@ impl eframe::App for PubrsApp {
             }
         }
         self.handle_shortcuts(&ctx);
+        crate::spell::dialog_keys(self, &ctx);
         self.handle_dropped_files(&ctx);
         if self.native_menu.is_none() {
             crate::panels::menu_bar(self, ui);
@@ -1444,6 +1453,7 @@ impl eframe::App for PubrsApp {
         crate::canvas::central(self, ui);
         crate::dialogs::show(self, &ctx);
         crate::find::replace_window(self, &ctx);
+        crate::spell::dialog_window(self, &ctx);
         self.autosave.tick(&self.session, &self.views);
         if self.selftest.is_none() && !self.args.smoke_test {
             self.save_settings();

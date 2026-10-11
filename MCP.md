@@ -2902,6 +2902,207 @@ Result:
 }
 ```
 
+## Spelling
+
+### `spell_check`
+
+Find misspelt words in the whole document (reading order) or in one story (frame_id or story_id). Each paragraph is checked in its own language (paragraph `language`, BCP 47): en-US is built in, other languages need a user Hunspell dictionary; paragraphs in a language without one are skipped and listed in unchecked_languages. Words with digits, web and e-mail addresses, merge fields and (by default) words in capitals only are not checked. Returns story character ranges like text_find; fix a word with text_replace_range.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `frame_id` | string |  | Check only this text frame's story. Omit both frame_id and story_id to check every story in the document. |
+| `ignore_all_caps` | boolean |  | Skip words written in capitals only, such as acronyms (default true). |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `count`, `dictionaries`, `issues`, `unchecked_languages`
+
+**Example** — Misspelt words with story offsets. The French paragraph has no dictionary (only en_US is built in), so it is skipped and listed in unchecked_languages.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000038"
+  },
+  "name": "spell_check"
+}
+```
+
+Result:
+
+```json
+{
+  "count": 3,
+  "dictionaries": [
+    "en_US"
+  ],
+  "issues": [
+    {
+      "end": 24,
+      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "language": "en-US",
+      "start": 16,
+      "…": "2 more keys"
+    },
+    {
+      "end": 37,
+      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "language": "en-US",
+      "start": 31,
+      "…": "2 more keys"
+    },
+    {
+      "end": 57,
+      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "language": "en-US",
+      "start": 52,
+      "…": "2 more keys"
+    }
+  ],
+  "unchecked_languages": [
+    "fr-FR"
+  ]
+}
+```
+
+**Example** — The whole document, after adding pubrs.
+
+```json
+{
+  "arguments": {},
+  "name": "spell_check"
+}
+```
+
+Result:
+
+```json
+{
+  "count": 2,
+  "dictionaries": [
+    "en_US"
+  ],
+  "issues": [
+    {
+      "end": 24,
+      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "language": "en-US",
+      "start": 16,
+      "…": "2 more keys"
+    },
+    {
+      "end": 37,
+      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "language": "en-US",
+      "start": 31,
+      "…": "2 more keys"
+    }
+  ],
+  "unchecked_languages": [
+    "fr-FR"
+  ]
+}
+```
+
+### `spell_suggest`
+
+Suggest corrections for a word in a language (default en-US), best first, and say whether the word is already correct.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `language` | string |  | BCP 47 language tag, such as a spell_check issue's language (default "en-US"). |
+| `word` | string | yes | The word to correct. |
+
+**Result fields:** `correct`, `dictionary`, `suggestions`, `word`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "language": "en-US",
+    "word": "mornng"
+  },
+  "name": "spell_suggest"
+}
+```
+
+Result:
+
+```json
+{
+  "correct": false,
+  "dictionary": "en_US",
+  "suggestions": [
+    "morning",
+    "morn"
+  ],
+  "word": "mornng"
+}
+```
+
+**Example** — No dictionary for French: add fr_FR.dic and fr_FR.aff to the dictionaries folder.
+
+```json
+{
+  "arguments": {
+    "language": "fr-FR",
+    "word": "chaton"
+  },
+  "name": "spell_suggest"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "not_found",
+  "hint": "available: en_US; add a Hunspell .dic/.aff pair to the dictionaries folder for other languages",
+  "message": "dictionary for \"fr-FR\" not found"
+}
+```
+
+### `spell_add_word`
+
+Add a word to the user dictionary so spell_check accepts it in every language (capitalised and all-capitals forms too). The word is saved to the user dictionary file when the session has a dictionaries folder (the app and the pubrs CLI do); otherwise it lasts for this session.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `word` | string | yes | One word without spaces (at most 64 characters). From now on it is accepted in every language. |
+
+**Result fields:** `added`, `path`, `word`
+
+**Example** — Without a dictionaries folder (as in this example session) the word lasts for the session; the app and the CLI save it to user-words.txt.
+
+```json
+{
+  "arguments": {
+    "word": "pubrs"
+  },
+  "name": "spell_add_word"
+}
+```
+
+Result:
+
+```json
+{
+  "added": true,
+  "word": "pubrs"
+}
+```
+
 ## Styles
 
 ### `style_list`

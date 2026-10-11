@@ -73,6 +73,8 @@ pub enum Action {
     Replace,
     ToggleSnap,
     Validate,
+    /// Review → Spelling… (F7).
+    Spelling,
     ColorScheme,
     ShowSwatches,
     NextPage,
@@ -132,6 +134,7 @@ pub fn shortcut(a: Action) -> Option<KeyboardShortcut> {
         ZoomActual => cmd(Key::Num1),
         NextPage => KeyboardShortcut::new(Modifiers::NONE, Key::PageDown),
         PreviousPage => KeyboardShortcut::new(Modifiers::NONE, Key::PageUp),
+        Spelling => KeyboardShortcut::new(Modifiers::NONE, Key::F7),
         _ => return None,
     })
 }
@@ -288,6 +291,10 @@ pub const MENUS: &[MenuSpec] = &[
             Sep,
             A("Check for Problems…", Action::Validate),
         ],
+    },
+    MenuSpec {
+        title: "Review",
+        items: &[A("Spelling…", Action::Spelling)],
     },
     MenuSpec {
         title: "Help",

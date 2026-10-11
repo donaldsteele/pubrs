@@ -322,6 +322,16 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             ui.small(
                 "Bundled fonts: Liberation Sans and Liberation Serif (SIL Open Font License 1.1).",
             );
+            ui.small(
+                "Spelling: en_US Hunspell dictionary from SCOWL, by Kevin Atkinson and others.",
+            );
+            ui.collapsing("Spelling dictionary copyright and licence", |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(220.0)
+                    .show(ui, |ui| {
+                        ui.small(pubrs_api::io::spell::BUNDLED_NOTICE);
+                    });
+            });
             if ui.button("Close").clicked() {
                 Outcome::Close
             } else {

@@ -9,8 +9,8 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
-    color, doc, export, find, frames, history, images, pages, query, sheets, styles, templates,
-    text,
+    color, doc, export, find, frames, history, images, pages, query, sheets, spell, styles,
+    templates, text,
 };
 
 /// One tool.
@@ -211,6 +211,13 @@ pub static TOOLS: &[ToolDef] = &[
         "Report every story: its frame chain, whether it overflows and how many characters are hidden. Fix overflow by enlarging the last frame, shortening text or linking another frame."),
     tool!("text_set_frame_options", "Text", text_set_frame_options, text::TextSetFrameOptions => Changed, ro = false, destructive = false, image = None,
         "Set a text frame's columns (1-12), column gap and inner inset in points, and vertical alignment (top/middle/bottom)."),
+    // ---------------------------------------------------------------- spelling
+    tool!("spell_check", "Spelling", spell_check, spell::SpellCheck => spell::SpellCheckOut, ro = true, destructive = false, image = None,
+        "Find misspelt words in the whole document (reading order) or in one story (frame_id or story_id). Each paragraph is checked in its own language (paragraph `language`, BCP 47): en-US is built in, other languages need a user Hunspell dictionary; paragraphs in a language without one are skipped and listed in unchecked_languages. Words with digits, web and e-mail addresses, merge fields and (by default) words in capitals only are not checked. Returns story character ranges like text_find; fix a word with text_replace_range."),
+    tool!("spell_suggest", "Spelling", spell_suggest, spell::SpellSuggest => spell::SpellSuggestOut, ro = true, destructive = false, image = None,
+        "Suggest corrections for a word in a language (default en-US), best first, and say whether the word is already correct."),
+    tool!("spell_add_word", "Spelling", spell_add_word, spell::SpellAddWord => spell::SpellAddWordOut, ro = false, destructive = false, image = None,
+        "Add a word to the user dictionary so spell_check accepts it in every language (capitalised and all-capitals forms too). The word is saved to the user dictionary file when the session has a dictionaries folder (the app and the pubrs CLI do); otherwise it lasts for this session."),
     // ---------------------------------------------------------------- styles
     tool!("style_list", "Styles", style_list, styles::StyleList => styles::StyleListOut, ro = true, destructive = false, image = None,
         "List paragraph and character styles with their properties and parents. Built-ins: Normal, Title, Heading 1, Heading 2, Body, Caption, Emphasis."),

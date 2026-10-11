@@ -249,6 +249,49 @@ pub fn selection_quads(
     out
 }
 
+/// Page-space segments under the character ranges of `items` (sorted by
+/// start, not overlapping) on the lines `frame` shows: one per line and
+/// range, along the bottom of the selection quads, just under the baseline
+/// (half-way down the descent). Costs the frame's lines, not the story's.
+pub fn underline_segments<T>(
+    doc: &Document,
+    layout: &DocumentLayout,
+    story: StoryId,
+    frame: FrameId,
+    items: &[T],
+    range: impl Fn(&T) -> (usize, usize),
+) -> Vec<(Point, Point)> {
+    let mut out = Vec::new();
+    let Some(ft) = layout
+        .stories
+        .get(&story)
+        .and_then(|sl| sl.frames.get(&frame))
+    else {
+        return out;
+    };
+    for l in &ft.lines {
+        let first = items.partition_point(|t| range(t).1 <= l.chars.start);
+        for t in &items[first..] {
+            let (s, e) = range(t);
+            if s >= l.chars.end {
+                break;
+            }
+            let (a, b) = (s.max(l.chars.start), e.min(l.chars.end));
+            if a >= b {
+                continue;
+            }
+            let y = l.baseline + (l.rect.bottom() - l.baseline) * 0.5;
+            if let (Some(p), Some(q)) = (
+                frame_to_page(doc, frame, l.caret_x(a), y),
+                frame_to_page(doc, frame, l.caret_x(b), y),
+            ) {
+                out.push((p, q));
+            }
+        }
+    }
+    out
+}
+
 /// Previous/next word boundary for Ctrl/Alt+arrow movement.
 pub fn word_boundary(text: &[char], offset: usize, forward: bool) -> usize {
     let n = text.len();

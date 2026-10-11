@@ -19,6 +19,7 @@ mod platform;
 mod render_worker;
 mod rulers;
 mod selftest;
+mod spell;
 mod textedit;
 mod view;
 

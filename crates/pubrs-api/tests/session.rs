@@ -609,3 +609,137 @@ fn find_and_replace_all_across_stories() {
     assert_eq!(out.count, 1);
     assert_eq!(find(&mut s, "ca", false, false).count, 5);
 }
+
+#[test]
+fn spelling_tools_check_suggest_and_add_words() {
+    use pubrs_api::tools::spell::*;
+    use serde_json::json;
+    let dir = tmp("spelling-dicts");
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = SessionConfig {
+        id_seed: Some(7),
+        font_dir: Some(root().join("tests/fonts")),
+        dictionaries_dir: Some(dir.clone()),
+        ..Default::default()
+    };
+    let mut s = Session::new(config.clone());
+    let doc = s.doc_new(DocNew::default()).unwrap();
+    let text = "Teh baker bakes bred.\nUne baguette trés bonne.\nVisit https://pubrs.example, ask XQZT about Kerncraft.";
+    let f = text_frame(&mut s, doc.page_ids[0], 72.0, 72.0, 400.0, 300.0, text);
+    pubrs_api::call_tool(
+        &mut s,
+        "text_apply_para_style",
+        json!({"frame_id": f.frame_id, "start": 22, "end": 23, "language": "fr-FR"}),
+    )
+    .unwrap();
+    let check = |s: &mut Session, caps: bool| {
+        s.spell_check(SpellCheck {
+            doc_id: None,
+            frame_id: None,
+            story_id: None,
+            ignore_all_caps: caps,
+        })
+        .unwrap()
+    };
+    let out = check(&mut s, true);
+    let words: Vec<&str> = out.issues.iter().map(|i| i.word.as_str()).collect();
+    assert_eq!(words, ["Teh", "Kerncraft"]);
+    assert_eq!((out.issues[0].start, out.issues[0].end), (0, 3));
+    assert_eq!(out.issues[0].frame_id, Some(f.frame_id));
+    assert_eq!(out.issues[0].language, "en-US");
+    assert_eq!(out.unchecked_languages, ["fr-FR"]);
+    assert_eq!(out.dictionaries, ["en_US"]);
+    // Capitals only are checked on request.
+    let caps: Vec<String> = check(&mut s, false)
+        .issues
+        .into_iter()
+        .map(|i| i.word)
+        .collect();
+    assert_eq!(caps, ["Teh", "XQZT", "Kerncraft"]);
+    // One story by frame gives the same as the document here.
+    let one = s
+        .spell_check(SpellCheck {
+            doc_id: None,
+            frame_id: Some(f.frame_id),
+            story_id: None,
+            ignore_all_caps: true,
+        })
+        .unwrap();
+    assert_eq!(one.issues, out.issues);
+
+    let sug = s
+        .spell_suggest(SpellSuggest {
+            word: "Teh".into(),
+            language: Some(out.issues[0].language.clone()),
+        })
+        .unwrap();
+    assert!(!sug.correct);
+    assert_eq!(sug.dictionary, "en_US");
+    assert!(
+        sug.suggestions
+            .iter()
+            .any(|w| w.eq_ignore_ascii_case("the")),
+        "{:?}",
+        sug.suggestions
+    );
+    // Fix it the way a client would: replace the range.
+    s.text_replace_range(TextReplaceRange {
+        doc_id: None,
+        frame_id: Some(f.frame_id),
+        story_id: None,
+        start: out.issues[0].start,
+        end: out.issues[0].end,
+        text: "The".into(),
+    })
+    .unwrap();
+    let added = s
+        .spell_add_word(SpellAddWord {
+            word: "Kerncraft".into(),
+        })
+        .unwrap();
+    assert!(added.added);
+    assert_eq!(
+        added.path.as_deref().map(PathBuf::from),
+        Some(dir.join("user-words.txt"))
+    );
+    assert_eq!(check(&mut s, true).count, 0);
+    // A new session reads the user dictionary.
+    let mut s2 = Session::new(config);
+    s2.doc_new(DocNew::default()).unwrap();
+    let f2 = text_frame(
+        &mut s2,
+        doc.page_ids[0],
+        0.0,
+        0.0,
+        300.0,
+        100.0,
+        "Kerncraft rocks",
+    );
+    let again = s2
+        .spell_check(SpellCheck {
+            doc_id: None,
+            frame_id: Some(f2.frame_id),
+            story_id: None,
+            ignore_all_caps: true,
+        })
+        .unwrap();
+    assert_eq!(again.count, 0);
+
+    // Errors.
+    let e = s
+        .spell_add_word(SpellAddWord {
+            word: "two words".into(),
+        })
+        .unwrap_err();
+    assert_eq!(e.code, "invalid_argument");
+    let e = s
+        .spell_suggest(SpellSuggest {
+            word: "chaton".into(),
+            language: Some("fr".into()),
+        })
+        .unwrap_err();
+    assert_eq!(e.code, "not_found");
+    let e = pubrs_api::call_tool(&mut s, "spell_check", json!({"language": "en"})).unwrap_err();
+    assert_eq!(e.code, "invalid_argument", "unknown fields are refused");
+    let _ = std::fs::remove_dir_all(dir);
+}

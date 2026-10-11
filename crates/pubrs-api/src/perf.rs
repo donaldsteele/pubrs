@@ -111,6 +111,12 @@ pub const BUDGETS: &[(usize, &str, Budget)] = &[
     // 50-page CI bound (60 ms, M11) stays; the plan's dev-machine bound at
     // 200 pages is 30 ms.
     (200, "keystroke.total", enforced(30.0)),
+    // M28: spell checking per keystroke, on the GUI's spell worker: the
+    // edited story again, where only the edited paragraph misses the
+    // paragraph cache. The plan allows it 2 ms of the keystroke budget, CI
+    // and development machine alike.
+    (50, "keystroke.spell", enforced(2.0)),
+    (200, "keystroke.spell", enforced(2.0)),
 ];
 
 fn budget_for(key: &str, pages: usize) -> Option<Budget> {
@@ -698,6 +704,20 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
     let (mut t_exec, mut t_layout, mut t_raster, mut t_total) = (vec![], vec![], vec![], vec![]);
     let (mut t_keys, mut recomposed) = (vec![], 0);
     let (mut damaged_px, mut region_px) = (0u64, 0u64);
+    // Spelling (M28): the GUI's spell worker has checked the story once when
+    // its page was shown; after each keystroke it checks the story again,
+    // which re-checks only the edited paragraph (the others come from the
+    // paragraph cache).
+    let mut speller = pubrs_io::spell::SpellChecker::new(None);
+    let t = Instant::now();
+    let first = speller.check_story(s.get(Some(doc_id))?.doc(), story);
+    rep.notes.push(format!(
+        "spelling: en_US dictionary loaded and the typed-in story checked in {:.0} ms ({} misspelt words)",
+        t.elapsed().as_secs_f64() * 1000.0,
+        first.issues.len()
+    ));
+    let spell_checked = speller.stats().checked;
+    let mut t_spell = vec![];
     for k in 0..runs {
         let t0 = Instant::now();
         let len = story_len(&s)?;
@@ -736,10 +756,19 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         t_layout.push((t2 - t1).as_secs_f64() * 1000.0);
         t_raster.push((t3 - t2).as_secs_f64() * 1000.0);
         t_total.push((t3 - t0).as_secs_f64() * 1000.0);
+        // Off the UI thread in the GUI; timed apart from the total.
+        let t4 = Instant::now();
+        let found = speller.check_story(s.get(Some(doc_id))?.doc(), story);
+        t_spell.push(t4.elapsed().as_secs_f64() * 1000.0);
+        std::hint::black_box(found);
     }
     rep.notes.push(format!(
         "keystroke damage: {:.1}% of the page redrawn on average",
         100.0 * damaged_px as f64 / region_px.max(1) as f64
+    ));
+    rep.notes.push(format!(
+        "paragraphs spell checked per keystroke: {:.1}",
+        (speller.stats().checked - spell_checked) as f64 / runs.max(1) as f64
     ));
     push(
         &mut rep,
@@ -774,6 +803,12 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         "keystroke.total",
         "keystroke: total, as the GUI does it".into(),
         median(t_total),
+    );
+    push(
+        &mut rep,
+        "keystroke.spell",
+        "keystroke: spell check (edited paragraph, worker)".into(),
+        median(t_spell),
     );
 
     // A non-coalesced edit (moving a frame).

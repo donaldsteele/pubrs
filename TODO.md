@@ -23,7 +23,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
 - Characters no bundled or installed font covers render as .notdef boxes; `validate` does not yet name them (layout counts them in `missing_glyphs`).
 - GUI: copy/paste of frames works within one publication only (no cross-document or OS-clipboard frame paste).
-- GUI: text editing has no IME composition support (direct key/text input only) and no spell checking.
+- GUI: text editing has no IME composition support (direct key/text input only).
 - Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
 - macOS: double-clicking a `.pubrs` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events. Workaround: File → Open, or drag the file onto the pubrs window (ADR 0010).
 - Installers are unsigned unless the signing secrets in RELEASE.md are set; macOS notarization is a manual step.
@@ -77,3 +77,13 @@ Deferred and partial work. Each entry says what is missing and why.
 - The Export dialog has no field for a custom output profile; use `export_pdf` with `output_intent_icc`.
 - `validate` does not yet warn about RGB colours in a PDF/X job (`rgb_in_cmyk_job`) or pictures without alt text (`missing_alt_text`); the design checker (M29) should.
 - Tagged PDF has no heading or list structure: text is `P` per frame, pictures are `Figure`, everything else is an artifact.
+
+## Spelling (M28)
+
+- Only American English (en_US, SCOWL size 60) is built in. Other languages, and British or other English variants, need a user Hunspell `.dic`/`.aff` pair in the dictionaries folder; a paragraph whose language has none is skipped (`unchecked_languages`).
+- `pubrs-mcp` passes no dictionaries folder (its `main.rs` was outside M28's files): over MCP, added words last for the session and user dictionaries are not loaded. The app and the `pubrs` CLI use `<config dir>/pubrs/dictionaries`.
+- `spellbook` 0.4 is alpha: no phonetic suggestions, and dictionaries with complex compounding rules (German, Hungarian, Finnish) may check less well than in Hunspell.
+- The word being typed is flagged at once (no wait until the word is finished), and there is no setting to turn checking as you type off.
+- Squiggles are drawn for text frames on the page shown, not for text on its master page.
+- Ignore accepts the word everywhere for the session (there is no "ignore once"; Next in the Spelling window skips one occurrence).
+- WordArt text (M25) is not checked yet (it must be added where `check_document` walks stories); table cells (M19) will be, because they are stories.

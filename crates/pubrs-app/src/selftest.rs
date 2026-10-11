@@ -10,7 +10,10 @@
 //! zoom to 800% with the keyboard and check a shape edge on screen is sharp
 //! (one texel per device pixel) → type into a 50-page publication and check
 //! the frame times `PUBRS_PERF` reports: no page is rasterised on the UI
-//! thread, and the UI thread's own work per frame stays small.
+//! thread, and the UI thread's own work per frame stays small. Later
+//! milestones add their own steps; the last ones (M28) type a misspelt word,
+//! wait for its squiggle, fix it from the right-click menu and from the
+//! Spelling window (F7).
 //!
 //! Before each step the self-test waits until the render worker has drawn
 //! the current revision, so screenshots show the page.
@@ -28,6 +31,7 @@ use pubrs_api::tools::text::{TextLinkFrames, TextRef, TextSet};
 
 use crate::app::PubrsApp;
 use crate::keymap::Action;
+use crate::textedit::TextEdit;
 
 /// Page x (points) in the gap between the brochure's first two columns: nothing but a guide is there.
 const GX: f64 = 252.0;
@@ -105,6 +109,12 @@ struct Data {
     before: Option<[u8; 4]>,
     /// M15: frame A (page 1) and frame B (page 2, two columns) of one story.
     m15: Option<(FrameId, FrameId)>,
+    /// M28: the frame typed into, the flagged word, the first suggestion.
+    spell_frame: Option<FrameId>,
+    spell_range: Option<(usize, usize)>,
+    suggestion: Option<String>,
+    /// The step being retried and how often.
+    retry: (usize, u32),
 }
 
 pub struct SelfTest {
@@ -270,6 +280,13 @@ impl SelfTest {
             .unwrap_or_default()
     }
 
+    /// Undo steps that are applied (not undone).
+    fn done_steps(app: &mut PubrsApp) -> usize {
+        app.session
+            .history_list(DocRef::default())
+            .map_or(0, |h| h.entries.iter().filter(|e| !e.undone).count())
+    }
+
     fn history_len(app: &mut PubrsApp) -> usize {
         app.session
             .history_list(DocRef::default())
@@ -413,6 +430,79 @@ impl SelfTest {
             modifiers: Modifiers::NONE,
         }]);
         self.pending.push_back(vec![Event::PointerGone]);
+    }
+
+    fn right_click(&mut self, pos: Pos2) {
+        let press = |pressed| Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        self.pending.push_back(vec![Event::PointerMoved(pos)]);
+        self.pending.push_back(vec![press(true)]);
+        self.pending.push_back(vec![press(false)]);
+    }
+
+    /// Run the current step again on a later frame (waiting for a worker).
+    fn again(&mut self, what: &str) -> Result<bool, String> {
+        let n = if self.data.retry.0 == self.step {
+            self.data.retry.1 + 1
+        } else {
+            1
+        };
+        self.data.retry = (self.step, n);
+        if n > 300 {
+            return Err(format!("timed out waiting for {what}"));
+        }
+        self.step -= 1;
+        Ok(false)
+    }
+
+    /// The range of `word` in the newest spell check of the page shown, if
+    /// that check is of the current revision and story text.
+    fn spell_issue(app: &PubrsApp, word: &str) -> Option<(usize, usize)> {
+        let doc_id = app.doc_id()?;
+        let rev = app.session.get(Some(doc_id)).ok()?.revision();
+        let p = app.spell.page.as_ref()?;
+        if p.doc_id != doc_id || p.revision != rev || p.page_index != app.view()?.page {
+            return None;
+        }
+        let doc = app.doc()?;
+        p.stories.iter().find_map(|(id, s)| {
+            let cur = doc.stories.get(id)?;
+            if !std::sync::Arc::ptr_eq(cur, &s.story) {
+                return None;
+            }
+            s.issues
+                .iter()
+                .find(|i| i.word == word)
+                .map(|i| (i.start, i.end))
+        })
+    }
+
+    /// Screen centre of a character range of a frame's story.
+    fn range_center(
+        app: &mut PubrsApp,
+        frame: FrameId,
+        start: usize,
+        end: usize,
+    ) -> Result<Pos2, String> {
+        let id = app.doc_id().ok_or("no doc")?;
+        let layout = app.session.layout(Some(id)).map_err(|e| e.message)?;
+        let doc = app.doc().ok_or("no doc")?;
+        let story = doc.story_of(frame).ok_or("no story")?;
+        let q = crate::textedit::selection_quads(doc, &layout, story, start, end)
+            .into_iter()
+            .next()
+            .ok_or("the word is not laid out")?;
+        let c = Point::new((q[0].x + q[2].x) / 2.0, (q[0].y + q[2].y) / 2.0);
+        Self::screen_of(app, c).ok_or_else(|| "canvas not laid out".to_string())
+    }
+
+    fn spell_text(app: &mut PubrsApp, frame: Option<FrameId>) -> Result<String, String> {
+        let f = frame.ok_or("no frame")?;
+        crate::canvas::story_text(app, f).ok_or_else(|| "no text".to_string())
     }
 
     fn key(&mut self, key: Key, modifiers: Modifiers) {
@@ -1826,6 +1916,199 @@ impl SelfTest {
                     cap.font_size
                 ));
                 self.screenshot(ctx);
+            }
+            91 => {
+                if app.dialog.is_some() {
+                    return Err("a dialog is still open after the drop cap step".into());
+                }
+                // M28: spelling. A blank publication with one text frame.
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 72.0, "y": 72.0, "width": 360.0, "height": 160.0,
+                        "font_size": 24.0,
+                        "text": "Fresh bread every morning.",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let out = app.session.frame_add_text(req).map_err(|e| e.message)?;
+                self.data.spell_frame = Some(out.frame_id);
+                app.select(vec![out.frame_id]);
+                // Let the input clock pass two double-click delays since the
+                // last click, so egui does not count a triple click.
+                for _ in 0..40 {
+                    self.pending.push_back(Vec::new());
+                }
+            }
+            92 => {
+                // Double-click the frame to edit its text, Cmd+End to its end.
+                let f = self.data.spell_frame.ok_or("no frame")?;
+                let center = app
+                    .doc()
+                    .and_then(|d| d.frame(f))
+                    .map(|f| f.rect.center())
+                    .ok_or("no frame")?;
+                let pos = Self::screen_of(app, center).ok_or("canvas not laid out")?;
+                self.click(pos, true);
+            }
+            93 => {
+                let e = app
+                    .view()
+                    .and_then(|v| v.edit.clone())
+                    .ok_or_else(|| {
+                        format!(
+                            "double-click did not start editing (selection {:?}, frame {:?}, xf {:?}, canvas {:?})",
+                            app.selection(),
+                            self.data.spell_frame,
+                            app.view().and_then(|v| v.xf),
+                            app.view().and_then(|v| v.canvas_rect)
+                        )
+                    })?;
+                if Some(e.frame) != self.data.spell_frame {
+                    return Err(format!("double-click edits frame {:?}", e.frame));
+                }
+                self.key(Key::End, Modifiers::COMMAND);
+            }
+            94 => {
+                let e = app
+                    .view()
+                    .and_then(|v| v.edit.clone())
+                    .ok_or("Cmd+End stopped text editing")?;
+                let n = Self::spell_text(app, self.data.spell_frame)?
+                    .chars()
+                    .count();
+                if e.caret != n {
+                    return Err(format!("Cmd+End put the caret at {} of {n}", e.caret));
+                }
+                // Type a misspelt word, one character a frame.
+                for c in " Delicous".chars() {
+                    self.pending.push_back(vec![Event::Text(c.to_string())]);
+                }
+            }
+            95 => {
+                let text = Self::spell_text(app, self.data.spell_frame)?;
+                if !text.ends_with(" Delicous") {
+                    return Err(format!("the typed text is {text:?}"));
+                }
+                // Wait for the spell worker and the squiggle.
+                let Some((start, end)) =
+                    Self::spell_issue(app, "Delicous").filter(|_| app.spell.drawn > 0)
+                else {
+                    return self.again("a squiggle under the typed word");
+                };
+                self.data.spell_range = Some((start, end));
+                self.ok(format!(
+                    "typed a misspelt word: the spell worker flagged \"Delicous\" at {start}..{end} and the canvas draws {} squiggle(s)",
+                    app.spell.drawn
+                ));
+                self.screenshot(ctx);
+            }
+            96 => {
+                // Right-click the word.
+                let (start, end) = self.data.spell_range.ok_or("no range")?;
+                let f = self.data.spell_frame.ok_or("no frame")?;
+                let pos = Self::range_center(app, f, start, end)?;
+                self.right_click(pos);
+            }
+            97 => {
+                let m = app
+                    .spell
+                    .menu
+                    .clone()
+                    .ok_or("right-click on the word did not open the spelling menu")?;
+                let Some(s) = m.suggestions else {
+                    return self.again("suggestions in the spelling menu");
+                };
+                self.data.suggestion =
+                    Some(s.first().cloned().ok_or("no suggestions for Delicous")?);
+                self.screenshot(ctx);
+            }
+            98 => {
+                self.data.hist = Self::done_steps(app);
+                self.click_target(ctx, "spell-suggestion-0")?;
+            }
+            99 => {
+                let want = self.data.suggestion.clone().ok_or("no suggestion")?;
+                if app.spell.menu.is_some() {
+                    return Err("the spelling menu stayed open".into());
+                }
+                let text = Self::spell_text(app, self.data.spell_frame)?;
+                if !text.ends_with(&format!(" {want}")) {
+                    return Err(format!("picking {want:?} left the text {text:?}"));
+                }
+                let steps = Self::done_steps(app) - self.data.hist;
+                if steps != 1 {
+                    return Err(format!("the replacement took {steps} undo steps"));
+                }
+                self.ok(format!(
+                    "right-click menu: picked {want:?}; the text changed in one undo step"
+                ));
+                self.key(Key::Z, Modifiers::COMMAND);
+            }
+            100 => {
+                let text = Self::spell_text(app, self.data.spell_frame)?;
+                if !text.ends_with(" Delicous") {
+                    return Err(format!("one Cmd+Z left {text:?}"));
+                }
+                self.ok("one Cmd+Z restored the misspelt word");
+                self.key(Key::F7, Modifiers::NONE);
+            }
+            101 => {
+                let d = app
+                    .spell
+                    .dialog
+                    .clone()
+                    .ok_or("F7 did not open the Spelling window")?;
+                let (Some(i), Some(_)) = (d.current.clone(), d.suggestions.clone()) else {
+                    return self.again("a word and suggestions in the Spelling window");
+                };
+                if i.word != "Delicous" {
+                    return Err(format!("the Spelling window shows {:?}", i.word));
+                }
+                let sel = app
+                    .view()
+                    .and_then(|v| v.edit.as_ref())
+                    .map(TextEdit::range);
+                if sel != Some((i.start, i.end)) {
+                    return Err(format!("the window did not select the word: {sel:?}"));
+                }
+                self.ok(format!(
+                    "F7: the Spelling window shows {:?} ({}) and selects it in the text",
+                    i.word, i.language
+                ));
+                self.screenshot(ctx);
+            }
+            102 => {
+                // Change, from the keyboard.
+                self.data.hist = Self::done_steps(app);
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            103 => {
+                let want = self.data.suggestion.clone().ok_or("no suggestion")?;
+                let text = Self::spell_text(app, self.data.spell_frame)?;
+                if !text.ends_with(&format!(" {want}")) {
+                    return Err(format!("Enter in the Spelling window left {text:?}"));
+                }
+                let d = app
+                    .spell
+                    .dialog
+                    .clone()
+                    .ok_or("the Spelling window closed")?;
+                if !d.done {
+                    return self.again("the end of the spelling check");
+                }
+                let steps = Self::done_steps(app) - self.data.hist;
+                if steps != 1 {
+                    return Err(format!("Change took {steps} undo steps"));
+                }
+                self.ok("Enter changed the word from the Spelling window (one undo step); the check is complete");
+                self.screenshot(ctx);
+            }
+            104 => self.key(Key::Escape, Modifiers::NONE),
+            105 => {
+                if app.spell.dialog.is_some() {
+                    return Err("Escape did not close the Spelling window".into());
+                }
+                self.ok("Escape closed the Spelling window");
                 return Ok(true);
             }
             _ => return Ok(true),

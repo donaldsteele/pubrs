@@ -122,6 +122,26 @@ onto the window to place it in the selected picture frame.
 - Matches never cross a paragraph break. Text hidden by overflow is searched
   and replaced, but can't be selected until it fits in a box.
 
+### Spelling
+
+- Misspelt words get a red wavy underline as you type. Right-click one (or put
+  the cursor in it and press Shift+F10) for suggestions: pick one to replace
+  the word (one undo step), **Add to Dictionary** to accept it from now on, or
+  **Ignore** to accept it until you quit.
+- **Review → Spelling…** (F7) goes through the misspelt words from the cursor
+  on, selecting each in the text. **Change** uses the highlighted suggestion
+  (Up/Down choose, Enter changes), **Change All** fixes every copy in one step,
+  **Ignore**, **Add** and **Next** skip it, Esc closes.
+- Each paragraph is checked in its own language (Text → Paragraph… sets it).
+  American English is built in. For other languages, put a Hunspell dictionary
+  pair (for example `de_DE.dic` and `de_DE.aff`, as used by LibreOffice) in the
+  `dictionaries` folder of the pubrs settings folder: `%APPDATA%\pubrs` on
+  Windows, `~/Library/Application Support/pubrs` on macOS, `~/.config/pubrs` on
+  Linux. Paragraphs in a language without a dictionary are not checked.
+- Words you add are kept in `user-words.txt` in that folder, one per line.
+- Words with digits, web and e-mail addresses, and words in capitals only
+  (acronyms) are not checked.
+
 ### Keyboard shortcuts
 
 | Action | Windows / Linux | macOS |
@@ -139,6 +159,7 @@ onto the window to place it in the selected picture frame.
 | Next / previous page | Page Down / Page Up | Page Down / Page Up |
 | Lock / unlock | Ctrl+L | ⌘L |
 | Find, Replace | Ctrl+F, Ctrl+H | ⌘F, ⌘H |
+| Spelling, spelling menu at the cursor | F7, Shift+F10 | F7, Shift+F10 |
 
 ### Saving, autosave and recovery
 

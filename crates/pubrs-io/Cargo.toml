@@ -24,6 +24,9 @@ image.workspace = true
 usvg.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+spellbook.workspace = true
+foldhash.workspace = true
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png", "jpeg"] }

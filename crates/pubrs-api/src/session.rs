@@ -32,6 +32,10 @@ pub struct SessionConfig {
     /// Never use the GPU for interactive renders (small throwaway sessions,
     /// where creating a device costs more than drawing).
     pub software_rendering: bool,
+    /// Folder of user Hunspell dictionaries (`<stem>.dic` + `<stem>.aff`) and
+    /// of the added-words file `user-words.txt`. `None`: the bundled en_US
+    /// dictionary only, and added words last as long as the session.
+    pub dictionaries_dir: Option<PathBuf>,
 }
 
 /// One open document.
@@ -127,6 +131,8 @@ pub struct Session {
     /// Pages rasterised by `page_png` / `page_rgba` on the calling thread.
     pub(crate) rasters: u64,
     pub(crate) templates: pubrs_io::templates::TemplateLibrary,
+    /// The spell checker, made on the first spelling call.
+    pub(crate) speller: Option<pubrs_io::spell::SpellChecker>,
 }
 
 impl std::fmt::Debug for Session {
@@ -171,6 +177,7 @@ impl Session {
             config,
             rasterizer: None,
             rasters: 0,
+            speller: None,
         }
     }
 

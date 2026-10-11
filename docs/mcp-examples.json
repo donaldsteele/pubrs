@@ -114,5 +114,14 @@
   {"tool": "doc_set_sheet", "args": {}, "note": "No preset and no custom clears the sheet."},
   {"tool": "doc_set_booklet", "args": {"booklet": true}},
   {"tool": "export_pdf", "args": {"path": "booklet.pdf"}, "note": "One page pads to 4; two sheets (front and back) twice the page width."},
-  {"tool": "doc_close", "args": {"doc_id": "${labels.doc_id}", "confirm": true}}
+  {"tool": "doc_close", "args": {"doc_id": "${labels.doc_id}", "confirm": true}},
+  {"tool": "doc_new", "args": {"title": "Proof"}, "as": "proof"},
+  {"tool": "frame_add_text", "args": {"page_id": "${proof.page_ids.0}", "x": 72, "y": 72, "width": 360, "height": 144, "text": "Fresh bread and pastreis every mornng, typeset with pubrs.\nUne baguette, s'il vous plaît."}, "as": "prooftext"},
+  {"tool": "text_apply_para_style", "args": {"frame_id": "${prooftext.frame_id}", "start": 59, "end": 60, "language": "fr-FR"}, "note": "The second paragraph is French."},
+  {"tool": "spell_check", "args": {"frame_id": "${prooftext.frame_id}"}, "note": "Misspelt words with story offsets. The French paragraph has no dictionary (only en_US is built in), so it is skipped and listed in unchecked_languages."},
+  {"tool": "spell_suggest", "args": {"word": "mornng", "language": "en-US"}},
+  {"tool": "spell_suggest", "args": {"word": "chaton", "language": "fr-FR"}, "expect_error": "not_found", "note": "No dictionary for French: add fr_FR.dic and fr_FR.aff to the dictionaries folder."},
+  {"tool": "spell_add_word", "args": {"word": "pubrs"}, "note": "Without a dictionaries folder (as in this example session) the word lasts for the session; the app and the CLI save it to user-words.txt."},
+  {"tool": "spell_check", "args": {}, "note": "The whole document, after adding pubrs."},
+  {"tool": "doc_close", "args": {"doc_id": "${proof.doc_id}", "confirm": true}}
 ]
