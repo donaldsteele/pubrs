@@ -1,9 +1,11 @@
 //! Query tools: doc_to_json, validate, fonts_list.
 
-use pubrs_core::validate::{Warning, WarningCode, validate};
-use pubrs_core::{Document, DocumentId, Owner};
+use pubrs_core::validate::{
+    ValidateOptions, Warning, WarningCode, validate_document, validate_page,
+};
+use pubrs_core::{Document, DocumentId, Owner, PageId};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::doc::DocRef;
 use crate::error::ApiResult;
@@ -15,6 +17,41 @@ pub struct DocToJsonOut {
     pub revision: u64,
     /// The complete document (the `document.json` of the saved file).
     pub document: Document,
+}
+
+/// Arguments of `validate`.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ValidateIn {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    /// Also run the checks for a commercial CMYK print job: RGB colours are
+    /// flagged (rgb_in_cmyk_job) and the desktop-printer margin check is
+    /// skipped. Default false.
+    #[serde(default)]
+    pub commercial: bool,
+}
+
+impl From<DocRef> for ValidateIn {
+    fn from(r: DocRef) -> Self {
+        Self {
+            doc_id: r.doc_id,
+            commercial: false,
+        }
+    }
+}
+
+/// Warnings split the way the Design Checker caches them.
+#[derive(Debug, Clone)]
+pub struct ValidateParts {
+    pub doc_id: DocumentId,
+    pub revision: u64,
+    /// Frame-level warnings, per requested page, in page order.
+    pub pages: Vec<(PageId, Vec<Warning>)>,
+    /// Story-level warnings (hyphenation, overflow, fonts, glyphs) and
+    /// undecodable images, for the whole document.
+    pub document: Vec<Warning>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -51,12 +88,52 @@ impl Session {
     }
 
     /// Model warnings plus overflow, missing fonts/glyphs and undecodable images.
-    pub fn validate(&mut self, req: DocRef) -> ApiResult<ValidateOut> {
-        let layout = self.layout(req.doc_id)?;
-        let id = self.resolve(req.doc_id)?;
+    pub fn validate(&mut self, req: impl Into<ValidateIn>) -> ApiResult<ValidateOut> {
+        let req = req.into();
+        let parts = self.validate_parts(req.doc_id, req.commercial, None)?;
+        let warnings: Vec<Warning> = parts
+            .pages
+            .into_iter()
+            .flat_map(|(_, w)| w)
+            .chain(parts.document)
+            .collect();
+        Ok(ValidateOut {
+            doc_id: parts.doc_id,
+            ok: warnings.is_empty(),
+            warnings,
+            revision: parts.revision,
+        })
+    }
+
+    /// [`Self::validate`] in the pieces the Design Checker caches: the
+    /// frame-level warnings of the pages asked for (all pages for `None`),
+    /// and the story-level warnings of the whole document, which come from
+    /// the cached layout.
+    pub fn validate_parts(
+        &mut self,
+        doc_id: Option<DocumentId>,
+        commercial: bool,
+        pages: Option<&[PageId]>,
+    ) -> ApiResult<ValidateParts> {
+        let layout = self.layout(doc_id)?;
+        let id = self.resolve(doc_id)?;
         let doc = self.get(Some(id))?.doc().clone();
         self.ctx.images.sync(&doc);
-        let mut warnings = validate(&doc);
+        let opts = ValidateOptions { commercial };
+        let page_ids: Vec<PageId> = match pages {
+            Some(want) => doc
+                .pages
+                .iter()
+                .map(|pg| pg.id)
+                .filter(|id| want.contains(id))
+                .collect(),
+            None => doc.pages.iter().map(|p| p.id).collect(),
+        };
+        let page_warnings: Vec<(PageId, Vec<Warning>)> = page_ids
+            .into_iter()
+            .map(|p| (p, validate_page(&doc, p, &opts)))
+            .collect();
+        let mut warnings = validate_document(&doc, &opts);
         let page_of = |f| match doc.owner_of(f) {
             Some(Owner::Page(p)) => Some(p),
             _ => None,
@@ -88,6 +165,7 @@ impl Session {
                     },
                     page: last.and_then(page_of),
                     frame: last,
+                    frames: chain(story),
                 });
             }
             for family in &sl.missing_fonts {
@@ -97,6 +175,7 @@ impl Session {
                     hint: "install the font or choose one from fonts_list".into(),
                     page: story.frames.first().copied().and_then(page_of),
                     frame: story.frames.first().copied(),
+                    frames: chain(story),
                 });
             }
             if sl.missing_glyphs > 0 {
@@ -106,6 +185,7 @@ impl Session {
                     hint: "choose a font that covers these characters (fonts_list)".into(),
                     page: story.frames.first().copied().and_then(page_of),
                     frame: story.frames.first().copied(),
+                    frames: chain(story),
                 });
             }
         }
@@ -121,15 +201,16 @@ impl Session {
                     hint: "replace it with image_replace".into(),
                     page: page_of(f.id),
                     frame: Some(f.id),
+                    frames: Vec::new(),
                 });
             }
         }
         let open = self.get(Some(id))?;
-        Ok(ValidateOut {
+        Ok(ValidateParts {
             doc_id: id,
-            ok: warnings.is_empty(),
-            warnings,
             revision: open.revision(),
+            pages: page_warnings,
+            document: warnings,
         })
     }
 
@@ -154,6 +235,15 @@ impl Session {
             families,
             fallback: pubrs_layout::FALLBACK_SANS.into(),
         })
+    }
+}
+
+/// The frames of a linked chain, empty for a single frame.
+fn chain(story: &pubrs_core::Story) -> Vec<pubrs_core::FrameId> {
+    if story.frames.len() > 1 {
+        story.frames.clone()
+    } else {
+        Vec::new()
     }
 }
 

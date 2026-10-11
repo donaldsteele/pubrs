@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2};
-use pubrs_api::core::{Command, Crop, FrameId, Point};
+use pubrs_api::core::{Command, Crop, FrameId, Point, WarningCode};
 use pubrs_api::render::{RasterOptions, tiny_skia};
 use pubrs_api::tools::doc::DocRef;
 use pubrs_api::tools::find::{FindMatch, TextFind};
@@ -146,6 +146,10 @@ struct Data {
     m27_docs: Option<(pubrs_api::core::DocumentId, pubrs_api::core::DocumentId)>,
     /// M27: the frame the input method types into and the Hebrew frame.
     m27_frames: Option<(FrameId, FrameId)>,
+    /// M29: the 4 pt frame, the light grey frame and its story.
+    m29: Option<(FrameId, FrameId, pubrs_api::core::StoryId)>,
+    /// M29: the table Replace All wraps, its height before, and the undo steps before.
+    m29_table: Option<(FrameId, f64, usize)>,
 }
 
 pub struct SelfTest {
@@ -1728,6 +1732,17 @@ impl SelfTest {
                 self.click_target(ctx, "export-go")?;
             }
             72 => {
+                // The flyer's colours are RGB swatches: the check lists them
+                // before saving (M29); carry on with Export anyway.
+                if let Some(crate::dialogs::Dialog::ExportPdf(st)) = &app.dialog
+                    && let Some(found) = &st.blocking
+                {
+                    if !found.iter().any(|w| w.code == WarningCode::RgbInCmykJob) {
+                        return Err(format!("the pre-export check found {found:?}"));
+                    }
+                    self.click_target(ctx, "export-anyway")?;
+                    return self.again("the export to finish");
+                }
                 if app.dialog.is_some() {
                     return Err("the Export dialog did not close after Export".into());
                 }
@@ -3545,7 +3560,6 @@ impl SelfTest {
                 }
                 self.ok("right-to-left line: Right/Left/Home follow position on the line, not the order of the text");
                 self.screenshot(ctx);
-                return Ok(false);
             }
             195 => {
                 // Drag a Microsoft Publisher file onto the window: it is imported.
@@ -3600,6 +3614,256 @@ impl SelfTest {
                     return Err("the import report dialog did not close".into());
                 }
                 self.ok("closed the import report");
+            }
+            198 => {
+                // M29: the Design Checker panel (Review → Design Checker).
+                app.run_action(ctx, Action::NewBlank);
+                app.run_action(ctx, Action::DesignChecker);
+                if !app.checker.open {
+                    return Err("Review > Design Checker did not open the panel".into());
+                }
+                let page = app.doc().ok_or("no document")?.pages[0].id;
+                let add = |app: &mut PubrsApp, y: f64, text: &str, extra: serde_json::Value| {
+                    let mut args = serde_json::json!({
+                        "x": 100.0, "y": y, "width": 240.0, "height": 36.0, "text": text,
+                        "page_id": page,
+                    });
+                    if let (Some(a), Some(e)) = (args.as_object_mut(), extra.as_object()) {
+                        a.extend(e.clone());
+                    }
+                    let req: pubrs_api::tools::frames::FrameAddText =
+                        serde_json::from_value(args).map_err(|e| e.to_string())?;
+                    app.session.frame_add_text(req).map_err(|e| e.message)
+                };
+                let tiny = add(
+                    app,
+                    100.0,
+                    "Fine print",
+                    serde_json::json!({"font_size": 4.0}),
+                )?;
+                let pale = add(
+                    app,
+                    200.0,
+                    "Ghost text",
+                    serde_json::json!({"color": "#EEEEEE"}),
+                )?;
+                self.data.m29 = Some((
+                    tiny.frame_id,
+                    pale.frame_id,
+                    pale.story_id.ok_or("no story")?,
+                ));
+            }
+            199 => {
+                // The panel waits for the document to be quiet, then lists
+                // both frames under their page.
+                let (tiny, pale, _) = self.data.m29.ok_or("no M29 frames")?;
+                let page = app.doc().ok_or("no document")?.pages[0].id;
+                let found = |code: WarningCode, f: FrameId| {
+                    app.checker
+                        .issues()
+                        .iter()
+                        .any(|w| w.code == code && w.frame == Some(f) && w.page == Some(page))
+                };
+                if !(found(WarningCode::TextTooSmall, tiny)
+                    && found(WarningCode::LowContrastText, pale))
+                    || app.checker.pending()
+                {
+                    return self.again("the Design Checker to list both issues");
+                }
+                for name in ["issue-text_too_small", "issue-low_contrast_text"] {
+                    if crate::dialogs::target_rect(ctx, name).is_none() {
+                        return Err(format!("the panel does not show {name}"));
+                    }
+                }
+                self.ok("Design Checker: after the debounce a 4 pt text frame and a light grey one are listed under Page 1");
+                self.screenshot(ctx);
+                if let Some(v) = app.view_mut() {
+                    v.selection.clear();
+                }
+                self.click_target(ctx, "issue-text_too_small")?;
+            }
+            200 => {
+                let (tiny, _, _) = self.data.m29.ok_or("no M29 frames")?;
+                let v = app.view().ok_or("no view")?;
+                if v.selection != vec![tiny] || v.page != 0 || v.edit.is_some() {
+                    return Err(format!(
+                        "clicking the issue left selection {:?} on page {}, not [{tiny:?}] on page 0",
+                        v.selection, v.page
+                    ));
+                }
+                self.ok("Design Checker: clicking an issue selects its object and shows its page");
+                // Fix the pale text: black.
+                let (_, pale, story) = self.data.m29.ok_or("no M29 frames")?;
+                let _ = pale;
+                let len = crate::canvas::story_text(app, pale).map_or(0, |t| t.chars().count());
+                if !app.exec(pubrs_api::core::Command::ApplyCharProps {
+                    story,
+                    start: 0,
+                    end: len,
+                    props: pubrs_api::core::CharProps {
+                        color: Some(pubrs_api::core::Color::BLACK.into()),
+                        ..Default::default()
+                    },
+                }) {
+                    return Err("could not change the text colour".into());
+                }
+                if !app.checker.pending() && app.checker.issues().is_empty() {
+                    return Err("the checker has no results".into());
+                }
+            }
+            201 => {
+                let (tiny, pale, _) = self.data.m29.ok_or("no M29 frames")?;
+                let low = app
+                    .checker
+                    .issues()
+                    .iter()
+                    .any(|w| w.code == WarningCode::LowContrastText && w.frame == Some(pale));
+                if low || app.checker.pending() {
+                    return self.again("the low-contrast issue to go away");
+                }
+                let still = app
+                    .checker
+                    .issues()
+                    .iter()
+                    .any(|w| w.code == WarningCode::TextTooSmall && w.frame == Some(tiny));
+                if !still {
+                    return Err("the 4 pt issue disappeared with the colour fix".into());
+                }
+                self.ok("Design Checker: fixing the colour removes its issue after the debounce; the other stays");
+                // Commercial export of a document with an RGB fill.
+                let page = app.doc().ok_or("no document")?.pages[0].id;
+                let req: pubrs_api::tools::frames::FrameAddShape =
+                    serde_json::from_value(serde_json::json!({
+                        "page_id": page, "shape": "rectangle", "x": 100.0, "y": 300.0,
+                        "width": 120.0, "height": 60.0, "fill": "#C80000",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                app.session.frame_add_shape(req).map_err(|e| e.message)?;
+                app.run_action(ctx, Action::ExportPdf);
+            }
+            202 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::ExportPdf(_))) {
+                    return Err("File > Export PDF did not open the Export dialog".into());
+                }
+                self.click_target(ctx, "preset-commercial")?;
+            }
+            203 => {
+                let path = self.out.join("m29.pdf");
+                let _ = std::fs::remove_file(&path);
+                match &mut app.dialog {
+                    Some(crate::dialogs::Dialog::ExportPdf(st)) => st.target = Some(path),
+                    _ => return Err("the Export dialog closed".into()),
+                }
+                self.click_target(ctx, "export-go")?;
+            }
+            204 => {
+                // The check runs before the save: the RGB fill is listed.
+                match &app.dialog {
+                    Some(crate::dialogs::Dialog::ExportPdf(st)) => {
+                        let found = st.blocking.as_ref().ok_or(
+                            "Export on the Commercial preset did not list blocking issues",
+                        )?;
+                        if !found.iter().any(|w| w.code == WarningCode::RgbInCmykJob) {
+                            return Err(format!("no RGB-in-CMYK issue in {found:?}"));
+                        }
+                        if found
+                            .iter()
+                            .any(|w| !crate::checker::BLOCKING.contains(&w.code))
+                        {
+                            return Err(format!("non-blocking issues listed: {found:?}"));
+                        }
+                    }
+                    _ => return Err("the Export dialog closed before the choice".into()),
+                }
+                if self.out.join("m29.pdf").exists() {
+                    return Err("the PDF was written before the user chose".into());
+                }
+                self.screenshot(ctx);
+                self.click_target(ctx, "export-anyway")?;
+            }
+            205 => {
+                if app.dialog.is_some() {
+                    return Err("the Export dialog did not close after Export anyway".into());
+                }
+                let bytes = std::fs::read(self.out.join("m29.pdf"))
+                    .map_err(|e| format!("no m29.pdf after Export anyway: {e}"))?;
+                if !bytes.starts_with(b"%PDF") {
+                    return Err("m29.pdf is not a PDF".into());
+                }
+                self.ok("Export PDF (Commercial printing): the checker lists the RGB fill before saving; Export anyway wrote the PDF");
+            }
+            206 => {
+                // Replace All in a table cell: one undo step, and the frame grows.
+                let page = app.doc().ok_or("no document")?.pages[0].id;
+                let req: pubrs_api::tools::tables::TableAdd =
+                    serde_json::from_value(serde_json::json!({
+                        "page_id": page, "rows": 1, "cols": 2,
+                        "x": 100.0, "y": 420.0, "width": 160.0, "height": 24.0,
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let t = app.session.table_add(req).map_err(|e| e.message)?;
+                let cell: pubrs_api::tools::tables::TableSetCellText =
+                    serde_json::from_value(serde_json::json!({
+                        "frame_id": t.frame_id, "row": 0, "col": 0, "text": "aa",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                app.session
+                    .table_set_cell_text(cell)
+                    .map_err(|e| e.message)?;
+                let h0 = app
+                    .doc()
+                    .and_then(|d| d.frame(t.frame_id))
+                    .map(|f| f.rect.height)
+                    .ok_or("no table")?;
+                self.data.m29_table = Some((t.frame_id, h0, Self::done_steps(app)));
+                app.find.query = "aa".into();
+                app.find.replacement = vec!["aa"; 14].join(" ");
+                app.find.selection_only = false;
+                crate::find::replace_all(app);
+            }
+            207 => {
+                let (t, h0, hist) = self.data.m29_table.ok_or("no M29 table")?;
+                let doc = app.doc().ok_or("no document")?;
+                let f = doc.frame(t).ok_or("no table")?;
+                let text = doc
+                    .story(f.as_table().ok_or("not a table")?.cells[0].story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text.len() < 30 {
+                    return Err(format!("Replace All left {text:?} in the cell"));
+                }
+                if f.rect.height <= h0 + 1.0 {
+                    return Err(format!(
+                        "Replace All wrapped the cell text but the table stayed {h0} pt tall"
+                    ));
+                }
+                if Self::done_steps(app) != hist + 1 {
+                    return Err(format!(
+                        "Replace All in a table took {} undo steps, not 1",
+                        Self::done_steps(app) - hist
+                    ));
+                }
+                app.run_action(ctx, Action::Undo);
+            }
+            208 => {
+                let (t, h0, hist) = self.data.m29_table.ok_or("no M29 table")?;
+                let doc = app.doc().ok_or("no document")?;
+                let f = doc.frame(t).ok_or("no table")?;
+                let text = doc
+                    .story(f.as_table().ok_or("not a table")?.cells[0].story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text != "aa" || (f.rect.height - h0).abs() > 0.01 {
+                    return Err(format!(
+                        "one undo left {text:?} in a table {} pt tall, not \"aa\" and {h0} pt",
+                        f.rect.height
+                    ));
+                }
+                if Self::done_steps(app) != hist {
+                    return Err("the undo did not take back exactly the Replace All".into());
+                }
+                self.ok("Replace All in a table cell: the wrapped text and the taller frame are one undo step");
+                self.screenshot(ctx);
                 return Ok(true);
             }
             _ => return Ok(true),

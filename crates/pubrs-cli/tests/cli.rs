@@ -75,7 +75,7 @@ fn failing_script_and_missing_file_exit_nonzero() {
     assert_eq!(st.code(), Some(2));
 }
 
-/// The sample every installer ships opens, has no print problems and exports.
+/// The sample every installer ships opens, has no print problems (but alt text) and exports.
 #[test]
 fn bundled_sample_validates_and_exports() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -88,9 +88,32 @@ fn bundled_sample_validates_and_exports() {
         .arg(&sample)
         .output()
         .unwrap();
-    assert!(v.status.success(), "{}", String::from_utf8_lossy(&v.stdout));
     let report: serde_json::Value = serde_json::from_slice(&v.stdout).unwrap();
-    assert_eq!(report["ok"], true, "{report}");
+    // The sample is byte-pinned as the schema-1 fixture, from before alt text
+    // existed: its two pictures have none, and that is all the checker finds.
+    let codes: Vec<&str> = report["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["code"].as_str().unwrap())
+        .collect();
+    assert_eq!(codes, ["missing_alt_text", "missing_alt_text"], "{report}");
+    assert_eq!(v.status.code(), Some(1));
+    // --commercial also flags the RGB colours of a CMYK job.
+    let c = bin()
+        .args(["validate", "--json", "--commercial"])
+        .arg(&sample)
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&c.stdout).unwrap();
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["code"] == "rgb_in_cmyk_job"),
+        "{report}"
+    );
 
     let pdf = out.join("sample.pdf");
     assert!(

@@ -149,6 +149,8 @@ pub struct PubrsApp {
     pub table_serial: u64,
     /// One-shot request to bring the panel's Cell section into view.
     pub focus_cell_props: bool,
+    /// The Design Checker panel (M29).
+    pub checker: crate::checker::CheckerState,
 }
 
 /// Failed renders of one view retried before giving up until it changes.
@@ -215,6 +217,7 @@ impl PubrsApp {
             table_menu: None,
             table_serial: 0,
             focus_cell_props: false,
+            checker: crate::checker::CheckerState::default(),
         };
         app.load_settings();
         app.fonts = app
@@ -303,7 +306,7 @@ impl PubrsApp {
     pub fn exec(&mut self, command: Command) -> bool {
         // A command on a table cell's text can make a row taller: it runs
         // under its own key so the frame's growth joins its undo step.
-        if self.cell_frame(&command).is_some() {
+        if !self.cell_frames(&command).is_empty() {
             self.table_serial += 1;
             let key = format!("table-cell-{}", self.table_serial);
             return self.exec_merge(command, &key);
@@ -324,35 +327,49 @@ impl PubrsApp {
         let Some(id) = self.doc_id() else {
             return false;
         };
-        let cell_frame = self.cell_frame(&command);
+        let cell_frames = self.cell_frames(&command);
         let t0 = Instant::now();
         let r = self.session.exec_coalesced(Some(id), command, key);
         if let Some(p) = &mut self.perf {
             p.command(t0.elapsed());
         }
         let ok = self.report(r).is_some();
-        if ok && let Some(frame) = cell_frame {
-            // The edit grew a row: the frame follows, in the same undo step
-            // (and the same coalescing key). Only GUI commands do this.
-            crate::tables::grow(self, frame, key);
+        if ok {
+            // The edit may have grown a row: each table follows, in the same
+            // undo step (and the same coalescing key). Only GUI commands do
+            // this.
+            for frame in cell_frames {
+                crate::tables::grow(self, frame, key);
+            }
         }
         ok
     }
 
-    /// The table whose cell a text command edits (the edited cell's frame
-    /// without a search, else the table holding the story).
-    fn cell_frame(&self, command: &Command) -> Option<FrameId> {
-        let story = crate::tables::story_of_command(command)?;
-        if let Some(e) = self.view().and_then(|v| v.edit.as_ref())
-            && e.story == story
-        {
-            return self
-                .doc()?
-                .frame(e.frame)
-                .is_some_and(|f| f.as_table().is_some())
-                .then_some(e.frame);
+    /// The tables whose cells a text command edits (the edited cell's frame
+    /// without a search, else the table holding the story), each once.
+    pub(crate) fn cell_frames(&self, command: &Command) -> Vec<FrameId> {
+        let mut out = Vec::new();
+        for story in crate::tables::stories_of_command(command) {
+            let edited = self
+                .view()
+                .and_then(|v| v.edit.as_ref())
+                .filter(|e| e.story == story)
+                .map(|e| e.frame);
+            let Some(doc) = self.doc() else { continue };
+            let frame = match edited {
+                Some(f) => doc
+                    .frame(f)
+                    .is_some_and(|f| f.as_table().is_some())
+                    .then_some(f),
+                None => doc.table_of_story(story),
+            };
+            if let Some(f) = frame
+                && !out.contains(&f)
+            {
+                out.push(f);
+            }
         }
-        self.doc()?.table_of_story(story)
+        out
     }
 
     /// Bring a document's layout up to date, timed for the frame statistics
@@ -1156,6 +1173,21 @@ impl PubrsApp {
             SavePrintPackage => {
                 let Some(doc) = self.doc() else { return };
                 let has_bleed = doc.setup.bleed > 0.0;
+                // Problems a printer would reject are listed first, in the
+                // Export dialog, with "Export anyway".
+                let mut st = crate::dialogs::ExportState::new(doc);
+                // A failed check is shown and nothing is saved.
+                let Some(found) = crate::checker::blocking_issues(self) else {
+                    return;
+                };
+                if !found.is_empty() {
+                    st.choose(crate::dialogs::ExportPreset::Commercial);
+                    st.blocking = Some(found);
+                    st.asked = Some(crate::dialogs::ExportAsk::Package);
+                    self.dialog = Some(Dialog::ExportPdf(st));
+                    return;
+                }
+                let Some(doc) = self.doc() else { return };
                 let name = pubrs_api::session::slug(&doc.meta.title);
                 if let Some(p) = self
                     .platform
@@ -1458,12 +1490,17 @@ impl PubrsApp {
                     self.exec(Command::SetGrid { grid: g });
                 }
             }
+            // The toolbar's Check and View → Check for Problems… show the panel.
             Validate => {
-                if let Some(id) = self.doc_id() {
-                    let r = self.session.validate(DocRef { doc_id: Some(id) });
-                    if let Some(v) = self.report(r) {
-                        self.dialog = Some(Dialog::Validation(v.warnings));
-                    }
+                if self.doc().is_some() {
+                    self.checker.show();
+                }
+            }
+            DesignChecker => {
+                if self.checker.open {
+                    self.checker.open = false;
+                } else if self.doc().is_some() {
+                    self.checker.show();
                 }
             }
             ColorScheme => {
@@ -1583,6 +1620,7 @@ impl eframe::App for PubrsApp {
         }
         self.apply_renders(&ctx);
         crate::spell::poll(self, &ctx);
+        crate::checker::tick(self, &ctx);
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close {
             if self.dirty_docs().is_empty() || self.args.smoke_test {
                 self.allow_close = true;
@@ -1609,6 +1647,7 @@ impl eframe::App for PubrsApp {
         if self.view().is_some() {
             crate::panels::pages_panel(self, ui);
             crate::panels::properties_panel(self, ui);
+            crate::checker::panel(self, ui);
         }
         crate::canvas::central(self, ui);
         crate::dialogs::show(self, &ctx);

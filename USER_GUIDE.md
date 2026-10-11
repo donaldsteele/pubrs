@@ -57,9 +57,12 @@ Printing on Linux uses CUPS; install it if you want to print.
 3. **Add pictures:** double-click an empty picture frame (grey box with a
    cross) and choose a PNG, JPEG or SVG file. Use the properties panel on
    the right to switch between **Fill**, **Fit** and **Stretch** and to crop.
-4. **Check for problems** (toolbar **Check**): pubrs warns about text that
-   doesn't fit, pictures that will print blurry (below 150 dpi), missing
-   fonts, things off the page and template placeholders you haven't filled.
+4. **Check for problems** (toolbar **Check**, or **Review → Design Checker**):
+   a panel lists text that doesn't fit, pictures that will print blurry
+   (below 150 dpi), missing fonts, text that is too small or too pale, things
+   off the page or too near its edge, empty table cells, pictures without alt
+   text and template placeholders you haven't filled. See *Design Checker*
+   below.
 5. **Export PDF** (Ctrl+E / ⌘E) makes the file for a print shop: fonts are
    embedded and the bleed is included. **Print** (Ctrl+P / ⌘P) prints the
    same PDF.
@@ -153,6 +156,43 @@ file. On the command line: `pubrs import old.pub -o new.pubrs`.
 - Words you add are kept in `user-words.txt` in that folder, one per line.
 - Words with digits, web and e-mail addresses, and words in capitals only
   (acronyms) are not checked.
+
+### Design Checker
+
+- **Review → Design Checker** (also the toolbar **Check** button and
+  **View → Check for Problems…**) shows a panel under the page. It lists what
+  could go wrong in print, grouped by page (**Page 3 (2)**, then
+  **Publication** for things that belong to no page). Each issue says what is
+  wrong and how to fix it. **Click an issue** to go to its page and select the
+  object. **Close** hides the panel; choosing the menu item again does too.
+- The list updates by itself: about half a second after you stop typing or
+  moving things, only the pages you changed are checked again. It does no work
+  while the panel is closed.
+- What it looks for. *Problems*: text that doesn't fit its frame; a font that
+  isn't installed; characters no font has (named in the message); pictures
+  under 150 dpi; objects off the page or past the bleed; RGB colour in a
+  commercial job. *Worth a look*: text under 6 pt; text with a contrast ratio
+  below 3:1 against its background (a frame's own fill, or the fill of a
+  frame underneath it; pale text over a picture is not judged); objects within
+  0.25 in of the page edge, which many desktop printers cannot print (not for
+  publications with bleed, label sheets or commercial jobs); table cells with
+  nothing in them; pictures without alt text (Alt text in the properties
+  panel); unfilled template placeholders.
+- **Commercial printing checks** (a box in the panel, off by default) also
+  flags every frame that uses an RGB colour (a plain colour, an RGB swatch, a
+  gradient stop, text colour; pure black text is not counted) in a job meant
+  for a CMYK press, and stops warning about the desktop margin. RGB colour is
+  reported only with this box ticked, with `pubrs validate --commercial`, or at
+  a commercial export; otherwise it is never mentioned. Use CMYK or
+  spot swatches (**Design → Swatches**) instead. Pictures are not judged.
+- **Before a commercial export.** With **Commercial printing (PDF/X-4)** chosen,
+  **Export…** and **Save for a commercial printer…** first check for missing
+  fonts, RGB colour and low-resolution pictures. If there are any they are
+  listed with three buttons: **Export anyway**, **Fix first** (opens the
+  panel with the commercial checks on and selects the first problem) and
+  **Cancel**. The other presets never stop you.
+- Not checked yet: whether a frame is hidden behind a picture, text on a
+  picture, and mail-merge fields (they arrive with mail merge).
 
 ### Tables
 
@@ -262,11 +302,15 @@ assistant saves go to `Documents/pubrs`. See `examples/mcp/README.md` and
 ```
 pubrs export brochure.pubrs -o brochure.pdf [--crop-marks] [--no-bleed] [--outlines]
 pubrs render brochure.pubrs --dpi 150 [--page 2] [-o out.png]
-pubrs validate brochure.pubrs [--json]        # exit code 1 if there are problems
+pubrs validate brochure.pubrs [--json] [--commercial]   # exit code 1 if there are problems
 pubrs import old.pub -o new.pubrs [--json]    # import a Publisher file; prints what was dropped
 pubrs script steps.json --out out/            # replay MCP-style tool calls
 pubrs tools                                   # list the tools
 ```
+
+`pubrs validate` exits 1 for any warning, including missing alt text and empty
+table cells (a table you have just inserted counts as having empty cells).
+`--commercial` also reports RGB colour.
 
 ## Fonts
 

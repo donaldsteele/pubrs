@@ -645,3 +645,33 @@ fn a_group_with_one_member_pastes_ungrouped() {
     assert!(d.frame(out.frame_ids[0]).is_some());
     assert!(pubrs_api::core::validate::check_integrity(d).is_empty());
 }
+
+/// A payload whose run colour names a swatch that neither it nor the document
+/// has is refused whole, and nothing is applied. Note: this is refused by the
+/// specific check (the commands validate paints), not by the clone and
+/// `check_integrity` catch-all at the end of `clip_paste`. No payload was
+/// found that passes every command's own validation and still leaves an
+/// integrity error: probes with a dangling swatch in a table cell fill or
+/// border, a WordArt shadow, a style colour or a run colour, two frames
+/// sharing a story, a group listing a member twice and a paragraph style used
+/// as a character style were all refused by the command that builds them (or
+/// repaired), so the catch-all stays a safety net with no test of its own.
+#[test]
+fn a_run_colour_with_a_missing_swatch_is_refused_and_nothing_is_applied() {
+    let mut s = session();
+    let (doc, page, f) = one_text(&mut s);
+    let mut p = s.clip_copy(Some(doc), &[f]).unwrap();
+    let ghost = pubrs_api::core::SwatchId::new(&mut pubrs_api::core::SeqIds::new(999));
+    assert!(p.swatches.is_empty());
+    p.stories[0].paragraphs[0].runs[0].props.color = Some(Paint::swatch(ghost));
+    p.check().expect("the payload is within the caps");
+    let before = s.get(Some(doc)).unwrap().revision();
+    let err = paste(&mut s, doc, page, &p).unwrap_err();
+    assert!(
+        err.message.contains("swatch") && err.message.contains("does not exist"),
+        "{}",
+        err.message
+    );
+    assert_eq!(s.get(Some(doc)).unwrap().revision(), before);
+    assert!(pubrs_api::core::validate::check_integrity(s.get(Some(doc)).unwrap().doc()).is_empty());
+}

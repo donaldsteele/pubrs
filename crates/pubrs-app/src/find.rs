@@ -429,10 +429,17 @@ pub fn replace_all(app: &mut PubrsApp) {
         start: scope.map(|s| s.1),
         end: scope.map(|s| s.2),
     };
-    let r = app.session.text_replace_all(req);
-    if let Some(out) = app.report(r) {
-        app.find.last_replaced = Some(out.count);
-        app.notify(match out.count {
+    // The replacement is one batch run through `App::exec`, so every table
+    // cell it changes grows its table in the same undo step (M20).
+    let r = app.session.text_replace_all_plan(req);
+    let Some(plan) = app.report(r) else { return };
+    let count = match plan {
+        None => Some(0),
+        Some((n, command)) => app.exec(command).then_some(n),
+    };
+    if let Some(count) = count {
+        app.find.last_replaced = Some(count);
+        app.notify(match count {
             0 => "No matches to replace".to_string(),
             1 => "Replaced 1 occurrence".to_string(),
             n => format!("Replaced {n} occurrences"),

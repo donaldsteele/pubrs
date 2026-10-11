@@ -134,6 +134,17 @@ impl AppPaths for DesktopPaths {
 pub struct DesktopClipboard {
     inner: Option<arboard::Clipboard>,
     fallback: NoClipboard,
+    /// The last `get_image` refused a picture over [`MAX_CLIP_PIXELS`].
+    too_large: bool,
+}
+
+/// Pictures with more pixels than this (200 megapixels, 800 MB as RGBA) are
+/// not pasted.
+pub const MAX_CLIP_PIXELS: usize = 200_000_000;
+
+/// Whether a clipboard picture of this size is refused.
+pub fn clip_image_too_large(width: usize, height: usize) -> bool {
+    width.saturating_mul(height) > MAX_CLIP_PIXELS
 }
 
 impl DesktopClipboard {
@@ -144,6 +155,7 @@ impl DesktopClipboard {
         Self {
             inner,
             fallback: NoClipboard::default(),
+            too_large: false,
         }
     }
 }
@@ -175,13 +187,27 @@ impl Clipboard for DesktopClipboard {
 
     fn get_image(&mut self) -> Option<ClipImage> {
         match &mut self.inner {
-            Some(c) => c.get_image().ok().map(|i| ClipImage {
-                width: i.width,
-                height: i.height,
-                rgba: i.bytes.into_owned(),
-            }),
+            Some(c) => {
+                self.too_large = false;
+                let i = c.get_image().ok()?;
+                // arboard has decoded it already; refuse before copying the
+                // pixels into a second buffer.
+                if clip_image_too_large(i.width, i.height) {
+                    self.too_large = true;
+                    return None;
+                }
+                Some(ClipImage {
+                    width: i.width,
+                    height: i.height,
+                    rgba: i.bytes.into_owned(),
+                })
+            }
             None => self.fallback.get_image(),
         }
+    }
+
+    fn take_image_too_large(&mut self) -> bool {
+        std::mem::take(&mut self.too_large)
     }
 
     fn set_image(&mut self, image: ClipImage) {
@@ -252,5 +278,18 @@ impl Clipboard for NoClipboard {
         self.text = Some(alt_text.to_string());
         self.html = Some(html.to_string());
         self.image = None;
+    }
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+
+    #[test]
+    fn huge_clipboard_pictures_are_refused() {
+        assert!(!clip_image_too_large(10_000, 20_000));
+        assert!(clip_image_too_large(10_001, 20_000));
+        assert!(clip_image_too_large(usize::MAX, 2));
+        assert!(!clip_image_too_large(0, usize::MAX));
     }
 }

@@ -325,8 +325,8 @@ pub static TOOLS: &[ToolDef] = &[
     // ---------------------------------------------------------------- query
     tool!("doc_to_json", "Query", doc_to_json, doc::DocRef => query::DocToJsonOut, ro = true, destructive = false, image = None,
         "Return the complete document model as JSON (pages, frames, stories, styles, asset metadata). This is the document.json stored in .pubrs files."),
-    tool!("validate", "Query", validate, doc::DocRef => query::ValidateOut, ro = true, destructive = false, image = None,
-        "Check print readiness. Warnings: overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame — each with a hint."),
+    tool!("validate", "Query", validate, query::ValidateIn => query::ValidateOut, ro = true, destructive = false, image = None,
+        "Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge."),
     tool!("fonts_list", "Query", fonts_list, doc::DocRef => query::FontsListOut, ro = true, destructive = false, image = None,
         "List available font families (bundled ones are always available and embed in PDFs)."),
 ];

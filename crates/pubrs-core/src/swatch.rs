@@ -529,7 +529,7 @@ impl Document {
 
 /// Paints of a frame beyond its fill and outline: shadows, WordArt letters.
 /// Each is labelled for messages; the flag is true where a gradient is not allowed.
-fn extra_paints(f: &crate::model::Frame) -> Vec<(&'static str, &Paint, bool)> {
+pub(crate) fn extra_paints(f: &crate::model::Frame) -> Vec<(&'static str, &Paint, bool)> {
     let mut v = Vec::new();
     if let Some(s) = &f.style.shadow {
         v.push(("shadow", &s.color, true));
@@ -587,6 +587,44 @@ fn extra_paints_mut(f: &mut crate::model::Frame) -> Vec<&mut Paint> {
 }
 
 impl Document {
+    /// References to swatches that do not exist, one message each (frame
+    /// fills, outlines, shadows, WordArt, table cells, run colours and
+    /// style colours; gradient stops included).
+    pub fn dangling_swatches(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut check = |what: String, p: &Paint| {
+            for sid in p.swatch_ids() {
+                if self.swatch(sid).is_none() {
+                    out.push(format!("{what} uses missing swatch {sid}"));
+                }
+            }
+        };
+        for f in self.frames.values() {
+            if let Some(p) = &f.style.fill {
+                check(format!("frame {} fill", f.id), p);
+            }
+            if let Some(s) = &f.style.stroke {
+                check(format!("frame {} outline", f.id), &s.color);
+            }
+            for (what, p, _) in extra_paints(f) {
+                check(format!("frame {} {what}", f.id), p);
+            }
+        }
+        for s in self.stories.values() {
+            for r in s.paragraphs.iter().flat_map(|p| &p.runs) {
+                if let Some(p) = &r.props.color {
+                    check(format!("story {} text", s.id), p);
+                }
+            }
+        }
+        for st in &self.styles.styles {
+            if let Some(p) = &st.character.color {
+                check(format!("style {:?}", st.name), p);
+            }
+        }
+        out
+    }
+
     /// Where a swatch is used, for refusal messages.
     pub fn swatch_uses(&self, id: SwatchId) -> Vec<String> {
         let refs = |p: &Paint| p.swatch_ids().contains(&id);

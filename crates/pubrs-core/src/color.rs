@@ -39,6 +39,37 @@ impl Color {
     pub fn to_f32(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a].map(|c| c as f32 / 255.0)
     }
+
+    /// WCAG 2.x relative luminance (0 black to 1 white); alpha is ignored.
+    pub fn relative_luminance(self) -> f64 {
+        let lin = |v: u8| {
+            let c = f64::from(v) / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(self.r) + 0.7152 * lin(self.g) + 0.0722 * lin(self.b)
+    }
+
+    /// This colour drawn at `alpha` (0 to 1, times its own alpha) over an
+    /// opaque `bg`; the result is opaque.
+    pub fn over(self, bg: Color, alpha: f64) -> Color {
+        let a = (alpha * f64::from(self.a) / 255.0).clamp(0.0, 1.0);
+        let mix = |f: u8, b: u8| {
+            (a * f64::from(f) + (1.0 - a) * f64::from(b))
+                .round()
+                .clamp(0.0, 255.0) as u8
+        };
+        Color::rgb(mix(self.r, bg.r), mix(self.g, bg.g), mix(self.b, bg.b))
+    }
+}
+
+/// WCAG contrast ratio of two colours, 1 (identical) to 21 (black on white).
+pub fn contrast_ratio(a: Color, b: Color) -> f64 {
+    let (la, lb) = (a.relative_luminance(), b.relative_luminance());
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
 }
 
 impl Default for Color {
@@ -123,6 +154,35 @@ mod tests {
         let t: Color = "#00000080".parse().unwrap();
         assert_eq!(t.a, 0x80);
         assert_eq!(t.to_hex(), "#00000080");
+    }
+
+    #[test]
+    fn contrast_follows_wcag() {
+        assert!((contrast_ratio(Color::BLACK, Color::WHITE) - 21.0).abs() < 1e-9);
+        assert!((contrast_ratio(Color::WHITE, Color::WHITE) - 1.0).abs() < 1e-9);
+        // #777777 on white is the classic 4.48:1.
+        let r = contrast_ratio(Color::rgb(0x77, 0x77, 0x77), Color::WHITE);
+        assert!((r - 4.48).abs() < 0.01, "{r}");
+        assert_eq!(
+            contrast_ratio(Color::BLACK, Color::WHITE),
+            contrast_ratio(Color::WHITE, Color::BLACK)
+        );
+        assert!(Color::WHITE.relative_luminance() > 0.999);
+        assert_eq!(Color::BLACK.relative_luminance(), 0.0);
+    }
+
+    #[test]
+    fn over_blends_towards_the_background() {
+        let half = Color::BLACK.over(Color::WHITE, 0.5);
+        assert_eq!(half, Color::rgb(128, 128, 128));
+        assert_eq!(
+            Color::rgb(10, 20, 30).over(Color::WHITE, 1.0),
+            Color::rgb(10, 20, 30)
+        );
+        assert_eq!(
+            Color::rgba(0, 0, 0, 0).over(Color::WHITE, 1.0),
+            Color::WHITE
+        );
     }
 
     #[test]

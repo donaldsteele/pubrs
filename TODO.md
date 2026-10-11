@@ -17,7 +17,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - Imposed sheets carry no bleed, and `crop_marks` marks the whole sheet rather than each label.
 - `SetPageSize` does not re-check an existing label sheet; a mismatch is reported at PDF export.
 - The GPU renderer ignores `Node.clip` (only imposed sheets use it, and those are never drawn on the GPU).
-- The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); the design checker (M29) replaces it. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
+- The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); `Session::validate_parts` (M29) still clones the `Document` (maps of `Arc`s) per call, once per refresh of the Design Checker panel, not per keystroke. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.
 - Character formatting (M17, ADR 0021): real `smcp` is detected from the GSUB feature list only (not per-letter coverage); a strikethrough through synthesized small caps is stepped; the Character dialog has no preview and no letter-spacing or colour fields (the text panel has them); the super/subscript buttons are in the text panel, not a toolbar.
 - Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
@@ -149,3 +149,10 @@ Deferred and partial work. Each entry says what is missing and why.
 - Clipboard (M27): `paste_image` encodes, scales and places a clipboard picture on the UI thread (up to 8,000 px a side, so a visible pause for a big picture); it belongs on a worker.
 - Clipboard (M27): copying renders the whole page at 96 dpi to crop a preview of the selection; a small selection on a big page, or a very long copy, pays for the full page.
 - Clipboard (M27): a pasted group keeps its name, style and wrap but not its rotation (setting a group's rotation rotates its members again).
+- Design Checker (M29, ADR 0027): `merge_field_missing` is not emitted; mail merge (M24) is paused in another branch, and its rebase must add its warning to `validate_page`.
+- Design Checker (M29): `missing_alt_text` covers pictures only; WordArt and shapes have no alt-text field (and tagged PDF writes them as artifacts).
+- Design Checker (M29): frames stacked beneath a text frame are judged one level deep by their own fill (the topmost one holding the text frame's centre); text over a picture, a gradient or several partly covering fills is not judged exactly, and rotated frames use their bounds.
+- Design Checker (M29): `object_in_unprintable_area` assumes 0.25 in on every side and skips label sheets; real printer margins (and each label's own) are not modelled. The built-in newsletter's full-width masthead band is flagged for a desktop job, by design.
+- Design Checker (M29): the model-level checks run on the UI thread after the debounce (they need the session's layout); a refresh of every page after a style or swatch change is unmeasured on very large documents.
+- Design Checker (M29): the pre-export check covers missing fonts, RGB colour and low-resolution pictures only; ink coverage, overprint and trapping are not checked.
+- Clipboard (M29): a picture over 200 megapixels is refused before it is copied, but arboard has already decoded it by then.

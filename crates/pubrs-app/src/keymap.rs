@@ -87,7 +87,10 @@ pub enum Action {
     FindPrevious,
     Replace,
     ToggleSnap,
+    /// View → Check for Problems…: shows the Design Checker.
     Validate,
+    /// Review → Design Checker: shows or hides the panel.
+    DesignChecker,
     /// Review → Spelling… (F7).
     Spelling,
     ColorScheme,
@@ -330,7 +333,10 @@ pub const MENUS: &[MenuSpec] = &[
     },
     MenuSpec {
         title: "Review",
-        items: &[A("Spelling…", Action::Spelling)],
+        items: &[
+            A("Spelling…", Action::Spelling),
+            A("Design Checker", Action::DesignChecker),
+        ],
     },
     MenuSpec {
         title: "Help",

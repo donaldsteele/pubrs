@@ -186,9 +186,9 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000046",
+  "doc_id": "00000000-0000-87ea-8000-000000000048",
   "page_ids": [
-    "00000000-0000-87ea-8000-00000000003e"
+    "00000000-0000-87ea-8000-000000000040"
   ],
   "revision": 1
 }
@@ -221,7 +221,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000003c",
+  "doc_id": "00000000-0000-87ea-8000-00000000003e",
   "page_ids": [
     "00000000-0000-87ea-8000-000000000002",
     "00000000-0000-87ea-8000-00000000000b"
@@ -259,7 +259,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000047",
+  "doc_id": "00000000-0000-87ea-8000-000000000049",
   "page_ids": [
     "00000000-5055-8252-8000-000000000002",
     "00000000-5055-8252-8000-00000000000b",
@@ -364,10 +364,10 @@ Result:
 
 ```json
 {
-  "bytes": 163875,
+  "bytes": 163992,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -399,10 +399,10 @@ Result:
 
 ```json
 {
-  "bytes": 163875,
+  "bytes": 163992,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -427,7 +427,7 @@ _destructive (needs `confirm: true`)_
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-00000000003b"
+    "doc_id": "00000000-0000-87ea-8000-00000000003d"
   },
   "name": "doc_close"
 }
@@ -439,7 +439,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": false,
-  "doc_id": "00000000-0000-87ea-8000-00000000003b"
+  "doc_id": "00000000-0000-87ea-8000-00000000003d"
 }
 ```
 
@@ -449,7 +449,7 @@ Result:
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-000000000046"
+    "doc_id": "00000000-0000-87ea-8000-000000000048"
   },
   "name": "doc_close"
 }
@@ -461,7 +461,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": true,
-  "doc_id": "00000000-0000-87ea-8000-000000000046"
+  "doc_id": "00000000-0000-87ea-8000-000000000048"
 }
 ```
 
@@ -828,7 +828,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 92
+  "revision": 93
 }
 ```
 
@@ -1008,7 +1008,7 @@ Result:
       },
       "…": "5 more keys"
     },
-    "… 4 more"
+    "… 5 more"
   ],
   "guides": [],
   "index": 0,
@@ -1018,7 +1018,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -1134,7 +1134,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 93
+  "revision": 94
 }
 ```
 
@@ -3392,15 +3392,15 @@ Copy frames from one open document into another (or the same one): text frames k
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000052"
+      "00000000-0000-87ea-8000-000000000054"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000051",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000053",
     "offset": {
       "x": 0,
       "y": 36
     },
     "page_index": 0,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005d"
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005f"
   },
   "name": "frame_copy_to_doc"
 }
@@ -3411,13 +3411,13 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000055",
-    "00000000-0000-87ea-8000-00000000005e",
-    "00000000-0000-87ea-8000-00000000005f"
+    "00000000-0000-87ea-8000-000000000057",
+    "00000000-0000-87ea-8000-000000000060",
+    "00000000-0000-87ea-8000-000000000061"
   ],
-  "doc_id": "00000000-0000-87ea-8000-00000000005d",
+  "doc_id": "00000000-0000-87ea-8000-00000000005f",
   "frame_ids": [
-    "00000000-0000-87ea-8000-00000000005e"
+    "00000000-0000-87ea-8000-000000000060"
   ],
   "revision": 2
 }
@@ -3429,11 +3429,11 @@ Result:
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000052"
+      "00000000-0000-87ea-8000-000000000054"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000051",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000053",
     "page_index": 3,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005d"
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005f"
   },
   "name": "frame_copy_to_doc"
 }
@@ -4485,7 +4485,7 @@ _read-only_
 ```json
 {
   "arguments": {
-    "frame_id": "00000000-0000-87ea-8000-000000000052"
+    "frame_id": "00000000-0000-87ea-8000-000000000054"
   },
   "name": "spell_check"
 }
@@ -4502,21 +4502,21 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000052",
+      "frame_id": "00000000-0000-87ea-8000-000000000054",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000052",
+      "frame_id": "00000000-0000-87ea-8000-000000000054",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
     },
     {
       "end": 57,
-      "frame_id": "00000000-0000-87ea-8000-000000000052",
+      "frame_id": "00000000-0000-87ea-8000-000000000054",
       "language": "en-US",
       "start": 52,
       "…": "2 more keys"
@@ -4548,14 +4548,14 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000052",
+      "frame_id": "00000000-0000-87ea-8000-000000000054",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000052",
+      "frame_id": "00000000-0000-87ea-8000-000000000054",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
@@ -5574,7 +5574,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000003b",
+  "doc_id": "00000000-0000-87ea-8000-00000000003d",
   "named_frames": {},
   "page_ids": [
     "00000000-0000-8065-8000-000000000002"
@@ -5748,7 +5748,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-000000000046",
+  "doc_id": "00000000-0000-87ea-8000-000000000048",
   "revision": 2
 }
 ```
@@ -5803,7 +5803,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-000000000046",
+  "doc_id": "00000000-0000-87ea-8000-000000000048",
   "revision": 5
 }
 ```
@@ -5849,11 +5849,11 @@ Result:
 
 ```json
 {
-  "bytes": 135313,
+  "bytes": 136900,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -5874,11 +5874,11 @@ Result:
 
 ```json
 {
-  "bytes": 554917,
+  "bytes": 556508,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -5916,7 +5916,7 @@ Result:
 
 ```json
 {
-  "bytes": 709828,
+  "bytes": 711493,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -5924,7 +5924,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 91
+  "revision": 92
 }
 ```
 
@@ -5964,12 +5964,12 @@ Result:
 
 ```json
 {
-  "bytes": 36833,
+  "bytes": 37066,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 91,
+  "revision": 92,
   "width": 596
 }
 ```
@@ -6010,8 +6010,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA4nElEQVR4nO2d… (19400 characters)",
-  "revision": 91,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA42klEQVR4nO2d… (19484 characters)",
+  "revision": 92,
   "width": 249
 }
 ```
@@ -6289,7 +6289,7 @@ Result:
         },
         "…": "3 more keys"
       },
-      "…": "5 more keys"
+      "…": "6 more keys"
     },
     "grid": {
       "show_grid": false,
@@ -6318,7 +6318,7 @@ Result:
         "frames": [
           "00000000-0000-87ea-8000-00000000000f",
           "00000000-0000-87ea-8000-000000000011",
-          "… 6 more"
+          "… 7 more"
         ],
         "guides": [],
         "id": "00000000-0000-87ea-8000-000000000002",
@@ -6453,7 +6453,7 @@ Result:
           }
         ]
       },
-      "…": "11 more keys"
+      "…": "12 more keys"
     },
     "styles": {
       "default_paragraph": "00000000-0000-87ea-8000-000000000003",
@@ -6510,13 +6510,13 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 91
+  "revision": 92
 }
 ```
 
 ### `validate`
 
-Check print readiness. Warnings: overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame — each with a hint.
+Design checker: check print readiness. Warnings (each with a hint, a page and object ids): overflow, missing_font, missing_glyphs (names the characters no font covers), low_resolution_image (<150 dpi), off_page, beyond_bleed, empty_placeholder, empty_image_frame, hyphenation_unavailable, text_too_small (<6 pt), low_contrast_text (contrast ratio <3:1), object_in_unprintable_area (within 0.25 in of the edge, desktop jobs without bleed), empty_table_cells, missing_alt_text (pictures), and with commercial=true also rgb_in_cmyk_job (an RGB colour in a CMYK job; swatches that are CMYK or spot are fine). commercial=true is for a job going to a commercial printer: it skips the desktop-margin check. merge_field_missing arrives with mail merge.
 
 _read-only_
 
@@ -6524,11 +6524,12 @@ _read-only_
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `commercial` | boolean |  | Also run the checks for a commercial CMYK print job: RGB colours are flagged (rgb_in_cmyk_job) and the desktop-printer margin check is skipped. Default false. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 
 **Result fields:** `doc_id`, `ok`, `revision`, `warnings`
 
-**Example**
+**Example** — The design checker. Each warning has a code, a message, a hint, the page and the frame (and frames when several objects are involved). This run finds the fine print: text_too_small (under 6 pt) and low_contrast_text (contrast ratio under 3:1).
 
 ```json
 {
@@ -6543,22 +6544,89 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 91,
+  "revision": 92,
   "warnings": [
     {
-      "code": "overflow",
-      "frame": "00000000-0000-87ea-8000-00000000000f",
-      "hint": "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames",
-      "message": "31 characters do not fit in the text frame chain",
+      "code": "missing_alt_text",
+      "frame": "00000000-0000-87ea-8000-000000000014",
+      "hint": "select the picture and fill in Alt text in the Properties panel (image_set_alt_text); tagged PDFs need it",
+      "message": "picture has no alternative text",
       "…": "1 more keys"
     },
     {
-      "code": "overflow",
-      "frame": "00000000-0000-87ea-8000-000000000015",
-      "hint": "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames",
-      "message": "0 characters do not fit in the text frame chain",
+      "code": "low_contrast_text",
+      "frame": "00000000-0000-87ea-8000-000000000022",
+      "hint": "darken the text or lighten what is behind it (Text > Character…, or the frame Fill in the Properties panel); aim for a contrast of 4.5:1 or more",
+      "message": "text colour #000000 on #1E3A5F has a contrast ratio of 1.8:1 (below 3.0:1)",
       "…": "1 more keys"
-    }
+    },
+    {
+      "code": "empty_table_cells",
+      "frame": "00000000-0000-87ea-8000-000000000022",
+      "hint": "type text in the empty cells, or delete the unused rows and columns",
+      "message": "9 empty table cells: row 1, col 2; row 1, col 3; row 2, col 3; row 3, col 1; row 3, col 2; row 3, col 3; row 4, col 1; row 4, col 2; row 4, col 3",
+      "…": "1 more keys"
+    },
+    {
+      "code": "text_too_small",
+      "frame": "00000000-0000-87ea-8000-00000000003a",
+      "hint": "raise the font size to 6 pt or more (Text > Character…, or the Size field in the Properties panel)",
+      "message": "text is 4.0pt, smaller than the 6pt minimum for print",
+      "…": "1 more keys"
+    },
+    "… 3 more"
+  ]
+}
+```
+
+**Example** — commercial=true also checks for a CMYK print job: rgb_in_cmyk_job names every frame that uses an RGB colour (use CMYK or spot swatches instead), and the desktop-printer margin check is skipped. Without it (the default) rgb_in_cmyk_job is never reported.
+
+```json
+{
+  "arguments": {
+    "commercial": true
+  },
+  "name": "validate"
+}
+```
+
+Result:
+
+```json
+{
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "ok": false,
+  "revision": 92,
+  "warnings": [
+    {
+      "code": "rgb_in_cmyk_job",
+      "frame": "00000000-0000-87ea-8000-00000000000f",
+      "hint": "use a CMYK or spot swatch (Design > Swatches, swatch_create) instead of an RGB colour",
+      "message": "RGB colour in a CMYK job: text colour",
+      "…": "1 more keys"
+    },
+    {
+      "code": "rgb_in_cmyk_job",
+      "frame": "00000000-0000-87ea-8000-000000000011",
+      "hint": "use a CMYK or spot swatch (Design > Swatches, swatch_create) instead of an RGB colour",
+      "message": "RGB colour in a CMYK job: fill",
+      "…": "1 more keys"
+    },
+    {
+      "code": "rgb_in_cmyk_job",
+      "frame": "00000000-0000-87ea-8000-000000000017",
+      "hint": "use a CMYK or spot swatch (Design > Swatches, swatch_create) instead of an RGB colour",
+      "message": "RGB colour in a CMYK job: fill (gradient stop)",
+      "…": "1 more keys"
+    },
+    {
+      "code": "missing_alt_text",
+      "frame": "00000000-0000-87ea-8000-000000000014",
+      "hint": "select the picture and fill in Alt text in the Properties panel (image_set_alt_text); tagged PDFs need it",
+      "message": "picture has no alternative text",
+      "…": "1 more keys"
+    },
+    "… 9 more"
   ]
 }
 ```

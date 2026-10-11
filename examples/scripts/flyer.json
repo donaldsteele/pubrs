@@ -6,6 +6,8 @@
   {"tool": "text_apply_char_style", "args": {"frame_id": "${title.frame_id}", "start": 0, "end": 19, "font_size": 34, "bold": true}},
   {"tool": "frame_add_image", "args": {"x": 456, "y": 30, "width": 130, "height": 130, "path": "${script_dir}/../assets/logo.svg", "fit": "fit"}, "as": "logo"},
   {"tool": "frame_add_image", "args": {"x": 126, "y": 220, "width": 360, "height": 240, "path": "${script_dir}/../assets/bread.jpg"}, "as": "photo"},
+  {"tool": "image_set_alt_text", "args": {"frame_id": "${logo.frame_id}", "alt_text": "Golden Crust Bakery logo"}},
+  {"tool": "image_set_alt_text", "args": {"frame_id": "${photo.frame_id}", "alt_text": "A fresh sourdough loaf on a wooden board"}},
   {"tool": "frame_add_text", "args": {"x": 36, "y": 490, "width": 260, "height": 240, "style": "Body",
     "text": "Every loaf is shaped by hand and baked in our stone oven before sunrise. Sourdough, rye, seeded and brioche are ready from 7am, with celebration cakes made to order.\nGluten-free and vegan options are baked fresh on Fridays and Saturdays."}, "as": "body"},
   {"tool": "frame_add_text", "args": {"x": 316, "y": 490, "width": 260, "height": 240, "style": "Body"}, "as": "body2"},

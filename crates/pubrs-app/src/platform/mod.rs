@@ -54,6 +54,11 @@ pub trait Clipboard {
     fn get_text(&mut self) -> Option<String>;
     fn set_text(&mut self, text: &str);
     fn get_image(&mut self) -> Option<ClipImage>;
+    /// Whether `get_image` has refused a picture as too large since this
+    /// was last asked (the caller says so in the status bar).
+    fn take_image_too_large(&mut self) -> bool {
+        false
+    }
     fn set_image(&mut self, image: ClipImage);
     fn get_html(&mut self) -> Option<String>;
     /// Put `html` on the clipboard with `alt_text` for programs that only

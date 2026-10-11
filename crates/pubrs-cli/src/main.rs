@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use pubrs_api::tools::doc::{DocOpen, DocRef, DocSaveAs};
 use pubrs_api::tools::export::{ExportPdf, ExportPng, FontEmbeddingIn};
 use pubrs_api::tools::import::DocImport;
+use pubrs_api::tools::query::ValidateIn;
 use pubrs_api::{ScriptFile, Session, SessionConfig, run_script};
 use serde_json::json;
 
@@ -86,6 +87,9 @@ enum Cmd {
         /// Print the warnings as JSON.
         #[arg(long)]
         json: bool,
+        /// Also check for a commercial CMYK print job (flags RGB colours).
+        #[arg(long)]
+        commercial: bool,
     },
     /// Replay a JSON list of tool calls (the same calls the MCP server takes).
     Script {
@@ -142,20 +146,16 @@ fn session(cli: &Cli) -> Session {
 
 /// The app's spelling folder, `<config dir>/pubrs/dictionaries` (user
 /// Hunspell dictionaries and added words), so `spell_*` tools in scripts see
-/// what the app sees. The config dir follows the platform's convention, as
-/// the app's does: %APPDATA% on Windows, ~/Library/Application Support on
-/// macOS, $XDG_CONFIG_HOME or ~/.config elsewhere.
+/// what the app sees. Computed as the app does (`DesktopPaths::config_dir`
+/// in `pubrs-app`): the `dirs` config folder, or the temp folder when the
+/// platform has none, then `pubrs`.
 fn dictionaries_dir() -> Option<PathBuf> {
-    let var = |k: &str| std::env::var_os(k).map(PathBuf::from);
-    #[cfg(target_os = "windows")]
-    let base = var("APPDATA");
-    #[cfg(target_os = "macos")]
-    let base = var("HOME").map(|h| h.join("Library").join("Application Support"));
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base = var("XDG_CONFIG_HOME")
-        .filter(|p| p.is_absolute())
-        .or_else(|| var("HOME").map(|h| h.join(".config")));
-    base.map(|b| b.join("pubrs").join("dictionaries"))
+    Some(
+        dirs::config_dir()
+            .unwrap_or_else(|| std::env::temp_dir().join("pubrs"))
+            .join("pubrs")
+            .join("dictionaries"),
+    )
 }
 
 fn open(s: &mut Session, file: &Path) -> Result<()> {
@@ -272,9 +272,16 @@ fn run(cli: Cli) -> Result<ExitCode> {
             );
             Ok(ExitCode::SUCCESS)
         }
-        Cmd::Validate { file, json } => {
+        Cmd::Validate {
+            file,
+            json,
+            commercial,
+        } => {
             open(&mut s, file)?;
-            let v = api(s.validate(DocRef::default()))?;
+            let v = api(s.validate(ValidateIn {
+                doc_id: None,
+                commercial: *commercial,
+            }))?;
             if *json {
                 say!("{}", serde_json::to_string_pretty(&v)?);
             } else if v.ok {

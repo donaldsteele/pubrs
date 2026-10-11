@@ -427,9 +427,19 @@ proptest! {
 fn validate_has_nothing_to_say_about_a_plain_table() {
     let mut w = W::new();
     let f = w.add(2, 2);
-    w.set_text(f, 0, 0, "Cell");
+    for (r, c) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        w.set_text(f, r, c, "Cell");
+    }
     let warnings = pubrs_core::validate::validate(w.ed.doc());
     assert!(warnings.is_empty(), "{warnings:?}");
+    // An untouched table is flagged for its empty cells.
+    let g = w.add(1, 2);
+    w.set_text(g, 0, 0, "Cell");
+    let codes: Vec<_> = pubrs_core::validate::validate(w.ed.doc())
+        .iter()
+        .map(|w| w.code)
+        .collect();
+    assert_eq!(codes, vec![pubrs_core::WarningCode::EmptyTableCells]);
 }
 
 #[test]

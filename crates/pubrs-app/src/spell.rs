@@ -987,10 +987,25 @@ fn dialog_act(app: &mut PubrsApp, act: DialogAct) {
         }
         DialogAct::ChangeAll => {
             let Some(with) = chosen else { return };
-            let Some((_, report)) = &d.report else { return };
-            let mut all: Vec<&Issue> = report.issues.iter().filter(|j| j.word == i.word).collect();
+            let Some((rev, report)) = &d.report else {
+                return;
+            };
+            // The offsets belong to the report's revision: an edit since
+            // makes them stale, so nothing is replaced until it is checked
+            // again (as `advance` does).
+            let now = app.session.get(Some(d.doc_id)).ok().map(|o| o.revision());
+            if now != Some(*rev) {
+                app.notify("The text changed: check the spelling again");
+                moved(app, (i.story, i.start), true);
+                return;
+            }
+            let mut all: Vec<&Issue> = report
+                .issues
+                .iter()
+                .filter(|j| j.word == i.word && still_there(app, d.doc_id, j))
+                .collect();
             all.sort_by_key(|j| std::cmp::Reverse((j.story, j.start)));
-            let commands = all
+            let commands: Vec<Command> = all
                 .iter()
                 .map(|j| Command::ReplaceText {
                     story: j.story,
@@ -999,7 +1014,8 @@ fn dialog_act(app: &mut PubrsApp, act: DialogAct) {
                     text: with.clone(),
                 })
                 .collect();
-            if still_there(app, d.doc_id, &i) {
+            if !commands.is_empty() {
+                // One undo step; every table cell it changed grows with it.
                 app.exec(Command::Batch {
                     label: "change all".into(),
                     commands,

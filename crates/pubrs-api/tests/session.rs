@@ -9,6 +9,7 @@ use pubrs_api::tools::export::*;
 use pubrs_api::tools::find::*;
 use pubrs_api::tools::frames::*;
 use pubrs_api::tools::images::*;
+use pubrs_api::tools::pages::*;
 use pubrs_api::tools::styles::*;
 use pubrs_api::tools::text::*;
 use pubrs_api::{Session, SessionConfig};
@@ -187,7 +188,18 @@ fn flyer_flow_save_reopen_equal() {
     })
     .unwrap();
 
-    // Validation: clean document has no warnings.
+    // Validation: the picture needs alt text, then the document is clean.
+    let v = s.validate(DocRef::default()).unwrap();
+    assert_eq!(
+        v.warnings.iter().map(|w| w.code).collect::<Vec<_>>(),
+        vec![WarningCode::MissingAltText]
+    );
+    s.image_set_alt_text(ImageSetAltText {
+        doc_id: None,
+        frame_id: img.frame_id,
+        alt_text: "Rolls on a tray".into(),
+    })
+    .unwrap();
     let v = s.validate(DocRef::default()).unwrap();
     assert!(v.ok, "{:?}", v.warnings);
 
@@ -485,8 +497,8 @@ fn validate_reports_overflow_and_empty_placeholder() {
     let f = text_frame(
         &mut s,
         d.page_ids[0],
-        10.0,
-        10.0,
+        30.0,
+        30.0,
         60.0,
         30.0,
         &"word ".repeat(50),
@@ -1025,4 +1037,124 @@ fn wordart_tools_find_replace_and_effects() {
             .content,
         FrameContent::WordArt(_)
     ));
+}
+
+#[test]
+fn validate_design_checks_and_the_commercial_flag() {
+    use pubrs_api::tools::OptColor;
+    use pubrs_api::tools::query::ValidateIn;
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let p = d.page_ids[0];
+    // Tiny text, pale text, an RGB-filled rectangle, and a clean headline.
+    let add = |s: &mut Session, y: f64, text: &str, size: Option<f64>, color: Option<&str>| {
+        s.frame_add_text(FrameAddText {
+            doc_id: None,
+            page_id: Some(p),
+            master_id: None,
+            x: 72.0,
+            y,
+            width: 300.0,
+            height: 40.0,
+            text: Some(text.into()),
+            markup: false,
+            style: None,
+            font_family: None,
+            font_size: size,
+            color: color.map(|c| c.parse::<Color>().unwrap().into()),
+            align: None,
+            columns: None,
+            name: None,
+        })
+        .unwrap()
+        .frame_id
+    };
+    let tiny = add(&mut s, 72.0, "fine print", Some(4.0), None);
+    let pale = add(&mut s, 130.0, "ghost", None, Some("#EEEEEE"));
+    let _ok = add(&mut s, 190.0, "A clear headline", Some(24.0), None);
+    let rect = s
+        .frame_add_shape(FrameAddShape {
+            doc_id: None,
+            page_id: Some(p),
+            master_id: None,
+            shape: ShapeKind::Rectangle,
+            x: 72.0,
+            y: 300.0,
+            width: 100.0,
+            height: 50.0,
+            corner_radius: None,
+            line_direction: None,
+            fill: Some(OptColor(Some(Color::rgb(200, 0, 0).into()))),
+            stroke: None,
+            stroke_width: None,
+            dash: None,
+            name: None,
+        })
+        .unwrap()
+        .frame_id;
+
+    let plain = s.validate(ValidateIn::default()).unwrap();
+    let got: Vec<(WarningCode, Option<_>)> =
+        plain.warnings.iter().map(|w| (w.code, w.frame)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (WarningCode::TextTooSmall, Some(tiny)),
+            (WarningCode::LowContrastText, Some(pale)),
+        ]
+    );
+    assert!(
+        plain
+            .warnings
+            .iter()
+            .all(|w| !w.hint.is_empty() && w.page == Some(p))
+    );
+
+    let commercial = s
+        .validate(ValidateIn {
+            doc_id: None,
+            commercial: true,
+        })
+        .unwrap();
+    let codes: Vec<(WarningCode, Option<_>)> = commercial
+        .warnings
+        .iter()
+        .map(|w| (w.code, w.frame))
+        .collect();
+    assert_eq!(
+        codes,
+        vec![
+            (WarningCode::TextTooSmall, Some(tiny)),
+            (WarningCode::RgbInCmykJob, Some(pale)),
+            (WarningCode::LowContrastText, Some(pale)),
+            (WarningCode::RgbInCmykJob, Some(rect)),
+        ]
+    );
+
+    // The old request shape still works, and the JSON form takes the flag.
+    assert_eq!(s.validate(DocRef::default()).unwrap().warnings.len(), 2);
+    let req: ValidateIn = serde_json::from_value(serde_json::json!({"commercial": true})).unwrap();
+    assert!(req.commercial);
+    assert!(serde_json::from_value::<ValidateIn>(serde_json::json!({"comercial": true})).is_err());
+}
+
+#[test]
+fn validate_parts_checks_only_the_pages_asked_for() {
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let p1 = d.page_ids[0];
+    let p2 = s
+        .page_add(PageAdd {
+            doc_id: None,
+            index: None,
+            master_id: None,
+        })
+        .unwrap()
+        .page_id;
+    text_frame(&mut s, p1, 72.0, 72.0, 200.0, 40.0, "one");
+    let parts = s.validate_parts(None, false, Some(&[p2])).unwrap();
+    assert_eq!(parts.pages.len(), 1);
+    assert_eq!(parts.pages[0].0, p2);
+    let all = s.validate_parts(None, false, None).unwrap();
+    assert_eq!(all.pages.len(), 2);
 }

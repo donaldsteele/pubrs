@@ -33,15 +33,25 @@ fn every_builtin_applies_with_only_placeholder_warnings() {
             .unwrap();
         assert_eq!(out.placeholders.len(), t.placeholders.len());
         let v = s.validate(DocRef::default()).unwrap();
+        // Full-width bands run to the page edge on purpose; the checker says
+        // so (object_in_unprintable_area), and finds nothing else wrong.
         for w in &v.warnings {
-            assert_eq!(w.code, WarningCode::EmptyPlaceholder, "{}: {w:?}", t.name);
+            assert!(
+                matches!(
+                    w.code,
+                    WarningCode::EmptyPlaceholder | WarningCode::ObjectInUnprintableArea
+                ),
+                "{}: {w:?}",
+                t.name
+            );
         }
-        assert!(v.warnings.len() <= t.placeholders.len(), "{}", t.name);
-        assert!(
-            !v.warnings.is_empty(),
-            "{}: unfilled template should warn",
-            t.name
-        );
+        let empty = v
+            .warnings
+            .iter()
+            .filter(|w| w.code == WarningCode::EmptyPlaceholder)
+            .count();
+        assert!(empty <= t.placeholders.len(), "{}", t.name);
+        assert!(empty > 0, "{}: unfilled template should warn", t.name);
     }
 }
 

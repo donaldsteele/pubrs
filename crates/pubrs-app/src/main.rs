@@ -8,6 +8,7 @@ mod adapter;
 mod app;
 mod autosave;
 mod canvas;
+mod checker;
 mod clipboard;
 mod dialogs;
 mod find;

@@ -4081,6 +4081,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "pubrs-api",
  "serde_json",
  "tracing",

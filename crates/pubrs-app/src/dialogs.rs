@@ -10,7 +10,6 @@ use crate::platform::{PrintOptions, PrinterInfo};
 
 pub enum Dialog {
     TemplatePicker,
-    Validation(Vec<Warning>),
     About,
     McpHelp,
     Print(Vec<PrinterInfo>, PrintOptions),
@@ -285,44 +284,6 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
                     app.new_from_template(name);
                     Outcome::Close
                 }
-            }
-        }
-        Dialog::Validation(warnings) => {
-            ui.heading("Check for problems");
-            if warnings.is_empty() {
-                ui.colored_label(Color32::DARK_GREEN, "No problems found. Ready to print.");
-            } else {
-                ui.label(format!(
-                    "{} problem{} found:",
-                    warnings.len(),
-                    if warnings.len() == 1 { "" } else { "s" }
-                ));
-                egui::ScrollArea::vertical()
-                    .max_height(360.0)
-                    .show(ui, |ui| {
-                        for w in warnings.iter() {
-                            ui.group(|ui| {
-                                ui.label(RichText::new(&w.message).strong());
-                                ui.small(&w.hint);
-                                if let Some(f) = w.frame
-                                    && ui.small_button("Show").clicked()
-                                {
-                                    if let (Some(p), Some(doc)) = (w.page, app.doc())
-                                        && let Some(i) = doc.page_index(p)
-                                        && let Some(v) = app.view_mut()
-                                    {
-                                        v.page = i;
-                                    }
-                                    app.select(vec![f]);
-                                }
-                            });
-                        }
-                    });
-            }
-            if ui.button("Close").clicked() {
-                Outcome::Close
-            } else {
-                Outcome::Keep
             }
         }
         Dialog::About => {
@@ -2372,6 +2333,21 @@ pub struct ExportState {
     /// Where to save, when already decided (the GUI self-test sets this to
     /// skip the native file dialog).
     pub target: Option<std::path::PathBuf>,
+    /// Issues the checker found before a commercial export (missing fonts,
+    /// RGB colour, low-resolution pictures); shown instead of the options
+    /// until the user chooses.
+    pub blocking: Option<Vec<Warning>>,
+    /// The button that was clicked, run again after "Export anyway".
+    pub asked: Option<ExportAsk>,
+    /// "Export anyway" was chosen: the check is not run again.
+    pub acknowledged: bool,
+}
+
+/// Which export button started the check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportAsk {
+    Pdf,
+    Package,
 }
 
 impl ExportState {
@@ -2383,6 +2359,9 @@ impl ExportState {
             tagged: false,
             has_bleed: doc.setup.bleed > 0.0,
             target: None,
+            blocking: None,
+            asked: None,
+            acknowledged: false,
         };
         s.choose(ExportPreset::Desktop);
         s
@@ -2405,7 +2384,73 @@ impl ExportState {
     }
 }
 
+/// What the pre-export check found: the list and the three ways out.
+fn blocking_view(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) -> Option<Outcome> {
+    let list = st.blocking.clone()?;
+    ui.heading("Problems found before printing");
+    ui.label(
+        "A print shop's preflight is likely to stop on these. Fix them first, or export anyway.",
+    );
+    ui.add_space(4.0);
+    egui::ScrollArea::vertical()
+        .max_height(260.0)
+        .show(ui, |ui| {
+            for w in &list {
+                ui.group(|ui| {
+                    ui.label(RichText::new(&w.message).strong());
+                    ui.small(&w.hint);
+                });
+            }
+        });
+    ui.add_space(6.0);
+    let (mut anyway, mut fix, mut cancel) = (false, false, false);
+    ui.horizontal(|ui| {
+        let b = ui.button("Export anyway");
+        mark(ui, "export-anyway", &b);
+        anyway = b.clicked();
+        let b = ui.button("Fix first");
+        mark(ui, "export-fix", &b);
+        fix = b.clicked();
+        let b = ui.button("Cancel");
+        mark(ui, "export-block-cancel", &b);
+        cancel = b.clicked();
+    });
+    if cancel || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        return Some(Outcome::Close);
+    }
+    if fix {
+        crate::checker::fix_first(app, list.first());
+        return Some(Outcome::Close);
+    }
+    if anyway {
+        st.blocking = None;
+        st.acknowledged = true;
+        return None;
+    }
+    Some(Outcome::Keep)
+}
+
 fn export_dialog(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) -> Outcome {
+    // After "Export anyway" the original button's work goes on below.
+    let mut resume = None;
+    if st.blocking.is_some() {
+        match blocking_view(app, ui, st) {
+            Some(o) => return o,
+            None => resume = st.asked.take(),
+        }
+    }
+    if resume.is_none() {
+        return export_options(app, ui, st);
+    }
+    export_run(
+        app,
+        st,
+        resume == Some(ExportAsk::Pdf),
+        resume == Some(ExportAsk::Package),
+    )
+}
+
+fn export_options(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) -> Outcome {
     ui.heading("Export PDF");
     ui.label("Choose what the PDF is for. You can still change the options below.");
     ui.add_space(6.0);
@@ -2476,6 +2521,28 @@ fn export_dialog(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) ->
     if cancel || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         return Outcome::Close;
     }
+    // A commercial job is checked first; what a printer would reject is
+    // listed, with a way to carry on.
+    if (go || package) && !st.acknowledged && (st.preset == ExportPreset::Commercial || package) {
+        // If the check itself fails the error is shown and the dialog stays.
+        let Some(found) = crate::checker::blocking_issues(app) else {
+            return Outcome::Keep;
+        };
+        if !found.is_empty() {
+            st.asked = Some(if go {
+                ExportAsk::Pdf
+            } else {
+                ExportAsk::Package
+            });
+            st.blocking = Some(found);
+            return Outcome::Keep;
+        }
+    }
+    export_run(app, st, go, package)
+}
+
+/// Save: ask where (unless the self-test decided), then write the file.
+fn export_run(app: &mut PubrsApp, st: &mut ExportState, go: bool, package: bool) -> Outcome {
     let name =
         pubrs_api::session::slug(&app.doc().map(|d| d.meta.title.clone()).unwrap_or_default());
     if go {

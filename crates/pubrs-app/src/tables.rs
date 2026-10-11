@@ -379,21 +379,35 @@ pub fn grow(app: &mut PubrsApp, frame: FrameId, key: &str) -> bool {
     )
 }
 
-/// The story a command edits, if it is one of the text commands.
-pub fn story_of_command(cmd: &Command) -> Option<StoryId> {
-    match cmd {
-        Command::SetStory { story, .. }
-        | Command::InsertText { story, .. }
-        | Command::DeleteText { story, .. }
-        | Command::ReplaceText { story, .. }
-        | Command::ApplyCharProps { story, .. }
-        | Command::SetCharStyle { story, .. }
-        | Command::ClearCharFormat { story, .. }
-        | Command::ApplyParaProps { story, .. }
-        | Command::SetParaStyle { story, .. } => Some(*story),
-        Command::Batch { commands, .. } => commands.iter().find_map(story_of_command),
-        _ => None,
+/// Every story a command edits, if it is one of the text commands (a batch
+/// lists the stories of all its commands, once each, in order).
+pub fn stories_of_command(cmd: &Command) -> Vec<StoryId> {
+    fn walk(cmd: &Command, out: &mut Vec<StoryId>) {
+        match cmd {
+            Command::SetStory { story, .. }
+            | Command::InsertText { story, .. }
+            | Command::DeleteText { story, .. }
+            | Command::ReplaceText { story, .. }
+            | Command::ApplyCharProps { story, .. }
+            | Command::SetCharStyle { story, .. }
+            | Command::ClearCharFormat { story, .. }
+            | Command::ApplyParaProps { story, .. }
+            | Command::SetParaStyle { story, .. } => {
+                if !out.contains(story) {
+                    out.push(*story);
+                }
+            }
+            Command::Batch { commands, .. } => {
+                for c in commands {
+                    walk(c, out);
+                }
+            }
+            _ => {}
+        }
     }
+    let mut out = Vec::new();
+    walk(cmd, &mut out);
+    out
 }
 
 /// Set a column's width (one undo step).

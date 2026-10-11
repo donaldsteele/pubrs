@@ -1659,3 +1659,609 @@ fn wordart_and_effects_are_validated() {
         Warp::Circle
     );
 }
+
+// ---- design checks (M29) ----
+
+mod design {
+    use pubrs_core::validate::{
+        MIN_TEXT_PT, ValidateOptions, check_integrity, validate, validate_page, validate_with,
+    };
+    use pubrs_core::*;
+
+    fn b() -> DocBuilder<SeqIds> {
+        DocBuilder::new(SeqIds::new(7), PageSetup::default())
+    }
+
+    fn codes(doc: &Document, commercial: bool) -> Vec<WarningCode> {
+        validate_with(doc, &ValidateOptions { commercial })
+            .iter()
+            .map(|w| w.code)
+            .collect()
+    }
+
+    fn text(
+        b: &mut DocBuilder<SeqIds>,
+        rect: Rect,
+        size: Option<f64>,
+        color: Option<Paint>,
+    ) -> FrameId {
+        let page = b.page(0);
+        let para = Paragraph {
+            style: None,
+            props: ParaProps::default(),
+            runs: vec![Run {
+                text: "Hello".into(),
+                style: None,
+                props: CharProps {
+                    font_size: size,
+                    color,
+                    ..CharProps::default()
+                },
+            }],
+        };
+        b.text_paragraphs(Parent::Page(page), rect, vec![para])
+            .unwrap()
+    }
+
+    const BOX: Rect = Rect {
+        x: 72.0,
+        y: 72.0,
+        width: 200.0,
+        height: 50.0,
+    };
+
+    fn style(b: &mut DocBuilder<SeqIds>, f: FrameId, s: FrameStyle) {
+        b.style(f, s).unwrap();
+    }
+
+    #[test]
+    fn plain_content_has_no_design_warnings() {
+        let mut b = b();
+        text(&mut b, BOX, None, None);
+        let page = b.page(0);
+        b.shape(page, Rect::new(100.0, 300.0, 50.0, 50.0), Shape::Ellipse)
+            .unwrap();
+        for commercial in [false, true] {
+            assert_eq!(
+                codes(b.doc(), commercial),
+                vec![],
+                "commercial {commercial}"
+            );
+        }
+    }
+
+    #[test]
+    fn text_too_small_names_the_smallest_size() {
+        let mut b = b();
+        let f = text(&mut b, BOX, Some(4.0), None);
+        let ok = text(
+            &mut b,
+            Rect::new(72.0, 200.0, 100.0, 30.0),
+            Some(MIN_TEXT_PT),
+            None,
+        );
+        let w = validate(b.doc());
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].code, WarningCode::TextTooSmall);
+        assert_eq!(w[0].frame, Some(f));
+        assert_ne!(w[0].frame, Some(ok));
+        assert!(w[0].message.contains("4.0pt"), "{}", w[0].message);
+        assert!(!w[0].hint.is_empty());
+    }
+
+    #[test]
+    fn small_wordart_and_table_cell_text_are_found() {
+        let mut b = b();
+        let page = b.page(0);
+        let art = WordArtFrame {
+            text: "Sale".into(),
+            font: "Liberation Serif".into(),
+            size: 5.0,
+            warp: Warp::default(),
+            fill: Color::BLACK.into(),
+            outline: None,
+            shadow: None,
+        };
+        let wa = b.wordart(page, BOX, art).unwrap();
+        let t = b
+            .table(
+                Parent::Page(page),
+                Rect::new(72.0, 200.0, 200.0, 60.0),
+                1,
+                2,
+                &pubrs_core::table::CellStyle::default(),
+            )
+            .unwrap();
+        b.cell_text(t, 0, 0, "ok")
+            .unwrap()
+            .cell_text(t, 0, 1, "x")
+            .unwrap();
+        let sid = b
+            .doc()
+            .frame(t)
+            .unwrap()
+            .as_table()
+            .unwrap()
+            .cell_at(0, 1)
+            .unwrap()
+            .story;
+        b.exec(Command::ApplyCharProps {
+            story: sid,
+            start: 0,
+            end: 1,
+            props: CharProps {
+                font_size: Some(3.0),
+                ..CharProps::default()
+            },
+        })
+        .unwrap();
+        let w = validate(b.doc());
+        let small: Vec<_> = w
+            .iter()
+            .filter(|w| w.code == WarningCode::TextTooSmall)
+            .collect();
+        assert_eq!(small.len(), 2, "{w:?}");
+        assert_eq!(small[0].frame, Some(wa));
+        assert!(
+            small[1].message.contains("row 1, column 2"),
+            "{}",
+            small[1].message
+        );
+    }
+
+    #[test]
+    fn low_contrast_uses_the_background() {
+        let mut b = b();
+        let grey: Paint = Color::rgb(0xEE, 0xEE, 0xEE).into();
+        let light = text(&mut b, BOX, None, Some(grey.clone()));
+        let dark = text(
+            &mut b,
+            Rect::new(72.0, 200.0, 200.0, 50.0),
+            None,
+            Some(grey.clone()),
+        );
+        style(
+            &mut b,
+            dark,
+            FrameStyle {
+                fill: Some(Color::rgb(0x10, 0x20, 0x40).into()),
+                ..FrameStyle::default()
+            },
+        );
+        // Grey on a light fill is low again; the same on a translucent fill
+        // falls back to white.
+        let pale = text(
+            &mut b,
+            Rect::new(72.0, 300.0, 200.0, 50.0),
+            None,
+            Some(grey.clone()),
+        );
+        style(
+            &mut b,
+            pale,
+            FrameStyle {
+                fill: Some(Color::rgb(0xFF, 0xF0, 0xF0).into()),
+                ..FrameStyle::default()
+            },
+        );
+        let w = validate(b.doc());
+        let low: Vec<FrameId> = w
+            .iter()
+            .filter(|w| w.code == WarningCode::LowContrastText)
+            .filter_map(|w| w.frame)
+            .collect();
+        assert_eq!(low, vec![light, pale], "{w:?}");
+        assert!(
+            w[0].message.contains("#EEEEEE on #FFFFFF"),
+            "{}",
+            w[0].message
+        );
+        // Default black text is fine.
+        let mut b2 = self::b();
+        text(&mut b2, BOX, None, None);
+        assert!(validate(b2.doc()).is_empty());
+    }
+
+    #[test]
+    fn text_over_a_frame_below_uses_that_frame_s_fill() {
+        let mut b = b();
+        let page = b.page(0);
+        let band = b
+            .shape(
+                page,
+                Rect::new(60.0, 60.0, 300.0, 100.0),
+                Shape::Rectangle { corner_radius: 0.0 },
+            )
+            .unwrap();
+        style(
+            &mut b,
+            band,
+            FrameStyle {
+                fill: Some(Color::rgb(0x10, 0x20, 0x40).into()),
+                ..FrameStyle::default()
+            },
+        );
+        let white: Paint = Color::WHITE.into();
+        text(&mut b, BOX, None, Some(white.clone()));
+        // White on the dark band: fine. White on bare paper: not.
+        assert!(codes(b.doc(), false).is_empty());
+        let bare = text(
+            &mut b,
+            Rect::new(72.0, 400.0, 200.0, 40.0),
+            None,
+            Some(white.clone()),
+        );
+        assert_eq!(codes(b.doc(), false), vec![WarningCode::LowContrastText]);
+        assert_eq!(validate(b.doc())[0].frame, Some(bare));
+        // A picture underneath means the background is unknown: no verdict.
+        let asset = AssetId::new(&mut b.ids);
+        b.exec(Command::AddAsset {
+            asset: Asset {
+                id: asset,
+                name: "p.png".into(),
+                format: ImageFormat::Png,
+                pixel_width: 3000,
+                pixel_height: 3000,
+            },
+            data: Bytes::new(vec![1]),
+        })
+        .unwrap();
+        let page = b.page(0);
+        let img = b
+            .image(page, Rect::new(60.0, 380.0, 300.0, 100.0), Some(asset))
+            .unwrap();
+        b.exec(Command::SetImageAlt {
+            frame: img,
+            alt_text: "x".into(),
+        })
+        .unwrap();
+        let top = text(
+            &mut b,
+            Rect::new(72.0, 400.0, 200.0, 40.0),
+            None,
+            Some(white),
+        );
+        let _ = top;
+        // The picture is above the first bare text frame, below the new one.
+        let lows: Vec<_> = validate(b.doc())
+            .into_iter()
+            .filter(|w| w.code == WarningCode::LowContrastText)
+            .map(|w| w.frame)
+            .collect();
+        assert_eq!(lows, vec![Some(bare)]);
+    }
+
+    #[test]
+    fn a_master_band_beneath_counts_as_the_background() {
+        let mut b = b();
+        let page = b.page(0);
+        let master = MasterId::new(&mut b.ids);
+        b.exec(Command::AddMaster {
+            master: MasterPage {
+                id: master,
+                name: "Dark".into(),
+                frames: vec![],
+                guides: vec![],
+            },
+        })
+        .unwrap();
+        let fid = FrameId::new(&mut b.ids);
+        let mut band = Frame::new(
+            fid,
+            Rect::new(0.0, 0.0, 612.0, 792.0),
+            FrameContent::Shape(ShapeFrame {
+                shape: Shape::Rectangle { corner_radius: 0.0 },
+            }),
+        );
+        band.style.fill = Some(Color::rgb(0x10, 0x20, 0x40).into());
+        b.frame(Parent::Master(master), band, None).unwrap();
+        let white: Paint = Color::WHITE.into();
+        text(&mut b, BOX, None, Some(white));
+        // Without the master the white text is invisible on white paper.
+        assert_eq!(codes(b.doc(), false), vec![WarningCode::LowContrastText]);
+        b.exec(Command::SetPageMaster {
+            page,
+            master: Some(master),
+        })
+        .unwrap();
+        assert!(codes(b.doc(), false).is_empty());
+    }
+
+    #[test]
+    fn low_contrast_checks_every_gradient_stop() {
+        let mut b = b();
+        let f = text(&mut b, BOX, None, Some(Color::rgb(0x20, 0x20, 0x20).into()));
+        style(
+            &mut b,
+            f,
+            FrameStyle {
+                fill: Some(Paint::Gradient {
+                    gradient: GradientKind::Linear,
+                    stops: vec![
+                        GradientStop {
+                            offset: 0.0,
+                            color: SolidPaint::Color(Color::rgb(0xFF, 0xFF, 0xFF)),
+                        },
+                        GradientStop {
+                            offset: 1.0,
+                            color: SolidPaint::Color(Color::rgb(0x10, 0x10, 0x10)),
+                        },
+                    ],
+                    angle: 0.0,
+                }),
+                ..FrameStyle::default()
+            },
+        );
+        assert_eq!(codes(b.doc(), false), vec![WarningCode::LowContrastText]);
+    }
+
+    #[test]
+    fn rgb_is_flagged_only_in_a_commercial_job() {
+        let mut b = b();
+        let page = b.page(0);
+        let rgb_sw = SwatchId::new(&mut b.ids);
+        let cmyk_sw = SwatchId::new(&mut b.ids);
+        let spot_sw = SwatchId::new(&mut b.ids);
+        for (id, name, value) in [
+            (
+                rgb_sw,
+                "Screen blue",
+                SwatchValue::Rgb(Color::rgb(0, 80, 200)),
+            ),
+            (
+                cmyk_sw,
+                "Ink",
+                SwatchValue::Cmyk(Cmyk {
+                    c: 100.0,
+                    m: 50.0,
+                    y: 0.0,
+                    k: 0.0,
+                }),
+            ),
+            (
+                spot_sw,
+                "Spot",
+                SwatchValue::Spot {
+                    name: "PANTONE 185 C".into(),
+                    cmyk: Cmyk {
+                        c: 0.0,
+                        m: 90.0,
+                        y: 80.0,
+                        k: 0.0,
+                    },
+                },
+            ),
+        ] {
+            b.exec(Command::AddSwatch {
+                swatch: Swatch {
+                    id,
+                    name: name.into(),
+                    value,
+                },
+            })
+            .unwrap();
+        }
+        let shape = |b: &mut DocBuilder<SeqIds>, y: f64, fill: Paint| {
+            let f = b
+                .shape(
+                    page,
+                    Rect::new(100.0, y, 80.0, 40.0),
+                    Shape::Rectangle { corner_radius: 0.0 },
+                )
+                .unwrap();
+            style(
+                b,
+                f,
+                FrameStyle {
+                    fill: Some(fill),
+                    ..FrameStyle::default()
+                },
+            );
+            f
+        };
+        let a = shape(&mut b, 100.0, Color::rgb(200, 0, 0).into());
+        let c = shape(&mut b, 160.0, Paint::swatch(rgb_sw));
+        shape(&mut b, 220.0, Paint::swatch(cmyk_sw));
+        shape(&mut b, 280.0, Paint::swatch(spot_sw));
+        let grad = shape(
+            &mut b,
+            340.0,
+            Paint::Gradient {
+                gradient: GradientKind::Linear,
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: SolidPaint::swatch(cmyk_sw),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: SolidPaint::Color(Color::rgb(1, 2, 3)),
+                    },
+                ],
+                angle: 0.0,
+            },
+        );
+        let red = text(&mut b, BOX, None, Some(Color::rgb(180, 0, 0).into()));
+        assert!(codes(b.doc(), false).is_empty());
+        let w = validate_with(b.doc(), &ValidateOptions { commercial: true });
+        let flagged: Vec<FrameId> = w
+            .iter()
+            .filter(|w| w.code == WarningCode::RgbInCmykJob)
+            .filter_map(|w| w.frame)
+            .collect();
+        assert_eq!(flagged.len(), 4, "{w:?}");
+        for f in [a, c, grad, red] {
+            assert!(flagged.contains(&f));
+        }
+        assert!(w.iter().any(|w| w.message.contains("text colour")));
+        assert!(w.iter().all(|w| w.hint.contains("swatch")));
+    }
+
+    #[test]
+    fn unprintable_area_applies_to_desktop_jobs_without_bleed() {
+        let mut b = b();
+        let page = b.page(0);
+        let edge = b
+            .shape(page, Rect::new(5.0, 100.0, 80.0, 40.0), Shape::Ellipse)
+            .unwrap();
+        style(
+            &mut b,
+            edge,
+            FrameStyle {
+                fill: Some(Color::BLACK.into()),
+                ..FrameStyle::default()
+            },
+        );
+        // Invisible (no fill, no outline) and well inside: nothing.
+        b.shape(page, Rect::new(5.0, 300.0, 80.0, 40.0), Shape::Ellipse)
+            .unwrap();
+        text(&mut b, Rect::new(100.0, 400.0, 100.0, 30.0), None, None);
+        // Past the edge is beyond-bleed, not reported twice.
+        let over = b
+            .shape(page, Rect::new(-10.0, 500.0, 80.0, 40.0), Shape::Ellipse)
+            .unwrap();
+        style(
+            &mut b,
+            over,
+            FrameStyle {
+                fill: Some(Color::BLACK.into()),
+                ..FrameStyle::default()
+            },
+        );
+        let w = validate(b.doc());
+        let got: Vec<(WarningCode, Option<FrameId>)> =
+            w.iter().map(|w| (w.code, w.frame)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (WarningCode::ObjectInUnprintableArea, Some(edge)),
+                (WarningCode::BeyondBleed, Some(over)),
+            ]
+        );
+        assert!(
+            codes(b.doc(), true)
+                .iter()
+                .all(|c| *c != WarningCode::ObjectInUnprintableArea)
+        );
+        let mut doc = b.doc().clone();
+        doc.setup.bleed = 9.0;
+        assert!(
+            codes(&doc, false)
+                .iter()
+                .all(|c| *c != WarningCode::ObjectInUnprintableArea)
+        );
+    }
+
+    #[test]
+    fn empty_cells_and_alt_text() {
+        let mut b = b();
+        let page = b.page(0);
+        let t = b
+            .table(
+                Parent::Page(page),
+                Rect::new(72.0, 100.0, 300.0, 100.0),
+                2,
+                2,
+                &pubrs_core::table::CellStyle::default(),
+            )
+            .unwrap();
+        b.cell_text(t, 0, 0, "a")
+            .unwrap()
+            .cell_text(t, 1, 1, "  ")
+            .unwrap();
+        let w = validate(b.doc());
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].code, WarningCode::EmptyTableCells);
+        assert!(
+            w[0].message
+                .starts_with("3 empty table cells: row 1, col 2; row 2, col 1; row 2, col 2"),
+            "{}",
+            w[0].message
+        );
+        b.cell_text(t, 0, 1, "b")
+            .unwrap()
+            .cell_text(t, 1, 0, "c")
+            .unwrap()
+            .cell_text(t, 1, 1, "d")
+            .unwrap();
+        assert!(validate(b.doc()).is_empty());
+
+        let asset = AssetId::new(&mut b.ids);
+        b.exec(Command::AddAsset {
+            asset: Asset {
+                id: asset,
+                name: "p.png".into(),
+                format: ImageFormat::Png,
+                pixel_width: 3000,
+                pixel_height: 3000,
+            },
+            data: Bytes::new(vec![1]),
+        })
+        .unwrap();
+        let img = b
+            .image(page, Rect::new(72.0, 300.0, 100.0, 100.0), Some(asset))
+            .unwrap();
+        let w = validate(b.doc());
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].code, WarningCode::MissingAltText);
+        assert_eq!(w[0].frame, Some(img));
+        b.exec(Command::SetImageAlt {
+            frame: img,
+            alt_text: "A logo".into(),
+        })
+        .unwrap();
+        assert!(validate(b.doc()).is_empty());
+    }
+
+    #[test]
+    fn page_warnings_are_independent_of_other_pages() {
+        let mut b = b();
+        let p2 = b.add_page().unwrap();
+        let first = text(&mut b, BOX, Some(3.0), None);
+        let second = b
+            .text_paragraphs(Parent::Page(p2), BOX, vec![Paragraph::plain("fine")])
+            .unwrap();
+        let _ = second;
+        let all = validate(b.doc());
+        let o = ValidateOptions::default();
+        let p1 = validate_page(b.doc(), b.page(0), &o);
+        assert_eq!(p1.len(), 1);
+        assert_eq!(p1[0].frame, Some(first));
+        assert!(validate_page(b.doc(), p2, &o).is_empty());
+        assert_eq!(all, p1);
+    }
+
+    #[test]
+    fn integrity_flags_dangling_swatches() {
+        let mut b = b();
+        let f = text(&mut b, BOX, None, None);
+        let ghost = SwatchId::new(&mut b.ids);
+        assert!(check_integrity(b.doc()).is_empty());
+        let mut doc = b.doc().clone();
+        let fr = std::sync::Arc::make_mut(doc.frames.get_mut(&f).unwrap());
+        fr.style.fill = Some(Paint::swatch(ghost));
+        fr.style.stroke = Some(Stroke {
+            color: Paint::Gradient {
+                gradient: GradientKind::Linear,
+                stops: vec![GradientStop {
+                    offset: 0.0,
+                    color: SolidPaint::swatch(ghost),
+                }],
+                angle: 0.0,
+            },
+            width: 1.0,
+            dash: Dash::default(),
+        });
+        let errs = check_integrity(&doc);
+        assert_eq!(errs.len(), 2, "{errs:?}");
+        assert!(errs.iter().all(|e| e.contains("missing swatch")));
+        // Run colours and style colours too.
+        let mut doc = b.doc().clone();
+        let sid = doc.story_of(f).unwrap();
+        std::sync::Arc::make_mut(doc.stories.get_mut(&sid).unwrap()).paragraphs[0].runs[0]
+            .props
+            .color = Some(Paint::swatch(ghost));
+        doc.styles.styles[0].character.color = Some(Paint::swatch(ghost));
+        assert_eq!(check_integrity(&doc).len(), 2);
+    }
+}

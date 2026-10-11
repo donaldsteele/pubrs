@@ -273,6 +273,36 @@ impl Session {
     }
 
     pub fn text_replace_all(&mut self, req: TextReplaceAll) -> ApiResult<TextReplaceAllOut> {
+        let doc_id = req.doc_id;
+        match self.text_replace_all_plan(req)? {
+            None => {
+                let open = self.get(doc_id)?;
+                let doc_id = self.resolve(doc_id)?;
+                Ok(TextReplaceAllOut {
+                    count: 0,
+                    change: Changed {
+                        doc_id,
+                        revision: open.revision(),
+                        affected_ids: Vec::new(),
+                    },
+                })
+            }
+            Some((count, command)) => {
+                let change = self.exec(doc_id, command)?;
+                Ok(TextReplaceAllOut { count, change })
+            }
+        }
+    }
+
+    /// What `text_replace_all` would do: the number of matches and the one
+    /// `Batch` command that replaces them all (back to front, WordArt
+    /// included), or `None` for no match. A caller that runs commands
+    /// itself (the GUI, which grows table frames in the same undo step)
+    /// executes the command instead of calling `text_replace_all`.
+    pub fn text_replace_all_plan(
+        &mut self,
+        req: TextReplaceAll,
+    ) -> ApiResult<Option<(usize, Command)>> {
         let opts = FindOptions {
             case_sensitive: req.case_sensitive,
             whole_word: req.whole_word,
@@ -287,16 +317,7 @@ impl Session {
             req.end,
         )?;
         if hits.is_empty() {
-            let open = self.get(req.doc_id)?;
-            let doc_id = self.resolve(req.doc_id)?;
-            return Ok(TextReplaceAllOut {
-                count: 0,
-                change: Changed {
-                    doc_id,
-                    revision: open.revision(),
-                    affected_ids: Vec::new(),
-                },
-            });
+            return Ok(None);
         }
         let count = hits.len();
         // Back to front so earlier offsets stay valid.
@@ -331,14 +352,13 @@ impl Session {
                 commands.push(Command::SetWordArt { frame: f, art });
             }
         }
-        let change = self.exec(
-            req.doc_id,
+        Ok(Some((
+            count,
             Command::Batch {
                 label: "replace all".into(),
                 commands,
             },
-        )?;
-        Ok(TextReplaceAllOut { count, change })
+        )))
     }
 }
 

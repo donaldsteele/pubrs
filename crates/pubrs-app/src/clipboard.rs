@@ -510,8 +510,13 @@ impl PubrsApp {
         if let Some((p, same)) = self.clipboard_frames(html) {
             return Found::Frames(Box::new(p), same);
         }
-        if !editing && let Some(img) = self.platform.clipboard.get_image() {
-            return Found::Image(img);
+        if !editing {
+            if let Some(img) = self.platform.clipboard.get_image() {
+                return Found::Image(img);
+            }
+            if self.platform.clipboard.take_image_too_large() {
+                self.notify("The picture is too large to paste (over 200 megapixels)");
+            }
         }
         match self.platform.clipboard.get_text() {
             Some(t) if !t.is_empty() => Found::Text(t),

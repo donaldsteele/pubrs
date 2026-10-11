@@ -947,11 +947,15 @@ mod tests {
             let before = names.len();
             names.dedup();
             assert_eq!(before, names.len(), "{name}: duplicate placeholder names");
-            // Only empty-placeholder warnings before filling.
+            // Only empty-placeholder warnings before filling, and bands that
+            // run to the page edge (desktop-printer margin check).
             for w in pubrs_core::validate::validate(&doc) {
-                assert_eq!(
-                    w.code,
-                    pubrs_core::WarningCode::EmptyPlaceholder,
+                assert!(
+                    matches!(
+                        w.code,
+                        pubrs_core::WarningCode::EmptyPlaceholder
+                            | pubrs_core::WarningCode::ObjectInUnprintableArea
+                    ),
                     "{name}: {w:?}"
                 );
             }

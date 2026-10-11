@@ -169,6 +169,12 @@ async fn trifold_acceptance() {
             )
             .await;
         assert!(out["effective_dpi"].as_f64().unwrap() >= 150.0, "{out}");
+        // The design checker wants alt text on every picture.
+        h.call(
+            "image_set_alt_text",
+            json!({"frame_id": p["frame_id"], "alt_text": "A photo for the brochure"}),
+        )
+        .await;
     }
 
     // 4. Link the story into the continuation frame; overflow must be clean.

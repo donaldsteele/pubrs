@@ -40,6 +40,16 @@ fn default_templates_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("pubrs").join("templates"))
 }
 
+/// Same folder as the app and the CLI use (`pubrs-app` `DesktopPaths`).
+fn default_dictionaries_dir() -> Option<PathBuf> {
+    Some(
+        dirs::config_dir()
+            .unwrap_or_else(|| std::env::temp_dir().join("pubrs"))
+            .join("pubrs")
+            .join("dictionaries"),
+    )
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // stdout carries the protocol in stdio mode: log to stderr only.
@@ -55,6 +65,7 @@ async fn main() -> anyhow::Result<()> {
         system_fonts: !args.no_system_fonts,
         output_dir: args.output_dir.or_else(default_output_dir),
         user_templates_dir: args.templates_dir.or_else(default_templates_dir),
+        dictionaries_dir: default_dictionaries_dir(),
         ..Default::default()
     };
     tracing::info!(
