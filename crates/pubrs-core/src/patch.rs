@@ -321,7 +321,7 @@ impl Patch {
             doc.meta = v.clone();
         }
         if let Some(v) = &self.setup {
-            doc.setup = *v;
+            doc.setup = v.clone();
         }
         if let Some(v) = &self.grid {
             doc.grid = *v;

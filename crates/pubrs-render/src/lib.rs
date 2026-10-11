@@ -14,6 +14,7 @@ pub mod damage;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod images;
+pub mod impose;
 pub mod pdf;
 pub mod raster;
 pub mod scene;

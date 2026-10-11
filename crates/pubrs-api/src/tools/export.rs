@@ -45,6 +45,10 @@ pub struct ExportPdf {
     pub crop_marks: bool,
     #[serde(default)]
     pub font_embedding: FontEmbeddingIn,
+    /// Impose the pages onto label sheets or booklet sheets when the document
+    /// has a sheet or booklet set (default true). false exports the plain pages.
+    #[serde(default)]
+    pub impose: Option<bool>,
     /// Also return the bytes as base64 when a path is given.
     #[serde(default)]
     pub return_base64: bool,
@@ -56,7 +60,11 @@ pub struct ExportPdfOut {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub bytes: u64,
+    /// Pages in the PDF (sheets when imposed).
     pub page_count: usize,
+    /// "sheet" or "booklet" when the PDF is imposed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub imposed: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base64: Option<String>,
     pub revision: u64,
@@ -254,9 +262,18 @@ impl Session {
             },
             title: None,
             author: None,
+            flat: !req.impose.unwrap_or(true),
         };
         let pdf = parts.ctx.export_pdf_with(doc, &layout, &opts)?;
-        let (page_count, revision) = (doc.pages.len(), parts.revision);
+        let revision = parts.revision;
+        let (page_count, imposed) = if opts.flat {
+            (doc.pages.len(), None)
+        } else {
+            (
+                pubrs_render::impose::output_pages(&doc.setup, doc.pages.len()),
+                pubrs_render::impose::kind(&doc.setup).map(String::from),
+            )
+        };
         let path = match &req.path {
             Some(p) => Some(self.resolve_path(p)),
             None => self.default_path(Some(id), "pdf"),
@@ -269,6 +286,7 @@ impl Session {
             path: path.as_ref().map(|p| p.display().to_string()),
             bytes: pdf.len() as u64,
             page_count,
+            imposed,
             base64: (path.is_none() || req.return_base64).then(|| b64(&pdf)),
             revision,
         })
@@ -553,7 +571,7 @@ pub fn page_document(
         schema_version: doc.schema_version,
         id: doc.id,
         meta: doc.meta.clone(),
-        setup: doc.setup,
+        setup: doc.setup.clone(),
         grid: doc.grid,
         pages: Arc::new(pages),
         masters: Arc::new(masters),

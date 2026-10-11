@@ -9,7 +9,7 @@ use crate::error::IoError;
 type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
-const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1];
+const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2];
 
 /// The schema version a document JSON declares (absent = 0).
 pub fn version_of(v: &Value) -> u64 {
@@ -46,6 +46,15 @@ fn v0_to_v1(mut v: Value) -> Result<Value, IoError> {
     o.entry("grid").or_insert_with(|| {
         serde_json::to_value(pubrs_core::GridSettings::default()).expect("serializable")
     });
+    Ok(v)
+}
+
+/// Version 2 adds `setup.sheet` and `setup.booklet`, both optional with
+/// defaults, so a version 1 document only needs its version stamped.
+fn v1_to_v2(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(2));
     Ok(v)
 }
 

@@ -2,9 +2,10 @@
 
 use pubrs_core::Document;
 use pubrs_layout::{DocumentLayout, FontLibrary, Layouter};
+use pubrs_render::impose::impose;
 use pubrs_render::{
-    PdfOptions, RasterOptions, RasterRenderer, RenderError, SceneOptions, build_page_scene,
-    build_page_scene_with, render_pdf, tiny_skia,
+    PageScene, PdfOptions, RasterOptions, RasterRenderer, RenderError, SceneOptions,
+    build_page_scene, build_page_scene_with, render_pdf, tiny_skia,
 };
 
 use crate::images::ImageCache;
@@ -106,10 +107,8 @@ impl ExportContext {
         layout: &DocumentLayout,
         opts: &PdfOptions,
     ) -> Result<Vec<u8>, ExportError> {
-        self.images.sync(doc);
-        let scenes: Vec<_> = (0..doc.pages.len())
-            .filter_map(|i| build_page_scene(doc, layout, i))
-            .collect();
+        // Sheets and booklets are imposed by default; `flat` opts out.
+        let scenes = self.output_scenes(doc, layout, !opts.flat)?;
         let mut opts = opts.clone();
         if opts.title.is_none() && !doc.meta.title.is_empty() {
             opts.title = Some(doc.meta.title.clone());
@@ -118,6 +117,43 @@ impl ExportContext {
             opts.author = Some(doc.meta.author.clone());
         }
         render_pdf(&scenes, &self.images, &opts).map_err(|e| ExportError::Pdf(e.to_string()))
+    }
+
+    /// The scenes a PDF of `doc` is made of: one per page, or one per sheet
+    /// (label sheet) or booklet side when `imposed` and the document has a
+    /// sheet or booklet set up.
+    pub fn output_scenes(
+        &mut self,
+        doc: &Document,
+        layout: &DocumentLayout,
+        imposed: bool,
+    ) -> Result<Vec<PageScene>, ExportError> {
+        self.images.sync(doc);
+        let scenes: Vec<_> = (0..doc.pages.len())
+            .filter_map(|i| build_page_scene(doc, layout, i))
+            .collect();
+        if imposed {
+            impose(&scenes, &doc.setup).map_err(|e| ExportError::Pdf(e.to_string()))
+        } else {
+            Ok(scenes)
+        }
+    }
+
+    /// Render imposed sheet `index` (0-based) to PNG bytes.
+    pub fn sheet_png(
+        &mut self,
+        doc: &Document,
+        index: usize,
+        opts: &RasterOptions,
+    ) -> Result<Vec<u8>, ExportError> {
+        let layout = self.layout(doc);
+        let scenes = self.output_scenes(doc, &layout, true)?;
+        let scene = scenes
+            .get(index)
+            .ok_or(ExportError::NoSuchPage(index, scenes.len()))?;
+        let pm = self.raster.render(scene, &self.images, opts)?;
+        pm.encode_png()
+            .map_err(|e| ExportError::Render(RenderError::Png(e.to_string())))
     }
 
     /// Render one page (0-based) to PNG bytes, laying out the document first.

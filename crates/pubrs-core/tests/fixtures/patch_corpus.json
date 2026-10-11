@@ -4922,5 +4922,182 @@
       }
     },
     "step": "undo twice"
+  },
+  {
+    "backward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 841.8897637795277,
+          "width": 595.2755905511812
+        }
+      }
+    },
+    "forward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "step": "set_page_size"
+  },
+  {
+    "backward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "forward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "sheet": {
+          "cols": 3,
+          "fill": "repeat",
+          "label_size": {
+            "height": 72.0,
+            "width": 189.0
+          },
+          "origin": {
+            "x": 13.5,
+            "y": 36.0
+          },
+          "pitch": {
+            "height": 72.0,
+            "width": 198.0
+          },
+          "preset": "avery-5160",
+          "rows": 10,
+          "sheet_size": {
+            "height": 792.0,
+            "width": 612.0
+          }
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "step": "set_sheet"
+  },
+  {
+    "backward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "sheet": {
+          "cols": 3,
+          "fill": "repeat",
+          "label_size": {
+            "height": 72.0,
+            "width": 189.0
+          },
+          "origin": {
+            "x": 13.5,
+            "y": 36.0
+          },
+          "pitch": {
+            "height": 72.0,
+            "width": 198.0
+          },
+          "preset": "avery-5160",
+          "rows": 10,
+          "sheet_size": {
+            "height": 792.0,
+            "width": 612.0
+          }
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "forward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "step": "set_sheet"
+  },
+  {
+    "backward": {
+      "setup": {
+        "bleed": 3.0,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "forward": {
+      "setup": {
+        "bleed": 3.0,
+        "booklet": true,
+        "margins": {
+          "bottom": 30.0,
+          "left": 30.0,
+          "right": 30.0,
+          "top": 30.0
+        },
+        "size": {
+          "height": 72.0,
+          "width": 189.0
+        }
+      }
+    },
+    "step": "set_booklet"
   }
 ]

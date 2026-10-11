@@ -11,12 +11,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::bytes::Bytes;
-use crate::geom::{Margins, Point, Rect, Size};
+use crate::geom::{Margins, PT_PER_INCH, Point, Rect, Size};
 use crate::id::{AssetId, FrameId, GuideId, MasterId, PageId, StoryId, StyleId};
 use crate::model::{
     Asset, Crop, Document, Frame, FrameContent, FrameStyle, GridSettings, Guide, ImageFit,
-    MasterPage, Page, Paragraph, Parent, Placeholder, PlaceholderKind, Shape, Story, TextWrap,
-    VerticalAlign,
+    MasterPage, Page, Paragraph, Parent, Placeholder, PlaceholderKind, Shape, SheetLayout, Story,
+    TextWrap, VerticalAlign,
 };
 use crate::patch::Patch;
 use crate::style::{CharProps, ParaProps, Style, StyleKind};
@@ -111,6 +111,12 @@ pub enum Command {
     },
     SetBleed {
         bleed: f64,
+    },
+    SetSheet {
+        sheet: Option<SheetLayout>,
+    },
+    SetBooklet {
+        booklet: bool,
     },
     SetGrid {
         grid: GridSettings,
@@ -327,6 +333,8 @@ impl Command {
             Self::SetPageSize { .. } => "set_page_size",
             Self::SetMargins { .. } => "set_margins",
             Self::SetBleed { .. } => "set_bleed",
+            Self::SetSheet { .. } => "set_sheet",
+            Self::SetBooklet { .. } => "set_booklet",
             Self::SetGrid { .. } => "set_grid",
             Self::AddPage { .. } => "add_page",
             Self::DeletePage { .. } => "delete_page",
@@ -425,6 +433,27 @@ impl Command {
                     return Err(CommandError::invalid("bleed must be between 0 and 144pt"));
                 }
                 doc.setup.bleed = *bleed;
+                Ok(())
+            }
+            Self::SetSheet { sheet } => {
+                if let Some(sh) = sheet {
+                    check_sheet(sh, doc.setup.size)?;
+                    if doc.setup.booklet {
+                        return Err(CommandError::invalid(
+                            "a document is either a booklet or a label sheet; turn the booklet off first",
+                        ));
+                    }
+                }
+                doc.setup.sheet.clone_from(sheet);
+                Ok(())
+            }
+            Self::SetBooklet { booklet } => {
+                if *booklet && doc.setup.sheet.is_some() {
+                    return Err(CommandError::invalid(
+                        "a document is either a booklet or a label sheet; clear the sheet first",
+                    ));
+                }
+                doc.setup.booklet = *booklet;
                 Ok(())
             }
             Self::SetGrid { grid } => {
@@ -927,6 +956,66 @@ impl Command {
 
 // ---------------------------------------------------------------------------
 // helpers
+
+/// Largest label grid accepted on one sheet.
+const MAX_SHEET_CELLS: u32 = 400;
+
+/// A sheet must agree with the page size and its grid must fit on the paper.
+fn check_sheet(sh: &SheetLayout, page: Size) -> CmdResult {
+    let hint = |s: Size| {
+        format!(
+            "set the page size to {:.3} \u{d7} {:.3} in first",
+            s.width / PT_PER_INCH,
+            s.height / PT_PER_INCH
+        )
+    };
+    for (v, what) in [
+        (sh.sheet_size.width, "sheet width"),
+        (sh.sheet_size.height, "sheet height"),
+        (sh.label_size.width, "label width"),
+        (sh.label_size.height, "label height"),
+        (sh.pitch.width, "pitch width"),
+        (sh.pitch.height, "pitch height"),
+    ] {
+        check_dim(v, what)?;
+        if v < 1.0 {
+            return Err(CommandError::invalid(format!(
+                "{what} must be at least 1pt"
+            )));
+        }
+    }
+    check_coord(sh.origin.x, "sheet origin")?;
+    check_coord(sh.origin.y, "sheet origin")?;
+    if sh.rows == 0 || sh.cols == 0 || sh.rows.saturating_mul(sh.cols) > MAX_SHEET_CELLS {
+        return Err(CommandError::invalid(format!(
+            "rows and columns must be at least 1, with at most {MAX_SHEET_CELLS} labels"
+        )));
+    }
+    if (sh.label_size.width - page.width).abs() > 0.5
+        || (sh.label_size.height - page.height).abs() > 0.5
+    {
+        return Err(CommandError::invalid(format!(
+            "the label is {:.3} \u{d7} {:.3} in but the page is {:.3} \u{d7} {:.3} in; {}",
+            sh.label_size.width / PT_PER_INCH,
+            sh.label_size.height / PT_PER_INCH,
+            page.width / PT_PER_INCH,
+            page.height / PT_PER_INCH,
+            hint(sh.label_size)
+        )));
+    }
+    let right = sh.origin.x + f64::from(sh.cols - 1) * sh.pitch.width + sh.label_size.width;
+    let bottom = sh.origin.y + f64::from(sh.rows - 1) * sh.pitch.height + sh.label_size.height;
+    if sh.origin.x < -0.01
+        || sh.origin.y < -0.01
+        || right > sh.sheet_size.width + 0.01
+        || bottom > sh.sheet_size.height + 0.01
+    {
+        return Err(CommandError::invalid(
+            "the label grid does not fit on the sheet",
+        ));
+    }
+    Ok(())
+}
 
 fn check_dim(v: f64, what: &str) -> CmdResult {
     if v.is_finite() && (0.0..=MAX_DIMENSION).contains(&v) {

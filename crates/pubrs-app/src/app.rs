@@ -580,9 +580,13 @@ impl PubrsApp {
         if self.report(r).is_none() {
             return;
         }
+        let imposed = self.doc().and_then(crate::dialogs::imposition_note);
         let title = self.doc().map(|d| d.meta.title.clone()).unwrap_or_default();
         match self.platform.print.print_pdf(&tmp, &title, options) {
-            Ok(PrintOutcome::Printed) => self.notify("Sent to the printer"),
+            Ok(PrintOutcome::Printed) => self.notify(match imposed {
+                Some(n) => format!("Sent to the printer. {n}"),
+                None => "Sent to the printer".into(),
+            }),
             Ok(PrintOutcome::Queued(msg)) => self.notify(format!("Printing: {msg}")),
             Ok(PrintOutcome::Cancelled) => self.notify("Printing cancelled"),
             Err(e) => self.dialog = Some(Dialog::Message("Printing failed".into(), e)),
@@ -894,6 +898,11 @@ impl PubrsApp {
                 );
                 if let Some(p) = self.platform.dialogs.save_export(&name, "png", "PNG image") {
                     self.export_png_to(&p);
+                }
+            }
+            PageSetup => {
+                if let Some(state) = crate::dialogs::PageSetupState::for_doc(self.doc()) {
+                    self.dialog = Some(Dialog::PageSetup(state));
                 }
             }
             Print => {

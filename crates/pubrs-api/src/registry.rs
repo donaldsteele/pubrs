@@ -8,7 +8,9 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
-use crate::tools::{doc, export, frames, history, images, pages, query, styles, templates, text};
+use crate::tools::{
+    doc, export, frames, history, images, pages, query, sheets, styles, templates, text,
+};
 
 /// One tool.
 pub struct ToolDef {
@@ -225,9 +227,16 @@ pub static TOOLS: &[ToolDef] = &[
         "Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place."),
     tool!("template_save", "Templates", template_save, templates::TemplateSave => templates::TemplateSaveOut, ro = false, destructive = false, image = None,
         "Save the document as a reusable user template. Mark frames as placeholders first with frame_set_placeholder."),
+    // ---------------------------------------------------------------- labels and booklets
+    tool!("sheet_presets_list", "Labels", sheet_presets_list, sheets::SheetPresetsList => sheets::SheetPresetsOut, ro = true, destructive = false, image = None,
+        "List label, card and postcard sheet presets (Avery US 5160 ..., A4 L7160 ..., generic 2-up/4-up) with the paper size, grid, and the label size the document page must have."),
+    tool!("doc_set_sheet", "Labels", doc_set_sheet, sheets::DocSetSheet => Changed, ro = false, destructive = false, image = None,
+        "Print the document as a label or card sheet: PDF export and print put the page N-up on the sheet. Give a preset id from sheet_presets_list or a custom grid (points); omit both to clear. fill: repeat (the page in every cell, default) or sequence (one page per label, in order). The page size must equal the label size, otherwise the call is refused with a hint."),
+    tool!("doc_set_booklet", "Labels", doc_set_booklet, sheets::DocSetBooklet => Changed, ro = false, destructive = false, image = None,
+        "Print the document as a saddle-stitched booklet: pages are padded to a multiple of 4, reordered and put 2-up on sheets twice the page width (front and back are separate PDF pages). Not combinable with a label sheet."),
     // ---------------------------------------------------------------- export
     tool!("export_pdf", "Export", export_pdf, export::ExportPdf => export::ExportPdfOut, ro = true, destructive = false, image = None,
-        "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines. Writes to path, or returns base64 when no path is given."),
+        "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed). Writes to path, or returns base64 when no path is given."),
     tool!("export_png", "Export", export_png, export::ExportPng => export::ExportPngOut, ro = true, destructive = false, image = None,
         "Render one page to PNG at a dpi (default 150), optionally including bleed. Writes to path or returns base64."),
     tool!("render_preview", "Export", render_preview, export::RenderPreview => export::RenderPreviewOut, ro = true, destructive = false, image = Some("png_base64"),

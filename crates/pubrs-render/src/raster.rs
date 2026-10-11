@@ -411,8 +411,45 @@ impl RasterRenderer {
             mips: region.mips,
         };
         let base = region.transform(scene);
-        for node in &scene.nodes {
-            painter.draw_node(&mut pm, node, base);
+        let (w, h) = (pm.width(), pm.height());
+        // Nodes of an imposed sheet carry a clip (their cell): draw each run
+        // of equally clipped nodes on a layer and composite it through a mask.
+        let mut i = 0;
+        while i < scene.nodes.len() {
+            let clip = scene.nodes[i].clip;
+            let mut j = i;
+            while j < scene.nodes.len() && scene.nodes[j].clip == clip {
+                j += 1;
+            }
+            let run = &scene.nodes[i..j];
+            i = j;
+            let Some(c) = clip else {
+                for node in run {
+                    painter.draw_node(&mut pm, node, base);
+                }
+                continue;
+            };
+            let mask = ts::Rect::from_xywh(c.x as f32, c.y as f32, c.width as f32, c.height as f32)
+                .map(ts::PathBuilder::from_rect)
+                .and_then(|path| {
+                    let mut m = ts::Mask::new(w, h)?;
+                    m.fill_path(&path, ts::FillRule::Winding, true, to_ts(base));
+                    Some(m)
+                });
+            let (Some(mask), Some(mut layer)) = (mask, ts::Pixmap::new(w, h)) else {
+                continue;
+            };
+            for node in run {
+                painter.draw_node(&mut layer, node, base);
+            }
+            pm.draw_pixmap(
+                0,
+                0,
+                layer.as_ref(),
+                &ts::PixmapPaint::default(),
+                ts::Transform::identity(),
+                Some(&mask),
+            );
         }
         Ok(pm)
     }

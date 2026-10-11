@@ -76,5 +76,15 @@
   {"tool": "master_delete", "args": {"master_id": "${master.master_id}", "confirm": true}},
   {"tool": "template_apply", "args": {"name": "flyer", "title": "Bake Sale"}, "as": "flyer"},
   {"tool": "doc_close", "args": {"doc_id": "${flyer.doc_id}", "confirm": true}},
-  {"tool": "doc_open", "args": {"path": "${saved.path}"}}
+  {"tool": "doc_open", "args": {"path": "${saved.path}"}},
+  {"tool": "sheet_presets_list", "args": {}},
+  {"tool": "doc_new", "args": {"page_size": {"width": 189, "height": 72}, "pages": 1, "title": "Address labels"}, "as": "labels"},
+  {"tool": "doc_set_sheet", "args": {"preset": "avery-5160"}, "note": "Page is 2.625 x 1 in, the Avery 5160 label size, so export_pdf puts it 30-up on a Letter sheet."},
+  {"tool": "export_pdf", "args": {"path": "labels.pdf"}, "note": "page_count is 1 sheet and imposed is \"sheet\"."},
+  {"tool": "doc_set_sheet", "args": {"preset": "l7160"}, "expect_error": "invalid_argument", "note": "A4 L7160 labels are 63.5 x 38.1 mm: the call is refused with a hint to set the page size first."},
+  {"tool": "doc_set_sheet", "args": {"custom": {"sheet_width": 612, "sheet_height": 792, "rows": 10, "cols": 3, "label_width": 189, "label_height": 72, "left": 13.5, "top": 36, "h_gap": 9, "v_gap": 0}, "fill": "sequence"}, "note": "A custom grid; sequence puts one page per label."},
+  {"tool": "doc_set_sheet", "args": {}, "note": "No preset and no custom clears the sheet."},
+  {"tool": "doc_set_booklet", "args": {"booklet": true}},
+  {"tool": "export_pdf", "args": {"path": "booklet.pdf"}, "note": "One page pads to 4; two sheets (front and back) twice the page width."},
+  {"tool": "doc_close", "args": {"doc_id": "${labels.doc_id}", "confirm": true}}
 ]

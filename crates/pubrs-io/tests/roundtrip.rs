@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use pubrs_core::*;
 use pubrs_io::{IoError, format, image_info, import_image, read_bytes, write_bytes};
 
+mod common;
+
 fn png_bytes(w: u32, h: u32) -> Vec<u8> {
     let img = image::RgbaImage::from_fn(w, h, |x, y| image::Rgba([x as u8, y as u8, 128, 255]));
     let mut out = Cursor::new(Vec::new());
@@ -340,5 +342,94 @@ fn image_info_reads_png_and_jpeg() {
     assert_eq!(
         (info.format, info.width, info.height),
         (ImageFormat::Jpeg, 30, 20)
+    );
+}
+
+// ---- Locked Decision 2: older files keep opening ----
+
+fn fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures")
+}
+
+/// The document `tests/fixtures/schema_v2.pubrs` is written from (bless with
+/// `PUBRS_BLESS=1`): a label page set up for Avery 5160, one record per label.
+fn sheet_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(2302), PageSetup::default());
+    let preset = pubrs_io::sheet_preset("avery-5160").unwrap();
+    b.exec(Command::SetPageSize { size: preset.label }).unwrap();
+    b.exec(Command::SetSheet {
+        sheet: Some(preset.layout(SheetFill::Sequence)),
+    })
+    .unwrap();
+    let p = b.page(0);
+    b.text(
+        p,
+        Rect::new(8.0, 8.0, 170.0, 40.0),
+        "Golden Crust\n12 Mill Lane",
+    )
+    .unwrap();
+    b.add_page().unwrap();
+    b.finish()
+}
+
+#[test]
+fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/samples/bakery-trifold.pubrs");
+    let doc = pubrs_io::load(&path).unwrap();
+    assert_eq!(doc.schema_version, SCHEMA_VERSION, "migrated on load");
+    assert!(doc.setup.sheet.is_none() && !doc.setup.booklet);
+    // The sample is also kept as the schema-1 fixture.
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        std::fs::read(fixtures_dir().join("schema_v1.pubrs")).unwrap()
+    );
+    let mut ctx = pubrs_io::ExportContext::new(common::test_fonts());
+    let png = ctx
+        .page_png(
+            &doc,
+            0,
+            &pubrs_render::RasterOptions {
+                dpi: 72.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    common::assert_png_golden("bakery_trifold_schema1", &png);
+    let again = read_bytes(&write_bytes(&doc, None).unwrap()).unwrap();
+    assert_eq!(again, doc);
+}
+
+#[test]
+fn every_schema_fixture_opens_and_round_trips() {
+    let bless = std::env::var_os("PUBRS_BLESS").is_some();
+    let v = SCHEMA_VERSION;
+    let current = fixtures_dir().join(format!("schema_v{v}.pubrs"));
+    if bless || !current.exists() {
+        pubrs_io::save(&sheet_document(), &current, None).unwrap();
+    }
+    let mut n = 0;
+    for entry in std::fs::read_dir(fixtures_dir()).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if !(name.starts_with("schema_v") && name.ends_with(".pubrs")) {
+            continue;
+        }
+        let doc = pubrs_io::load(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(doc.schema_version, SCHEMA_VERSION, "{name}");
+        let again = read_bytes(&write_bytes(&doc, None).unwrap()).unwrap();
+        assert_eq!(again, doc, "{name} round trip");
+        n += 1;
+    }
+    assert!(n >= 2, "expected schema_v1 and schema_v{v} fixtures");
+    let doc = pubrs_io::load(&current).unwrap();
+    let sheet = doc
+        .setup
+        .sheet
+        .as_ref()
+        .expect("the current fixture uses a sheet");
+    assert_eq!(
+        (sheet.preset.as_str(), sheet.fill),
+        ("avery-5160", SheetFill::Sequence)
     );
 }

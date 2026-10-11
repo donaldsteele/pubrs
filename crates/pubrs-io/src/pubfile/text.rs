@@ -201,6 +201,7 @@ pub fn build(data: &PubData, rep: &mut ImportReport) -> Result<Document, IoError
         size,
         margins: Margins::uniform(DEFAULT_MARGIN.min(w / 4.0).min(h / 4.0)),
         bleed: 0.0,
+        ..PageSetup::default()
     };
     let mut b = DocBuilder::new(SeqIds::new(0x5055_4252), setup);
     let corrupt = |e: pubrs_core::command::CommandError| {

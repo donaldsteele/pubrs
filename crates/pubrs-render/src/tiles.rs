@@ -289,6 +289,25 @@ impl TileRenderer {
         if total_rows == 0 {
             return Ok(());
         }
+        // Imposed sheets clip every node to its cell. They are only made for
+        // PDF and PNG output, never for the viewport, so they take the
+        // untiled path (identical by construction) instead of a tiled mask.
+        if scene.nodes.iter().any(|n| n.clip.is_some()) {
+            let pm = crate::RasterRenderer::new().render_region(scene, images, region)?;
+            let src = pm.data().as_chunks::<4>().0;
+            let stride = region.rect.width as usize;
+            for (r, buf) in targets.iter_mut() {
+                for row in 0..r.height as usize {
+                    let s = (r.y as usize + row) * stride + r.x as usize;
+                    let d = row * r.width as usize;
+                    let n = r.width as usize;
+                    for (o, i) in buf[d..d + n].iter_mut().zip(&src[s..s + n]) {
+                        *o = px(*i);
+                    }
+                }
+            }
+            return Ok(());
+        }
         self.glyphs.prepare(scene);
         let base = region.transform(scene);
         let boxes = boxes(scene, base, &self.glyphs);

@@ -32,6 +32,7 @@ fn small_page() -> PageSetup {
         size: Size::new(300.0, 200.0),
         margins: Margins::uniform(18.0),
         bleed: 9.0,
+        ..PageSetup::default()
     }
 }
 
@@ -737,4 +738,37 @@ fn mips_are_used_only_when_asked() {
         .render(&scene, &page.images, &opts)
         .unwrap();
     assert!(plain.data() == again.data(), "exports never use mips");
+}
+
+/// Imposed sheets clip nodes to their cell; tiled output must still equal
+/// the untiled render.
+#[test]
+fn clipped_nodes_tile_byte_identically() {
+    let page = shapes();
+    let mut scene = scene(&page);
+    let n = scene.nodes.len();
+    assert!(n >= 2);
+    for (i, node) in scene.nodes.iter_mut().enumerate() {
+        node.clip = Some(pubrs_core::Rect::new(
+            20.0 + 10.0 * i as f64,
+            15.0,
+            120.0,
+            90.0 + 5.0 * i as f64,
+        ));
+    }
+    let reference = RasterRenderer::new()
+        .render(&scene, &page.images, &page.opts)
+        .unwrap();
+    for threads in [1, 4] {
+        for options in tile_configs(threads) {
+            let tiled = TileRenderer::new(options)
+                .render_page(&scene, &page.images, &page.opts)
+                .unwrap();
+            assert!(
+                tiled.data() == reference.data(),
+                "clipped: tiled with {options:?} differs, first at {:?}",
+                first_difference(&tiled, &reference)
+            );
+        }
+    }
 }

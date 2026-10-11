@@ -229,6 +229,14 @@ impl SelfTest {
         }
     }
 
+    /// Click the centre of a Page Setup control the dialog drew this frame.
+    fn click_target(&mut self, ctx: &egui::Context, name: &str) -> Result<(), String> {
+        let r = crate::dialogs::target_rect(ctx, name)
+            .ok_or_else(|| format!("Page Setup control '{name}' is not on screen"))?;
+        self.click(r.center(), false);
+        Ok(())
+    }
+
     fn drag(&mut self, from: Pos2, to: Pos2) {
         self.pending.push_back(vec![Event::PointerMoved(from)]);
         self.pending.push_back(vec![Event::PointerButton {
@@ -702,7 +710,7 @@ impl SelfTest {
                         t.key.dpi
                     ));
                 }
-                let setup = app.doc().ok_or("no doc")?.setup;
+                let setup = app.doc().ok_or("no doc")?.setup.clone();
                 let page_w = ((setup.size.width + 2.0 * setup.bleed) * want / 72.0).ceil();
                 self.ok(format!(
                     "zoomed to 800% with Cmd+Plus: the canvas texture covers {}x{} device pixels of the {page_w:.0} px wide page, one texel per pixel (no 4,096 px cap)",
@@ -860,6 +868,50 @@ impl SelfTest {
                     ms(t.overhead_max)
                 ));
                 self.ok(line);
+            }
+            23 => {
+                // Page Setup → Labels: Avery 5160 on a 2.625 x 1 in page.
+                app.new_blank();
+                app.exec(Command::SetPageSize {
+                    size: pubrs_api::core::Size::new(189.0, 72.0),
+                });
+                self.key(Key::P, Modifiers::COMMAND | Modifiers::SHIFT);
+            }
+            24 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::PageSetup(_))) {
+                    return Err("Cmd+Shift+P did not open Page Setup".into());
+                }
+                self.click_target(ctx, "tab-labels")?;
+            }
+            25 => self.click_target(ctx, "mode-sheet")?,
+            26 => self.click_target(ctx, "preset-combo")?,
+            27 => self.click_target(ctx, "preset:avery-5160")?,
+            28 => {
+                self.screenshot(ctx);
+                self.click_target(ctx, "ok")?;
+            }
+            29 => {
+                if app.dialog.is_some() {
+                    return Err("Page Setup did not close on OK".into());
+                }
+                let setup = app.doc().ok_or("no doc")?.setup.clone();
+                let sheet = setup.sheet.ok_or("OK did not set a sheet")?;
+                if sheet.preset != "avery-5160" {
+                    return Err(format!("unexpected preset {}", sheet.preset));
+                }
+                let path = self.out.join("labels.pdf");
+                if !app.export_pdf_to(&path) {
+                    return Err("export_pdf failed".into());
+                }
+                let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                let text = String::from_utf8_lossy(&bytes);
+                let boxes = text.matches("/MediaBox").count();
+                let at = text.find("/MediaBox").ok_or("no MediaBox")?;
+                let media: String = text[at..].chars().take_while(|c| *c != ']').collect();
+                if boxes != 1 || !media.contains("612") || !media.contains("792") {
+                    return Err(format!("expected one Letter sheet, got {boxes}: {media}"));
+                }
+                self.ok("Page Setup (keyboard + mouse): Avery 5160 chosen, exported PDF has a sheet-sized page");
                 return Ok(true);
             }
             _ => return Ok(true),

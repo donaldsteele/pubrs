@@ -26,7 +26,7 @@ Top-level object:
 | `schema_version` | integer | Currently `1`. Older versions are migrated on load. Newer versions are rejected. |
 | `id` | uuid | Document id. |
 | `meta` | object | `title`, `author`, optional `template`. |
-| `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points). |
+| `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points); optional `sheet` (see below) and `booklet` (bool, omitted when false). |
 | `grid` | object | `spacing`, `show_grid`, `snap_to_grid`, `snap_to_guides`, `snap_tolerance`. |
 | `pages` | array | Pages in order: `id`, optional `master`, `frames` (ids, back to front), `guides`. |
 | `masters` | array | `id`, `name`, `frames`, `guides`. |
@@ -95,3 +95,32 @@ paragraph style chain → character style chain → run overrides.
 `pubrs-io` contains a migration function from every past version to the
 next; loading applies them in sequence. Writers always write the current
 version.
+
+### Version history
+
+| Version | Change |
+| --- | --- |
+| 0 | Unversioned or hand-written JSON; `schema_version`, `id`, `meta` and `grid` may be missing. |
+| 1 | The first released shape. |
+| 2 | `setup.sheet` and `setup.booklet` (labels, cards, booklets). Both are optional, so a version 1 file is a valid version 2 file; migration only stamps the version. |
+
+### `setup.sheet` and `setup.booklet` (version 2)
+
+A document page is one label or card. When `setup.sheet` is present, PDF
+export and printing put the pages N-up on the sheet; `setup.booklet: true`
+imposes a saddle-stitched booklet instead. The two are mutually exclusive.
+Neither changes how pages are laid out, edited or saved, and per-page PNG
+export stays per page.
+
+`setup.sheet` fields, all points unless noted: `preset` (an id such as
+`avery-5160`, or `custom`), `sheet_size {width,height}`, `rows`, `cols`,
+`label_size {width,height}` (must equal `setup.size` within 0.5 pt),
+`origin {x,y}` (top-left corner of the first label), `pitch {width,height}`
+(corner-to-corner distance between neighbouring labels) and `fill`
+(`repeat`: the page in every cell of its own sheet; `sequence`: one page per
+cell in reading order).
+
+Booklets pad the page count to a multiple of four with blank pages, then
+reorder for saddle stitch, 2-up on a sheet twice the page width: for 8 pages
+sheet 1 front is [8, 1], back [2, 7]; sheet 2 front [6, 3], back [4, 5]. Each
+side is one PDF page.

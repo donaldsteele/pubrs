@@ -218,6 +218,12 @@ pub struct DocInfoOut {
     pub page_size: Size,
     pub margins: Margins,
     pub bleed: f64,
+    /// Label-sheet preset id (or "custom") when the document prints on a sheet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<String>,
+    /// True when the document prints as a saddle-stitched booklet.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub booklet: bool,
     pub grid: GridSettings,
     pub page_ids: Vec<PageId>,
     pub masters: Vec<MasterEntry>,
@@ -305,7 +311,7 @@ impl Session {
         if let Some(ps) = &req.page_size {
             setup.size = ps.size()?;
         }
-        let doc = pubrs_core::Document::new(&mut *self.ids, setup);
+        let doc = pubrs_core::Document::new(&mut *self.ids, setup.clone());
         let doc_id = self.insert(doc, None);
         let mut batch = Vec::new();
         if let Some(ps) = &req.page_size {
@@ -448,6 +454,8 @@ impl Session {
             page_size: doc.setup.size,
             margins: doc.setup.margins,
             bleed: doc.setup.bleed,
+            sheet: doc.setup.sheet.as_ref().map(|s| s.preset.clone()),
+            booklet: doc.setup.booklet,
             grid: doc.grid,
             page_ids: doc.pages.iter().map(|p| p.id).collect(),
             masters: doc

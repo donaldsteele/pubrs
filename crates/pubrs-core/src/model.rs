@@ -10,14 +10,14 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::color::Color;
-use crate::geom::{Margins, PT_PER_INCH, PT_PER_MM, Rect, Size};
+use crate::geom::{Margins, PT_PER_INCH, PT_PER_MM, Point, Rect, Size};
 use crate::id::{
     AssetId, DocumentId, FrameId, GuideId, IdSource, MasterId, PageId, StoryId, StyleId,
 };
 use crate::style::{CharProps, ParaProps, StyleSheet};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -69,7 +69,7 @@ pub struct DocMeta {
 }
 
 /// Page geometry shared by all pages.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct PageSetup {
     /// Trim size of each page in points.
@@ -78,6 +78,65 @@ pub struct PageSetup {
     pub margins: Margins,
     /// Bleed in points added outside the trim on every side when exporting.
     pub bleed: f64,
+    /// Label or card sheet: PDF export and print put the pages N-up on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<SheetLayout>,
+    /// Saddle-stitched booklet: PDF export and print reorder the pages 2-up.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub booklet: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// How pages are assigned to the cells of a label sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SheetFill {
+    /// Each document page fills every cell of its own sheet.
+    #[default]
+    Repeat,
+    /// Pages fill the cells in reading order, row by row (one record per
+    /// label once mail merge supplies the pages).
+    Sequence,
+}
+
+/// A grid of labels or cards on a printed sheet. One document page is one
+/// label, so `label_size` must equal [`PageSetup::size`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SheetLayout {
+    /// Preset id such as `avery-5160`, or `custom`.
+    pub preset: String,
+    /// Sheet (paper) size in points.
+    pub sheet_size: Size,
+    pub rows: u32,
+    pub cols: u32,
+    /// Size of one label in points.
+    pub label_size: Size,
+    /// Top-left corner of the first label, in points from the sheet corner.
+    pub origin: Point,
+    /// Distance between the top-left corners of neighbouring labels, in points.
+    pub pitch: Size,
+    #[serde(default)]
+    pub fill: SheetFill,
+}
+
+impl SheetLayout {
+    pub fn cells(&self) -> usize {
+        self.rows as usize * self.cols as usize
+    }
+
+    /// Top-left corner of the cell at `index` (row-major).
+    pub fn cell_origin(&self, index: usize) -> Point {
+        let (r, c) = (index / self.cols as usize, index % self.cols as usize);
+        Point {
+            x: self.origin.x + c as f64 * self.pitch.width,
+            y: self.origin.y + r as f64 * self.pitch.height,
+        }
+    }
 }
 
 impl Default for PageSetup {
@@ -86,6 +145,8 @@ impl Default for PageSetup {
             size: PageSizePreset::Letter.size(),
             margins: Margins::uniform(0.5 * PT_PER_INCH),
             bleed: 0.0,
+            sheet: None,
+            booklet: false,
         }
     }
 }

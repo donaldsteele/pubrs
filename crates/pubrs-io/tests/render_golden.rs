@@ -17,6 +17,7 @@ fn small_page() -> PageSetup {
         size: Size::new(300.0, 200.0),
         margins: Margins::uniform(18.0),
         bleed: 9.0,
+        ..PageSetup::default()
     }
 }
 
@@ -374,4 +375,107 @@ fn missing_page_is_an_error() {
     let mut ctx = ExportContext::new(test_fonts());
     let err = ctx.page_png(&doc, 3, &opts()).unwrap_err();
     assert_eq!(err.code(), "not_found");
+}
+
+// ---- imposition (M23) ----
+
+fn preset_layout(id: &str, fill: SheetFill) -> SheetLayout {
+    pubrs_io::sheet_preset(id).unwrap().layout(fill)
+}
+
+/// A 2.625 x 1 in label with a tinted border, one line of text and a bar
+/// that overflows the label (the clip must keep it inside its cell).
+#[test]
+fn imposed_sheet_avery_5160() {
+    let sheet = preset_layout("avery-5160", SheetFill::Repeat);
+    let setup = PageSetup {
+        size: sheet.label_size,
+        margins: Margins::uniform(6.0),
+        sheet: Some(sheet),
+        ..PageSetup::default()
+    };
+    let mut b = DocBuilder::new(SeqIds::new(23), setup);
+    let p = b.page(0);
+    let border = b
+        .shape(
+            p,
+            Rect::new(2.0, 2.0, 185.0, 68.0),
+            Shape::Rectangle { corner_radius: 4.0 },
+        )
+        .unwrap();
+    b.style(
+        border,
+        style(
+            Some(Color::rgb(253, 230, 138)),
+            Some((Color::rgb(146, 64, 14), 1.5, Dash::Solid)),
+            1.0,
+        ),
+    )
+    .unwrap();
+    b.text(
+        p,
+        Rect::new(8.0, 8.0, 170.0, 40.0),
+        "Golden Crust Bakery\n12 Mill Lane",
+    )
+    .unwrap();
+    let bar = b
+        .shape(
+            p,
+            Rect::new(150.0, 50.0, 80.0, 40.0),
+            Shape::Rectangle { corner_radius: 0.0 },
+        )
+        .unwrap();
+    b.style(bar, style(Some(Color::rgb(30, 120, 220)), None, 1.0))
+        .unwrap();
+    let doc = b.finish();
+    let mut ctx = ExportContext::new(test_fonts());
+    let png = ctx.sheet_png(&doc, 0, &opts()).unwrap();
+    assert_png_golden("imposed_sheet_avery_5160", &png);
+}
+
+/// Eight 300 x 200 pages numbered 1..8; sheet 1 front is [8, 1].
+#[test]
+fn imposed_booklet_8_pages() {
+    let setup = PageSetup {
+        booklet: true,
+        ..small_page()
+    };
+    let mut b = DocBuilder::new(SeqIds::new(24), setup);
+    for _ in 1..8 {
+        b.add_page().unwrap();
+    }
+    for i in 0..8 {
+        let p = b.page(i);
+        let bg = b
+            .shape(
+                p,
+                Rect::new(10.0, 10.0, 280.0, 180.0),
+                Shape::Rectangle { corner_radius: 0.0 },
+            )
+            .unwrap();
+        let shade = 120 + 16 * i as u8;
+        b.style(
+            bg,
+            style(Some(Color::rgb(shade, 200, 255 - shade)), None, 1.0),
+        )
+        .unwrap();
+        b.text(
+            p,
+            Rect::new(30.0, 60.0, 240.0, 80.0),
+            &format!("Page {}", i + 1),
+        )
+        .unwrap();
+    }
+    let doc = b.finish();
+    let mut ctx = ExportContext::new(test_fonts());
+    let layout = ctx.layout(&doc);
+    assert_eq!(ctx.output_scenes(&doc, &layout, true).unwrap().len(), 4);
+    assert_png_golden(
+        "imposed_booklet_front_1",
+        &ctx.sheet_png(&doc, 0, &opts()).unwrap(),
+    );
+    assert_png_golden(
+        "imposed_booklet_back_1",
+        &ctx.sheet_png(&doc, 1, &opts()).unwrap(),
+    );
 }

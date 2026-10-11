@@ -112,6 +112,9 @@ pub struct Node {
     pub transform: Affine,
     pub opacity: f64,
     pub prims: Vec<Prim>,
+    /// Clip in page points (imposed sheets clip each page to its cell).
+    /// `None` for ordinary pages. The GPU backend ignores it.
+    pub clip: Option<Rect>,
 }
 
 /// Everything drawn on one page, in paint order.
@@ -351,6 +354,7 @@ pub fn frame_node_with(
         transform: frame_transform(f.rect, f.rotation),
         opacity: f.style.opacity.clamp(0.0, 1.0),
         prims,
+        clip: None,
     })
 }
 

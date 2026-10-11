@@ -443,3 +443,43 @@ fn pdf_renders_like_png() {
         "PDF rendering diverges from PNG: {bad}/{total} blocks"
     );
 }
+
+#[test]
+fn sheets_and_booklets_are_imposed_unless_flat() {
+    let sizes = |doc: &Document, opts: &PdfOptions| -> Vec<Vec<f64>> {
+        let (_, pdf) = export(doc, opts);
+        pdf.get_pages()
+            .into_values()
+            .map(|id| page_boxes(&pdf, pdf.get_dictionary(id).unwrap()).media)
+            .collect()
+    };
+    // Two 189 x 72 label pages, repeat fill: one Letter sheet each.
+    let sheet = pubrs_io::sheet_preset("avery-5160")
+        .unwrap()
+        .layout(SheetFill::Repeat);
+    let mut b = DocBuilder::new(
+        SeqIds::new(15),
+        PageSetup {
+            size: sheet.label_size,
+            sheet: Some(sheet),
+            ..PageSetup::default()
+        },
+    );
+    b.add_page().unwrap();
+    let doc = b.finish();
+    let letter = vec![0.0, 0.0, 612.0, 792.0];
+    assert_eq!(sizes(&doc, &PdfOptions::default()), vec![letter.clone(); 2]);
+    let flat = PdfOptions {
+        flat: true,
+        ..Default::default()
+    };
+    assert_eq!(sizes(&doc, &flat), vec![vec![0.0, 0.0, 189.0, 72.0]; 2]);
+
+    // The brochure (2 Letter pages) as a booklet: padded to 4, two sides, double width.
+    let mut booklet = brochure();
+    booklet.setup.booklet = true;
+    assert_eq!(
+        sizes(&booklet, &PdfOptions::default()),
+        vec![vec![0.0, 0.0, 1224.0, 792.0]; 2]
+    );
+}

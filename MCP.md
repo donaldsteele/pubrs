@@ -166,6 +166,34 @@ Result:
 }
 ```
 
+**Example**
+
+```json
+{
+  "arguments": {
+    "page_size": {
+      "height": 72,
+      "width": 189
+    },
+    "pages": 1,
+    "title": "Address labels"
+  },
+  "name": "doc_new"
+}
+```
+
+Result:
+
+```json
+{
+  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "page_ids": [
+    "00000000-0000-87ea-8000-000000000023"
+  ],
+  "revision": 1
+}
+```
+
 ### `doc_open`
 
 Open a .pubrs file from disk and make it current. Returns a new doc_id for this session.
@@ -327,6 +355,28 @@ Result:
 }
 ```
 
+**Example**
+
+```json
+{
+  "arguments": {
+    "confirm": true,
+    "doc_id": "00000000-0000-87ea-8000-00000000002b"
+  },
+  "name": "doc_close"
+}
+```
+
+Result:
+
+```json
+{
+  "closed": true,
+  "discarded_changes": true,
+  "doc_id": "00000000-0000-87ea-8000-00000000002b"
+}
+```
+
 ### `doc_list`
 
 List open documents with their ids, titles, paths, revision and unsaved-changes flag.
@@ -378,7 +428,7 @@ _read-only_
 |---|---|---|---|
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 
-**Result fields:** `asset_count`, `author`, `bleed`, `dirty`, `doc_id`, `frame_count`, `grid`, `margins`, `masters`, `page_ids`, `page_size`, `path`, `revision`, `story_count`, `style_count`, `template`, `title`
+**Result fields:** `asset_count`, `author`, `bleed`, `booklet`, `dirty`, `doc_id`, `frame_count`, `grid`, `margins`, `masters`, `page_ids`, `page_size`, `path`, `revision`, `sheet`, `story_count`, `style_count`, `template`, `title`
 
 **Example**
 
@@ -3141,11 +3191,163 @@ Result:
 }
 ```
 
+## Labels
+
+### `sheet_presets_list`
+
+List label, card and postcard sheet presets (Avery US 5160 ..., A4 L7160 ..., generic 2-up/4-up) with the paper size, grid, and the label size the document page must have.
+
+_read-only_
+
+**Arguments**
+
+_No arguments._
+
+**Result fields:** `presets`
+
+**Example**
+
+```json
+{
+  "arguments": {},
+  "name": "sheet_presets_list"
+}
+```
+
+Result:
+
+```json
+{
+  "presets": [
+    {
+      "cols": 3,
+      "count": 30,
+      "h_pitch": 198.0,
+      "id": "avery-5160",
+      "…": "9 more keys"
+    },
+    {
+      "cols": 2,
+      "count": 20,
+      "h_pitch": 301.5,
+      "id": "avery-5161",
+      "…": "9 more keys"
+    },
+    {
+      "cols": 2,
+      "count": 14,
+      "h_pitch": 301.5,
+      "id": "avery-5162",
+      "…": "9 more keys"
+    },
+    {
+      "cols": 2,
+      "count": 10,
+      "h_pitch": 301.5,
+      "id": "avery-5163",
+      "…": "9 more keys"
+    },
+    "… 22 more"
+  ]
+}
+```
+
+### `doc_set_sheet`
+
+Print the document as a label or card sheet: PDF export and print put the page N-up on the sheet. Give a preset id from sheet_presets_list or a custom grid (points); omit both to clear. fill: repeat (the page in every cell, default) or sequence (one page per label, in order). The page size must equal the label size, otherwise the call is refused with a hint.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `custom` | object |  | A custom grid instead of a preset. |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `fill` | "repeat" \| "sequence" |  | How pages fill the cells. |
+| `preset` | string |  | Preset id from sheet_presets_list, e.g. "avery-5160". Omit both `preset` and `custom` (or pass null) to clear the sheet. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — Page is 2.625 x 1 in, the Avery 5160 label size, so export_pdf puts it 30-up on a Letter sheet.
+
+```json
+{
+  "arguments": {
+    "preset": "avery-5160"
+  },
+  "name": "doc_set_sheet"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "revision": 2
+}
+```
+
+**Example** — A4 L7160 labels are 63.5 x 38.1 mm: the call is refused with a hint to set the page size first.
+
+```json
+{
+  "arguments": {
+    "preset": "l7160"
+  },
+  "name": "doc_set_sheet"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "check the argument ranges in the tool's input schema",
+  "message": "invalid argument: the label is 2.500 × 1.500 in but the page is 2.625 × 1.000 in; set the page size to 2.500 × 1.500 in first"
+}
+```
+
+### `doc_set_booklet`
+
+Print the document as a saddle-stitched booklet: pages are padded to a multiple of 4, reordered and put 2-up on sheets twice the page width (front and back are separate PDF pages). Not combinable with a label sheet.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `booklet` | boolean | yes |  |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "booklet": true
+  },
+  "name": "doc_set_booklet"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "revision": 5
+}
+```
+
 ## Export
 
 ### `export_pdf`
 
-Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines. Writes to path, or returns base64 when no path is given.
+Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed). Writes to path, or returns base64 when no path is given.
 
 _read-only_
 
@@ -3157,10 +3359,11 @@ _read-only_
 | `crop_marks` | boolean |  | Add crop marks outside the bleed (default false). |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `font_embedding` | "subset" \| "outlines" |  | Font handling in PDFs. |
+| `impose` | boolean |  | Impose the pages onto label sheets or booklet sheets when the document has a sheet or booklet set (default true). false exports the plain pages. |
 | `path` | string |  | Output file path. Without a path the PDF is returned as base64. |
 | `return_base64` | boolean |  | Also return the bytes as base64 when a path is given. |
 
-**Result fields:** `base64`, `bytes`, `doc_id`, `page_count`, `path`, `revision`
+**Result fields:** `base64`, `bytes`, `doc_id`, `imposed`, `page_count`, `path`, `revision`
 
 **Example**
 
@@ -3183,6 +3386,30 @@ Result:
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
   "revision": 48
+}
+```
+
+**Example** — page_count is 1 sheet and imposed is "sheet".
+
+```json
+{
+  "arguments": {
+    "path": "labels.pdf"
+  },
+  "name": "export_pdf"
+}
+```
+
+Result:
+
+```json
+{
+  "bytes": 1767,
+  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "imposed": "sheet",
+  "page_count": 1,
+  "path": "<output_dir>/labels.pdf",
+  "revision": 2
 }
 ```
 
@@ -3585,7 +3812,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 1,
+    "schema_version": 2,
     "setup": {
       "bleed": 9.0,
       "margins": {

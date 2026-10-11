@@ -7,6 +7,7 @@ pub mod export;
 pub mod format;
 pub mod images;
 pub mod migrate;
+pub mod presets;
 pub mod pubfile;
 pub mod templates;
 
@@ -15,3 +16,4 @@ pub use error::IoError;
 pub use export::{ExportContext, ExportError};
 pub use format::{MIMETYPE, load, read_bytes, save, write_bytes};
 pub use images::ImageCache;
+pub use presets::{SheetPreset, sheet_preset, sheet_presets};

@@ -464,6 +464,108 @@ fn delete_page_removes_its_frames_and_last_page_is_protected() {
     assert!(fx.ed.execute(Command::DeletePage { page: p2 }).is_err());
 }
 
+// ---- sheets and booklets ----
+
+fn sheet_5160(fill: SheetFill) -> SheetLayout {
+    SheetLayout {
+        preset: "avery-5160".into(),
+        sheet_size: Size::new(612.0, 792.0),
+        rows: 10,
+        cols: 3,
+        label_size: Size::new(189.0, 72.0),
+        origin: Point::new(13.5, 36.0),
+        pitch: Size::new(198.0, 72.0),
+        fill,
+    }
+}
+
+#[test]
+fn set_sheet_refuses_a_page_size_mismatch_with_a_hint() {
+    let mut fx = Fixture::new();
+    let err = fx
+        .ed
+        .execute(Command::SetSheet {
+            sheet: Some(sheet_5160(SheetFill::Repeat)),
+        })
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("set the page size to 2.625 \u{d7} 1.000 in first"),
+        "{err}"
+    );
+    assert!(fx.ed.doc().setup.sheet.is_none());
+}
+
+#[test]
+fn set_sheet_and_booklet_undo_and_exclude_each_other() {
+    let mut fx = Fixture::new();
+    let before = fx.ed.doc().clone();
+    fx.ed
+        .execute(Command::SetPageSize {
+            size: Size::new(189.0, 72.0),
+        })
+        .unwrap();
+    let sized = fx.ed.doc().clone();
+    // Within 0.5pt is accepted.
+    let mut near = sheet_5160(SheetFill::Sequence);
+    near.label_size = Size::new(189.4, 71.6);
+    fx.ed
+        .execute(Command::SetSheet { sheet: Some(near) })
+        .unwrap();
+    assert_eq!(
+        fx.ed.doc().setup.sheet.as_ref().unwrap().fill,
+        SheetFill::Sequence
+    );
+    assert!(
+        fx.ed
+            .execute(Command::SetBooklet { booklet: true })
+            .is_err()
+    );
+    fx.ed.undo().unwrap();
+    assert_eq!(fx.ed.doc(), &sized);
+    fx.ed
+        .execute(Command::SetBooklet { booklet: true })
+        .unwrap();
+    assert!(fx.ed.doc().setup.booklet);
+    assert!(
+        fx.ed
+            .execute(Command::SetSheet {
+                sheet: Some(sheet_5160(SheetFill::Repeat)),
+            })
+            .is_err()
+    );
+    fx.ed.undo().unwrap();
+    fx.ed.undo().unwrap();
+    assert_eq!(fx.ed.doc(), &before);
+}
+
+#[test]
+fn set_sheet_refuses_a_grid_that_does_not_fit() {
+    let mut fx = Fixture::new();
+    fx.ed
+        .execute(Command::SetPageSize {
+            size: Size::new(189.0, 72.0),
+        })
+        .unwrap();
+    let mut s = sheet_5160(SheetFill::Repeat);
+    s.rows = 11;
+    assert!(fx.ed.execute(Command::SetSheet { sheet: Some(s) }).is_err());
+    let mut s = sheet_5160(SheetFill::Repeat);
+    s.cols = 0;
+    assert!(fx.ed.execute(Command::SetSheet { sheet: Some(s) }).is_err());
+}
+
+#[test]
+fn old_setup_json_loads_without_sheet_fields_and_omits_them_when_unset() {
+    let s: PageSetup = serde_json::from_str(
+        r#"{"size":{"width":612.0,"height":792.0},"margins":{"top":36.0,"right":36.0,"bottom":36.0,"left":36.0},"bleed":0.0}"#,
+    )
+    .unwrap();
+    assert!(s.sheet.is_none() && !s.booklet);
+    let json = serde_json::to_string(&s).unwrap();
+    assert!(!json.contains("sheet") && !json.contains("booklet"));
+}
+
 // ---- golden patch JSON (Risk 3: the Arc refactor must not change patches) ----
 
 struct Recorder {
@@ -898,6 +1000,16 @@ fn patch_json_matches_the_golden_corpus() {
         ed.undo().unwrap();
         ed.undo().unwrap();
     });
+
+    // Sheets and booklets (schema 2). Appended after the original corpus so
+    // every earlier entry stays byte-identical.
+    let label = sheet_5160(SheetFill::Repeat);
+    r.run(Command::SetPageSize {
+        size: label.label_size,
+    });
+    r.run(Command::SetSheet { sheet: Some(label) });
+    r.run(Command::SetSheet { sheet: None });
+    r.run(Command::SetBooklet { booklet: true });
 
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =

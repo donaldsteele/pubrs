@@ -42,6 +42,9 @@ pub struct PdfOptions {
     pub font_embedding: FontEmbedding,
     pub title: Option<String>,
     pub author: Option<String>,
+    /// Export the document's own pages even when it has a label sheet or
+    /// booklet set up. By default (false) such documents are imposed.
+    pub flat: bool,
 }
 
 /// Distance of crop marks from the trim edge when there is no bleed.
@@ -256,7 +259,21 @@ pub fn render_pdf(
             surface.push_clip_path(&clip, &FillRule::NonZero);
         }
         let base = Affine::translate(s, s);
+        let mut open_clip: Option<pubrs_core::Rect> = None;
         for node in &scene.nodes {
+            if node.clip != open_clip {
+                if open_clip.is_some() {
+                    surface.pop();
+                }
+                if let Some(c) = node.clip
+                    && let Some(p) = rect_path(s + c.x, s + c.y, c.width, c.height)
+                {
+                    surface.push_clip_path(&p, &FillRule::NonZero);
+                } else if node.clip.is_some() {
+                    return Err(PdfError::Krilla("invalid clip rectangle".into()));
+                }
+                open_clip = node.clip;
+            }
             surface.push_transform(&kt(node.transform.then(base)));
             let layered = node.opacity < 1.0;
             if layered {
@@ -277,6 +294,9 @@ pub fn render_pdf(
             if layered {
                 surface.pop();
             }
+            surface.pop();
+        }
+        if open_clip.is_some() {
             surface.pop();
         }
         surface.pop();

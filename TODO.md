@@ -13,6 +13,10 @@ Deferred and partial work. Each entry says what is missing and why.
 
 ## Partial features
 
+- Sheet presets Avery 5376, 5377, 22805, 5305, 8315, C32011, L7651 and the L7161/L7162 margins are from memory of published specs; check them against vendor datasheets.
+- Imposed sheets carry no bleed, and `crop_marks` marks the whole sheet rather than each label.
+- `SetPageSize` does not re-check an existing label sheet; a mismatch is reported at PDF export.
+- The GPU renderer ignores `Node.clip` (only imposed sheets use it, and those are never drawn on the GPU).
 - Text wrap: `square` and `top_bottom` only, around bounding boxes. Contour ("tight") wrap and text on both sides of an obstacle are not implemented (ADR 0006).
 - The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); the design checker (M29) replaces it. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.

@@ -28,6 +28,7 @@ fn gpu_matches_software_within_tolerance() {
             size: Size::new(300.0, 200.0),
             margins: Margins::uniform(18.0),
             bleed: 0.0,
+            ..PageSetup::default()
         },
     );
     let p = b.page(0);

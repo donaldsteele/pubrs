@@ -291,6 +291,7 @@ fn flyer() -> Document {
             size: PageSizePreset::Letter.size(),
             margins: Margins::uniform(36.0),
             bleed: 9.0,
+            ..PageSetup::default()
         },
         "Flyer",
         "flyer",
@@ -368,6 +369,7 @@ fn trifold() -> Document {
             size: Size::new(792.0, 612.0),
             margins: Margins::uniform(18.0),
             bleed: 9.0,
+            ..PageSetup::default()
         },
         "Trifold brochure",
         "trifold_brochure",
@@ -534,6 +536,7 @@ fn business_card() -> Document {
             size: PageSizePreset::BusinessCard.size(),
             margins: Margins::uniform(12.0),
             bleed: 9.0,
+            ..PageSetup::default()
         },
         "Business card",
         "business_card",
@@ -598,6 +601,7 @@ fn newsletter() -> Document {
             size: PageSizePreset::Letter.size(),
             margins: Margins::uniform(36.0),
             bleed: 0.0,
+            ..PageSetup::default()
         },
         "Newsletter",
         "newsletter",
