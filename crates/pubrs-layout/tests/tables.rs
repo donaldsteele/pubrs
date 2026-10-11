@@ -298,23 +298,51 @@ fn the_cache_reuses_the_table_when_other_text_changes() {
     assert!(l.table(tf).is_some());
 }
 
-#[test]
-fn typing_in_a_huge_table_does_not_rescan_its_cells_per_story() {
-    // 200 x 40 = 8,000 cell stories. Finding each story's cell by a scan of
-    // the table would cost 32M comparisons per pass.
+/// Best of five relayouts after typing in one cell of a `rows` x 40 table.
+fn one_cell_relayout(rows: usize) -> std::time::Duration {
     let mut lay = layouter();
     let mut cache = StoryLayoutCache::new();
-    let mut t = T::new(Rect::new(0.0, 0.0, 4000.0, 4000.0), 200, 40);
+    let mut t = T::new(Rect::new(0.0, 0.0, 4000.0, 4000.0), rows, 40);
     cache.layout(&mut lay, t.ed.doc());
-    assert_eq!(cache.stats().recomposed, 8000);
-    t.set(100, 20, "x");
-    let started = std::time::Instant::now();
-    cache.layout(&mut lay, t.ed.doc());
-    let took = started.elapsed();
-    let s = cache.stats();
-    assert_eq!((s.recomposed, s.tables_recomposed), (1, 1));
-    eprintln!("relayout of one cell in 8,000: {took:?}");
-    assert!(took.as_millis() < BOUND_MS, "{took:?}");
+    assert_eq!(cache.stats().recomposed, rows * 40);
+    let mut best = std::time::Duration::MAX;
+    for i in 0..5 {
+        t.set((rows / 2) as u32, 20, &"x".repeat(i + 1));
+        let started = std::time::Instant::now();
+        cache.layout(&mut lay, t.ed.doc());
+        best = best.min(started.elapsed());
+        let s = cache.stats();
+        assert_eq!((s.recomposed, s.tables_recomposed), (1, 1));
+    }
+    best
 }
 
-const BOUND_MS: u128 = 300;
+#[test]
+fn typing_in_a_huge_table_does_not_rescan_its_cells_per_story() {
+    // Finding each story's cell by scanning the table makes a pass quadratic
+    // in the cells. Wall-clock bounds do not survive CI, so compare how the
+    // relayout scales: 4x the cells (2,000 -> 8,000) should cost about 4x
+    // (linear), a per-story scan about 16x. Measured in debug with a linear
+    // `cell_of_story` scan put back in `regions_for`: 12.0 to 13.3 (3 runs;
+    // 12.6 -> 155-169 ms). With the map: 5.0 to 5.2 (6 -> 30 ms). The bound sits
+    // between the two, about 1.6x from each.
+    // Noise on a linear run does not repeat: pass on the first attempt under
+    // the bound, fail only when all three are over it.
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        let small = one_cell_relayout(50);
+        let big = one_cell_relayout(200);
+        let ratio = big.as_secs_f64() / small.as_secs_f64().max(1e-9);
+        eprintln!("relayout 2,000 cells {small:?}, 8,000 cells {big:?}, ratio {ratio:.1}");
+        if ratio < MAX_RATIO {
+            return;
+        }
+        seen.push(format!("{ratio:.1} ({small:?} -> {big:?})"));
+    }
+    panic!(
+        "relayout does not scale linearly in three attempts: {}",
+        seen.join(", ")
+    );
+}
+
+const MAX_RATIO: f64 = 8.5;
