@@ -118,13 +118,13 @@ pub fn instructions(output_dir: Option<&std::path::Path>) -> String {
         },
     );
     format!(
-        "pubrs creates print documents (flyers, brochures, cards, newsletters).\n\
+        "pubrs creates print documents (flyers, brochures, cards, newsletters, menus, certificates, labels, calendars).\n\
          Units are points (72 per inch). Coordinates start at the top-left corner of the page, y grows down.\n\
          Every object has a stable id; address pages and frames by id. doc_id may be omitted (most recent document).\n\
          Typical workflow: template_list → template_apply → text_set on each text placeholder → image_place on each image \
          placeholder (file path, base64, or svg markup for drawn artwork) → text_overflow_status → validate (fix every warning) → \
          render_preview to look at each page → doc_save_as and export_pdf.\n\
-         Prompts make_flyer, make_trifold and make_business_card walk through these steps. Files: {out}."
+         Built-in templates: flyer, trifold_brochure, business_card, newsletter, greeting_card, postcard, certificate, menu, letterhead, envelope, calendar (template_apply takes a year), address_labels, business_cards. Prompts make_flyer, make_trifold, make_business_card, make_newsletter and make_greeting_card walk through these steps. Files: {out}."
     )
 }
 

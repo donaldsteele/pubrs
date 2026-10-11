@@ -1275,3 +1275,19 @@ fn table_with_merged_header() {
     assert!(pubrs_core::validate::check_integrity(&doc).is_empty());
     assert_png_golden("table_merged_header", &render(&doc, 0, &opts()));
 }
+
+// ---- built-in templates (M30) ----
+
+/// Page 1 of every built-in template, placeholders unfilled (what the user
+/// sees). The calendar shows January of its default year.
+#[test]
+fn template_goldens() {
+    for name in pubrs_io::templates::BUILTIN {
+        let doc = pubrs_io::templates::builtin(name).unwrap();
+        assert!(
+            pubrs_core::validate::check_integrity(&doc).is_empty(),
+            "{name}"
+        );
+        assert_png_golden(&format!("template_{name}_p1"), &render(&doc, 0, &opts()));
+    }
+}

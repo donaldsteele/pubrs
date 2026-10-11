@@ -294,9 +294,9 @@ pub static TOOLS: &[ToolDef] = &[
         "Set the alt text of a picture frame: what the picture shows, for screen readers. It is written to the PDF as /Alt when export_pdf is called with tagged: true. An empty string clears it."),
     // ---------------------------------------------------------------- templates
     tool!("template_list", "Templates", template_list, templates::TemplateList => templates::TemplateListOut, ro = true, destructive = false, image = None,
-        "List templates (built-in: flyer, trifold_brochure, business_card, newsletter; plus user templates) with page size and every placeholder's name, kind, hint and size."),
+        "List templates (built-in: flyer, trifold_brochure, business_card, newsletter, greeting_card, postcard, certificate, menu, letterhead, envelope, calendar, address_labels, business_cards; plus user templates) with page size and every placeholder's name, kind, hint and size. The calendar template takes a year option in template_apply."),
     tool!("template_apply", "Templates", template_apply, templates::TemplateApply => templates::TemplateApplyOut, ro = false, destructive = false, image = None,
-        "Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place."),
+        "Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place (then image_set_alt_text). The calendar template takes year (1600 to 9999, default 2027); year with any other template is an error."),
     tool!("template_save", "Templates", template_save, templates::TemplateSave => templates::TemplateSaveOut, ro = false, destructive = false, image = None,
         "Save the document as a reusable user template. Mark frames as placeholders first with frame_set_placeholder."),
     // ---------------------------------------------------------------- labels and booklets

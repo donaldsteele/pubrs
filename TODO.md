@@ -5,6 +5,7 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Later phases (designed for, not built)
 
 - Mail merge from CSV.
+- The `address_labels` template (M30) has plain text placeholders where merge fields belong; M24's rebase turns them into merge fields (record per label, `SheetFill::Sequence`).
 - `.pub` import beyond M31 part 1 (reference: libmspub).
 - CMYK / spot colours, PDF/X output.
 - Tables.
@@ -34,14 +35,14 @@ Deferred and partial work. Each entry says what is missing and why.
 
 - Hyphenation languages left out (licence unclear or not allowed): Afrikaans, Danish, Greek, Estonian, Croatian, Icelandic, Italian, Georgian, Kurmanji, Latin, Mongolian, Dutch, Russian, Sanskrit, Serbian (Cyrillic), Slovenian, Swedish, Turkish and Ukrainian (LPPL-only or LPPL with MIT alternatives not yet checked); Slovak (GPL). Possible additions once checked: Belarusian, Bengali, Assamese, Gujarati, Hindi, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Turkmen, Albanian, Czech and Finnish (headers say MIT, or MIT alongside GPL/LGPL).
 - English US pattern licence (Kuiken's notice-preserving grant) is outside the LD5 list; the owner must confirm (ASSETS.md).
-- The built-in styles leave `justify_limits` unset (v0.1 behaviour, LD2); the M30 templates should enable limits in their body styles.
+- The built-in styles leave `justify_limits` unset (v0.1 behaviour, LD2); the M30 templates enable limits in their Body style (ADR 0028); the defaults of a blank document are unchanged.
 - Letter-spaced justification spaces characters, not grapheme clusters, and uses the mean font size of the line for its cap.
 - The Paragraph dialog is under Text → Paragraph… (Ctrl/Cmd+Alt+P); there is no Format menu.
 
 ## Paragraph controls and breaks (M15)
 
 - Autoflow (adding pages and linked frames for overflowing text) is not implemented; a page break at the end of a chain overflows.
-- The built-in styles leave `widow_orphan` unset (v0.1 layout, LD2); the M30 templates should enable `widow_orphan = 2` in their body styles.
+- The built-in styles leave `widow_orphan` unset (v0.1 layout, LD2); the M30 templates enable `widow_orphan = 2` in their Body style (ADR 0028); the defaults of a blank document are unchanged.
 - A keep-with-next paragraph that itself spans two columns or frames is not moved, and its last lines are not split off to join the next paragraph (ADR 0015).
 - Keeps (keep together, widows and orphans) are skipped for a paragraph that contains a break character.
 - Keeps never cost visible text: a move that makes its own paragraphs overflow is undone, and when moves push later text out of the chain the whole story is laid out without keeps (all or nothing, ADR 0015). Finer recovery (dropping only the move that hid the text) is not done.
@@ -123,8 +124,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - Up/Down inside a cell use the cell's own lines; the arrow keys never leave a cell (Tab and Shift+Tab move between cells).
 - Wrap obstacles do not affect cell text (a cell never wraps around a frame above it); a table with wrap set is an obstacle by its rectangle.
 - A cell's fill is a solid colour or swatch (no gradients).
-
-- Templates have no table builder yet: T22 adds a `table(...)` helper to `templates.rs` with the first template that carries a table (`DocBuilder::table` and `cell_text` exist).
 
 ## Tables in the GUI (M20)
 

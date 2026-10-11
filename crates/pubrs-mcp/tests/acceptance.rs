@@ -305,7 +305,13 @@ async fn resources_prompts_and_errors() {
     let names: Vec<&str> = prompts.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(
         names,
-        vec!["make_flyer", "make_trifold", "make_business_card"]
+        vec![
+            "make_flyer",
+            "make_trifold",
+            "make_business_card",
+            "make_newsletter",
+            "make_greeting_card"
+        ]
     );
     let p = h
         .client
@@ -321,6 +327,38 @@ async fn resources_prompts_and_errors() {
         .unwrap();
     let text = serde_json::to_string(&p.messages).unwrap();
     assert!(text.contains("template_apply") && text.contains("a bakery"));
+    for (name, key, value, needs) in [
+        (
+            "make_newsletter",
+            "topic",
+            "a community garden",
+            "events_table",
+        ),
+        (
+            "make_greeting_card",
+            "occasion",
+            "a birthday",
+            "front_greeting",
+        ),
+    ] {
+        let p = h
+            .client
+            .get_prompt(
+                GetPromptRequestParams::new(name)
+                    .with_arguments(json!({ key: value }).as_object().cloned().unwrap()),
+            )
+            .await
+            .unwrap();
+        let text = serde_json::to_string(&p.messages).unwrap();
+        assert!(
+            text.contains("template_apply") && text.contains(value),
+            "{name}"
+        );
+        assert!(
+            text.contains(needs) && text.contains("image_set_alt_text"),
+            "{name}"
+        );
+    }
 
     // Tool errors are structured and readable; unknown tools are protocol errors.
     h.fail(

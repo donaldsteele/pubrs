@@ -50,8 +50,39 @@ Printing on Linux uses CUPS; install it if you want to print.
 
 ## Getting started
 
-1. **New from template** (Ctrl+N / ⌘N) shows the templates: flyer, trifold
-   brochure, business card and newsletter. Pick one, or a blank publication.
+1. **New from template** (Ctrl+N / ⌘N) shows the template gallery. Pick one,
+   or a blank publication. Every template uses one of the built-in colour
+   schemes; **Colour scheme…** in the Swatches panel recolours it in one
+   step. The templates:
+   - **Flyer**: Letter flyer with a colour header, photo and call to action.
+   - **Trifold brochure**: two-sided, three-panel brochure.
+   - **Business card**: one 3.5 x 2 in card with bleed.
+   - **Newsletter**: four Letter pages with a masthead, a lead story that
+     flows from page 1 to page 2, photos with captions, a pull quote, an
+     events table, bulleted and numbered lists, an opening-hours table and
+     a mailing panel on the back.
+   - **Greeting card**: a quarter-fold card on one Letter page. The bottom
+     half is the back (left) and front (right). The inside spread is in the
+     top half, printed upside down on purpose so it reads correctly once
+     folded. Fold guides mark the centre lines.
+   - **Postcard**: 6 x 4 in, picture front and a back with message,
+     address block and stamp box.
+   - **Certificate**: Letter landscape with a decorative border, title,
+     recipient, date and signature lines, and a seal.
+   - **Restaurant menu**: two pages, prices lined up on a tab with dot
+     leaders, and a bulleted list of specials.
+   - **Letterhead**: logo, name and address, a thin rule, an empty body for
+     your letter and a footer.
+   - **#10 envelope**: return address at top left, recipient block just
+     right of centre.
+   - **Annual calendar**: twelve Letter landscape pages, one per month,
+     with a picture and a table of days (weeks start on Sunday; the
+     neighbouring months' days are grey). It opens on the current year; in
+     scripts and through MCP the `year` option picks 1600 to 9999 (default
+     2027).
+   - **Address labels**: Avery 5160 (30 per sheet). Type the address once
+     and it repeats; merge fields come with mail merge.
+   - **Business cards (sheet)**: Avery 5371, ten cards per sheet.
 2. **Change the text:** double-click a text box and type. Ctrl+A selects
    all the text in the box. Press Esc when you are done.
 3. **Add pictures:** double-click an empty picture frame (grey box with a

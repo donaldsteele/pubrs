@@ -127,6 +127,8 @@ pub struct PubrsApp {
     pub autosave: Autosave,
     pub fonts: Vec<String>,
     pub template_thumbs: HashMap<String, egui::TextureHandle>,
+    /// The template list, built once per time the picker is open.
+    pub template_list: Option<Vec<pubrs_api::io::templates::TemplateInfo>>,
     pub args: Args,
     outcome: Rc<RefCell<Outcome>>,
     pub frames_drawn: u64,
@@ -202,6 +204,7 @@ impl PubrsApp {
             autosave,
             fonts,
             template_thumbs: HashMap::new(),
+            template_list: None,
             selftest: selftest_dir.map(SelfTest::new),
             args: args.clone(),
             outcome,
@@ -578,9 +581,20 @@ impl PubrsApp {
     }
 
     pub fn new_from_template(&mut self, name: &str) -> Option<DocumentId> {
+        // The calendar opens on the current year (UTC).
+        let year = (name == "calendar").then(|| {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs() as i64);
+            pubrs_api::io::templates::year_of_unix_time(secs).clamp(
+                *pubrs_api::io::templates::CALENDAR_YEARS.start(),
+                *pubrs_api::io::templates::CALENDAR_YEARS.end(),
+            )
+        });
         let r = self.session.template_apply(TemplateApply {
             name: name.to_string(),
-            title: None,
+            year,
+            ..Default::default()
         });
         let out = self.report(r)?;
         self.add_view(out.doc_id);
@@ -1531,6 +1545,7 @@ impl PubrsApp {
                 out.placeholders.len()
             ));
             self.template_thumbs.remove(&out.name);
+            self.template_list = None;
         }
     }
 

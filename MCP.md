@@ -103,6 +103,8 @@ the MCP boundary.
 | `make_flyer` | `subject`, `details`, `images` | Flyer from the `flyer` template, step by step. |
 | `make_trifold` | `business`, `details`, `images` | Trifold brochure from `trifold_brochure`, including linking the story frames. |
 | `make_business_card` | `name`, `job_title`, `company`, `contact`, `logo` | Business card from `business_card`. |
+| `make_newsletter` | `topic`, `audience`, `details`, `images` | Four-page newsletter from `newsletter`: placeholders, the two tables (`table_set_cell_text`), the bulleted and numbered lists, images with alt text. |
+| `make_greeting_card` | `occasion`, `recipient`, `message`, `images` | Quarter-fold card from `greeting_card`, including its rotated inside spread. |
 
 Each prompt ends with the same checks: `text_overflow_status` clean,
 `validate` ok, `render_preview` of every page, then `doc_save_as` and
@@ -186,9 +188,9 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000048",
+  "doc_id": "00000000-0000-87ea-8000-00000000005c",
   "page_ids": [
-    "00000000-0000-87ea-8000-000000000040"
+    "00000000-0000-87ea-8000-000000000054"
   ],
   "revision": 1
 }
@@ -221,7 +223,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000003e",
+  "doc_id": "00000000-0000-87ea-8000-000000000052",
   "page_ids": [
     "00000000-0000-87ea-8000-000000000002",
     "00000000-0000-87ea-8000-00000000000b"
@@ -259,7 +261,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000049",
+  "doc_id": "00000000-0000-87ea-8000-00000000005d",
   "page_ids": [
     "00000000-5055-8252-8000-000000000002",
     "00000000-5055-8252-8000-00000000000b",
@@ -449,7 +451,7 @@ Result:
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-000000000048"
+    "doc_id": "00000000-0000-87ea-8000-00000000003f"
   },
   "name": "doc_close"
 }
@@ -460,8 +462,8 @@ Result:
 ```json
 {
   "closed": true,
-  "discarded_changes": true,
-  "doc_id": "00000000-0000-87ea-8000-000000000048"
+  "discarded_changes": false,
+  "doc_id": "00000000-0000-87ea-8000-00000000003f"
 }
 ```
 
@@ -3392,15 +3394,15 @@ Copy frames from one open document into another (or the same one): text frames k
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000054"
+      "00000000-0000-87ea-8000-000000000068"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000053",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000067",
     "offset": {
       "x": 0,
       "y": 36
     },
     "page_index": 0,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005f"
+    "to_doc_id": "00000000-0000-87ea-8000-000000000073"
   },
   "name": "frame_copy_to_doc"
 }
@@ -3411,13 +3413,13 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000057",
-    "00000000-0000-87ea-8000-000000000060",
-    "00000000-0000-87ea-8000-000000000061"
+    "00000000-0000-87ea-8000-00000000006b",
+    "00000000-0000-87ea-8000-000000000074",
+    "00000000-0000-87ea-8000-000000000075"
   ],
-  "doc_id": "00000000-0000-87ea-8000-00000000005f",
+  "doc_id": "00000000-0000-87ea-8000-000000000073",
   "frame_ids": [
-    "00000000-0000-87ea-8000-000000000060"
+    "00000000-0000-87ea-8000-000000000074"
   ],
   "revision": 2
 }
@@ -3429,11 +3431,11 @@ Result:
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000054"
+      "00000000-0000-87ea-8000-000000000068"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000053",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000067",
     "page_index": 3,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005f"
+    "to_doc_id": "00000000-0000-87ea-8000-000000000073"
   },
   "name": "frame_copy_to_doc"
 }
@@ -4485,7 +4487,7 @@ _read-only_
 ```json
 {
   "arguments": {
-    "frame_id": "00000000-0000-87ea-8000-000000000054"
+    "frame_id": "00000000-0000-87ea-8000-000000000068"
   },
   "name": "spell_check"
 }
@@ -4502,21 +4504,21 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000054",
+      "frame_id": "00000000-0000-87ea-8000-000000000068",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000054",
+      "frame_id": "00000000-0000-87ea-8000-000000000068",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
     },
     {
       "end": 57,
-      "frame_id": "00000000-0000-87ea-8000-000000000054",
+      "frame_id": "00000000-0000-87ea-8000-000000000068",
       "language": "en-US",
       "start": 52,
       "…": "2 more keys"
@@ -4548,14 +4550,14 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000054",
+      "frame_id": "00000000-0000-87ea-8000-000000000068",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000054",
+      "frame_id": "00000000-0000-87ea-8000-000000000068",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
@@ -5484,7 +5486,7 @@ Result:
 
 ### `template_list`
 
-List templates (built-in: flyer, trifold_brochure, business_card, newsletter; plus user templates) with page size and every placeholder's name, kind, hint and size.
+List templates (built-in: flyer, trifold_brochure, business_card, newsletter, greeting_card, postcard, certificate, menu, letterhead, envelope, calendar, address_labels, business_cards; plus user templates) with page size and every placeholder's name, kind, hint and size. The calendar template takes a year option in template_apply.
 
 _read-only_
 
@@ -5533,28 +5535,31 @@ Result:
     },
     {
       "builtin": true,
-      "description": "Two-page Letter newsletter: masthead, lead story flowing through two columns onto page 2, lead photo, sidebar, second story in two columns.",
+      "description": "Four-page Letter newsletter: boxed masthead, lead story flow… (239 characters)",
       "name": "newsletter",
       "named_frames": [
         "lead_story_column_2",
-        "lead_story_page_2"
+        "lead_story_page_2",
+        "… 2 more"
       ],
       "…": "4 more keys"
-    }
+    },
+    "… 9 more"
   ]
 }
 ```
 
 ### `template_apply`
 
-Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place.
+Create a new document from a template and make it current. Returns placeholder frame ids by semantic name (e.g. headline, cover_image). Fill text placeholders with text_set (keeps the template styling) and image placeholders with image_place (then image_set_alt_text). The calendar template takes year (1600 to 9999, default 2027); year with any other template is an error.
 
 **Arguments**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | yes | Template name from template_list, e.g. "trifold_brochure", "flyer", "business_card", "newsletter". |
+| `name` | string | yes | Template name from template_list: "flyer", "trifold_brochure", "business_card", "newsletter", "greeting_card", "postcard", "certificate", "menu", "letterhead", "envelope", "calendar", "address_labels" or "business_cards" (or a saved user template). |
 | `title` | string |  | Title for the new document. |
+| `year` | integer |  | Calendar year, 1600 to 9999 (calendar template only; default 2027). |
 
 **Result fields:** `doc_id`, `named_frames`, `page_ids`, `placeholders`, `revision`
 
@@ -5609,6 +5614,70 @@ Result:
       "…": "4 more keys"
     },
     "… 2 more"
+  ],
+  "revision": 0
+}
+```
+
+**Example** — Four pages: masthead, lead story that flows onto page 2, an events table, bulleted and numbered lists, an opening-hours table and a mailing panel. The tables come back in named_frames as events_table and hours_table.
+
+```json
+{
+  "arguments": {
+    "name": "newsletter",
+    "title": "Spring Newsletter"
+  },
+  "name": "template_apply"
+}
+```
+
+Result:
+
+```json
+{
+  "doc_id": "00000000-0000-87ea-8000-00000000003f",
+  "named_frames": {
+    "events_table": "00000000-0000-8068-8000-00000000002a",
+    "hours_table": "00000000-0000-8068-8000-000000000049",
+    "lead_story_column_2": "00000000-0000-8068-8000-000000000020",
+    "lead_story_page_2": "00000000-0000-8068-8000-000000000022"
+  },
+  "page_ids": [
+    "00000000-0000-8068-8000-000000000002",
+    "00000000-0000-8068-8000-00000000000a",
+    "00000000-0000-8068-8000-00000000000b",
+    "00000000-0000-8068-8000-00000000000c"
+  ],
+  "placeholders": [
+    {
+      "frame_id": "00000000-0000-8068-8000-000000000010",
+      "height": 72.0,
+      "hint": "Newsletter Name",
+      "kind": "text",
+      "…": "4 more keys"
+    },
+    {
+      "frame_id": "00000000-0000-8068-8000-000000000012",
+      "height": 72.0,
+      "hint": "Issue 1 · Month Year",
+      "kind": "text",
+      "…": "4 more keys"
+    },
+    {
+      "frame_id": "00000000-0000-8068-8000-000000000014",
+      "height": 40.0,
+      "hint": "Lead Story Headline",
+      "kind": "text",
+      "…": "4 more keys"
+    },
+    {
+      "frame_id": "00000000-0000-8068-8000-000000000016",
+      "height": 200.0,
+      "hint": "Lead photo, landscape (about 17:10)",
+      "kind": "image",
+      "…": "3 more keys"
+    },
+    "… 17 more"
   ],
   "revision": 0
 }
@@ -5748,7 +5817,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-000000000048",
+  "doc_id": "00000000-0000-87ea-8000-00000000005c",
   "revision": 2
 }
 ```
@@ -5803,7 +5872,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-000000000048",
+  "doc_id": "00000000-0000-87ea-8000-00000000005c",
   "revision": 5
 }
 ```

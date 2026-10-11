@@ -103,6 +103,8 @@ the MCP boundary.
 | `make_flyer` | `subject`, `details`, `images` | Flyer from the `flyer` template, step by step. |
 | `make_trifold` | `business`, `details`, `images` | Trifold brochure from `trifold_brochure`, including linking the story frames. |
 | `make_business_card` | `name`, `job_title`, `company`, `contact`, `logo` | Business card from `business_card`. |
+| `make_newsletter` | `topic`, `audience`, `details`, `images` | Four-page newsletter from `newsletter`: placeholders, the two tables (`table_set_cell_text`), the bulleted and numbered lists, images with alt text. |
+| `make_greeting_card` | `occasion`, `recipient`, `message`, `images` | Quarter-fold card from `greeting_card`, including its rotated inside spread. |
 
 Each prompt ends with the same checks: `text_overflow_status` clean,
 `validate` ok, `render_preview` of every page, then `doc_save_as` and

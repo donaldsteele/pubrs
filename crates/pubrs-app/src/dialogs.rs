@@ -171,6 +171,9 @@ pub fn show(app: &mut PubrsApp, ctx: &egui::Context) {
     if matches!(outcome, Outcome::Keep) && app.dialog.is_none() {
         app.dialog = Some(dialog);
     }
+    if !matches!(app.dialog, Some(Dialog::TemplatePicker)) {
+        app.template_list = None;
+    }
 }
 
 fn template_thumb(
@@ -190,7 +193,7 @@ fn template_thumb(
     let out = s
         .template_apply(pubrs_api::tools::templates::TemplateApply {
             name: name.into(),
-            title: None,
+            ..Default::default()
         })
         .ok()?;
     let size = s.get(Some(out.doc_id)).ok()?.doc().setup.size;
@@ -218,11 +221,17 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             ui.heading("New publication");
             ui.label("Choose a template. Every part of it can be changed afterwards.");
             ui.add_space(8.0);
-            let templates = app
-                .session
-                .template_list(Default::default())
-                .map(|t| t.templates)
-                .unwrap_or_default();
+            // Building every template (the calendar has twelve pages) is not
+            // free: list them once per time the picker is open.
+            if app.template_list.is_none() {
+                app.template_list = Some(
+                    app.session
+                        .template_list(Default::default())
+                        .map(|t| t.templates)
+                        .unwrap_or_default(),
+                );
+            }
+            let templates = app.template_list.clone().unwrap_or_default();
             let mut chosen = None;
             egui::ScrollArea::vertical()
                 .max_height(520.0)

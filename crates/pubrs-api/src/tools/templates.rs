@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use pubrs_core::{DocumentId, FrameId, Owner, PageId, PlaceholderKind, StoryId};
-use pubrs_io::templates::{PlaceholderInfo, TemplateInfo, info, instantiate};
+use pubrs_io::templates::{PlaceholderInfo, TemplateInfo, TemplateOptions, info, instantiate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -19,15 +19,20 @@ pub struct TemplateListOut {
     pub templates: Vec<TemplateInfo>,
 }
 
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TemplateApply {
-    /// Template name from template_list, e.g. "trifold_brochure", "flyer",
-    /// "business_card", "newsletter".
+    /// Template name from template_list: "flyer", "trifold_brochure",
+    /// "business_card", "newsletter", "greeting_card", "postcard",
+    /// "certificate", "menu", "letterhead", "envelope", "calendar",
+    /// "address_labels" or "business_cards" (or a saved user template).
     pub name: String,
     /// Title for the new document.
     #[serde(default)]
     pub title: Option<String>,
+    /// Calendar year, 1600 to 9999 (calendar template only; default 2027).
+    #[serde(default)]
+    pub year: Option<i32>,
 }
 
 /// A placeholder in the new document.
@@ -85,7 +90,22 @@ impl Session {
     }
 
     pub fn template_apply(&mut self, req: TemplateApply) -> ApiResult<TemplateApplyOut> {
-        let template = self.templates.load(&req.name).map_err(|e| {
+        if let Some(y) = req.year {
+            if req.name != "calendar" {
+                return Err(ApiError::invalid(
+                    "year applies to the calendar template only",
+                    "omit year, or apply the calendar template",
+                ));
+            }
+            if !pubrs_io::templates::CALENDAR_YEARS.contains(&y) {
+                return Err(ApiError::invalid(
+                    format!("year {y} is outside 1600..=9999"),
+                    "use a year from 1600 to 9999",
+                ));
+            }
+        }
+        let opts = TemplateOptions { year: req.year };
+        let template = self.templates.load_with(&req.name, &opts).map_err(|e| {
             ApiError::not_found(
                 "template",
                 &req.name,
