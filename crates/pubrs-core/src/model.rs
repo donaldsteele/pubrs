@@ -34,16 +34,16 @@ pub struct Document {
     pub setup: PageSetup,
     pub grid: GridSettings,
     /// Pages in reading order.
-    pub pages: Vec<Page>,
+    pub pages: Arc<Vec<Page>>,
     #[serde(default)]
-    pub masters: Vec<MasterPage>,
+    pub masters: Arc<Vec<MasterPage>>,
     /// Every frame in the document, keyed by id. Pages, masters and groups
     /// reference frames by id.
     #[serde(default)]
-    pub frames: BTreeMap<FrameId, Frame>,
+    pub frames: BTreeMap<FrameId, Arc<Frame>>,
     /// Text content. Each text frame points at a story; linked frames share one.
     #[serde(default)]
-    pub stories: BTreeMap<StoryId, Story>,
+    pub stories: BTreeMap<StoryId, Arc<Story>>,
     pub styles: StyleSheet,
     /// Metadata for embedded images. The bytes live in `blobs` (in memory) or
     /// `assets/` (in the file).
@@ -784,8 +784,8 @@ impl Document {
             meta: DocMeta::default(),
             setup,
             grid: GridSettings::default(),
-            pages: vec![Page::new(PageId::new(ids))],
-            masters: Vec::new(),
+            pages: Arc::new(vec![Page::new(PageId::new(ids))]),
+            masters: Arc::default(),
             frames: BTreeMap::new(),
             stories: BTreeMap::new(),
             styles: StyleSheet::with_defaults(ids),
@@ -799,7 +799,18 @@ impl Document {
     }
 
     pub fn page_mut(&mut self, id: PageId) -> Option<&mut Page> {
-        self.pages.iter_mut().find(|p| p.id == id)
+        let i = self.page_index(id)?;
+        Arc::make_mut(&mut self.pages).get_mut(i)
+    }
+
+    /// Mutable access to the page list (copies it first if it is shared).
+    pub fn pages_mut(&mut self) -> &mut Vec<Page> {
+        Arc::make_mut(&mut self.pages)
+    }
+
+    /// Mutable access to the master list (copies it first if it is shared).
+    pub fn masters_mut(&mut self) -> &mut Vec<MasterPage> {
+        Arc::make_mut(&mut self.masters)
     }
 
     pub fn page_index(&self, id: PageId) -> Option<usize> {
@@ -811,23 +822,24 @@ impl Document {
     }
 
     pub fn master_mut(&mut self, id: MasterId) -> Option<&mut MasterPage> {
-        self.masters.iter_mut().find(|m| m.id == id)
+        let i = self.masters.iter().position(|m| m.id == id)?;
+        Arc::make_mut(&mut self.masters).get_mut(i)
     }
 
     pub fn frame(&self, id: FrameId) -> Option<&Frame> {
-        self.frames.get(&id)
+        self.frames.get(&id).map(|f| &**f)
     }
 
     pub fn frame_mut(&mut self, id: FrameId) -> Option<&mut Frame> {
-        self.frames.get_mut(&id)
+        self.frames.get_mut(&id).map(Arc::make_mut)
     }
 
     pub fn story(&self, id: StoryId) -> Option<&Story> {
-        self.stories.get(&id)
+        self.stories.get(&id).map(|s| &**s)
     }
 
     pub fn story_mut(&mut self, id: StoryId) -> Option<&mut Story> {
-        self.stories.get_mut(&id)
+        self.stories.get_mut(&id).map(Arc::make_mut)
     }
 
     /// Guides of a page or master.
@@ -870,12 +882,12 @@ impl Document {
 
     /// The container that lists `frame` as a child.
     pub fn parent_of(&self, frame: FrameId) -> Option<Parent> {
-        for p in &self.pages {
+        for p in self.pages.iter() {
             if p.frames.contains(&frame) {
                 return Some(Parent::Page(p.id));
             }
         }
-        for m in &self.masters {
+        for m in self.masters.iter() {
             if m.frames.contains(&frame) {
                 return Some(Parent::Master(m.id));
             }

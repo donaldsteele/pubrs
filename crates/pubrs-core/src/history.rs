@@ -1,9 +1,13 @@
 //! The editor: a document plus its undo/redo history and revision counter.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::command::{CmdResult, Command, CommandError};
-use crate::model::Document;
+use crate::id::PageId;
+use crate::model::{Document, Page};
 use crate::patch::{Patch, Touched};
 
 /// Default maximum number of undo steps kept.
@@ -55,18 +59,21 @@ pub struct Editor {
 }
 
 /// Ids of pages that were added, removed or changed between two page lists.
-fn changed_pages(
-    before: &[crate::model::Page],
-    after: &[crate::model::Page],
-) -> Vec<crate::id::PageId> {
+/// An unchanged list (same `Arc`) answers without comparing a page.
+fn changed_pages(before: &Arc<Vec<Page>>, after: &Arc<Vec<Page>>) -> Vec<PageId> {
+    if Arc::ptr_eq(before, after) {
+        return Vec::new();
+    }
+    let old: BTreeMap<PageId, &Page> = before.iter().map(|p| (p.id, p)).collect();
+    let new: BTreeSet<PageId> = after.iter().map(|p| p.id).collect();
     let mut out = Vec::new();
-    for p in after {
-        if before.iter().find(|b| b.id == p.id) != Some(p) {
+    for p in after.iter() {
+        if old.get(&p.id) != Some(&p) {
             out.push(p.id);
         }
     }
-    for b in before {
-        if !after.iter().any(|p| p.id == b.id) {
+    for b in before.iter() {
+        if !new.contains(&b.id) {
             out.push(b.id);
         }
     }
@@ -144,6 +151,7 @@ impl Editor {
         key: Option<String>,
         apply: impl FnOnce(&Command, &mut Document) -> CmdResult,
     ) -> CmdResult<Change> {
+        // Cheap: frames, stories and pages are shared by `Arc`, not copied.
         let before = self.doc.clone();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             apply(&command, &mut self.doc)
@@ -160,7 +168,7 @@ impl Editor {
             self.doc = before;
             return Err(e);
         }
-        let forward = Patch::diff(&before, &self.doc);
+        let (forward, backward) = Patch::diff_pair(&before, &self.doc);
         if forward.is_empty() {
             return Ok(Change {
                 revision: self.revision,
@@ -174,10 +182,8 @@ impl Editor {
             && self.undo.last().is_some_and(|e| e.coalesce == key);
         if mergeable {
             let last = self.undo.last_mut().expect("checked");
-            let mut start = before.clone();
-            last.backward.apply(&mut start);
-            last.forward = Patch::diff(&start, &self.doc);
-            last.backward = Patch::diff(&self.doc, &start);
+            // One diff per command: fold this step into the entry's patches.
+            Patch::compose_pair((&mut last.forward, &mut last.backward), (forward, backward));
             last.command = Command::Batch {
                 label: last.command.label(),
                 commands: match std::mem::replace(
@@ -193,7 +199,6 @@ impl Editor {
                 },
             };
         } else {
-            let backward = Patch::diff(&self.doc, &before);
             self.undo.push(HistoryEntry {
                 command,
                 forward,
@@ -215,7 +220,7 @@ impl Editor {
     /// Undo the last step. Returns `None` if there is nothing to undo.
     pub fn undo(&mut self) -> Option<Change> {
         let entry = self.undo.pop()?;
-        let pages = self.doc.pages.clone();
+        let pages = Arc::clone(&self.doc.pages);
         entry.backward.apply(&mut self.doc);
         let mut touched = entry.backward.touched();
         touched.pages = changed_pages(&pages, &self.doc.pages);
@@ -230,7 +235,7 @@ impl Editor {
     /// Redo the last undone step. Returns `None` if there is nothing to redo.
     pub fn redo(&mut self) -> Option<Change> {
         let entry = self.redo.pop()?;
-        let pages = self.doc.pages.clone();
+        let pages = Arc::clone(&self.doc.pages);
         entry.forward.apply(&mut self.doc);
         let mut touched = entry.forward.touched();
         touched.pages = changed_pages(&pages, &self.doc.pages);
@@ -272,6 +277,7 @@ impl Editor {
 
     /// Validate a command against the current document without applying it.
     pub fn check(&self, command: &Command) -> Result<(), CommandError> {
+        // A shallow clone: only what the command touches is copied (copy on write).
         let mut scratch = self.doc.clone();
         command.apply(&mut scratch)
     }
@@ -291,7 +297,7 @@ mod tests {
         let start = ed.doc().clone();
         let rev = ed.revision();
         let r = ed.execute_with(Command::Patch(Patch::default()), None, |_, d| {
-            d.pages.clear();
+            d.pages_mut().clear();
             panic!("boom {}", 7);
         });
         match r {

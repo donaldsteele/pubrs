@@ -113,7 +113,7 @@ mod tests {
         let mut ids = SeqIds::new(1);
         let mut doc = Document::new(&mut ids, PageSetup::default());
         let page = doc.pages[0].id;
-        doc.pages[0].guides.push(Guide {
+        doc.pages_mut()[0].guides.push(Guide {
             id: GuideId::new(&mut ids),
             axis: Axis::Horizontal,
             position: 200.0,

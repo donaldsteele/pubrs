@@ -63,10 +63,10 @@ pub fn check_integrity(doc: &Document) -> Vec<String> {
     // Every frame is listed exactly once by exactly one container.
     let mut listed: BTreeMap<FrameId, usize> = BTreeMap::new();
     let mut lists: Vec<(&str, &Vec<FrameId>)> = Vec::new();
-    for p in &doc.pages {
+    for p in doc.pages.iter() {
         lists.push(("page", &p.frames));
     }
-    for m in &doc.masters {
+    for m in doc.masters.iter() {
         lists.push(("master", &m.frames));
         if let Some(_dup) = doc.masters.iter().filter(|o| o.id == m.id).nth(1) {
             errs.push(format!("duplicate master id {}", m.id));
@@ -96,7 +96,7 @@ pub fn check_integrity(doc: &Document) -> Vec<String> {
     if page_ids.len() != doc.pages.len() {
         errs.push("duplicate page ids".into());
     }
-    for p in &doc.pages {
+    for p in doc.pages.iter() {
         if let Some(m) = p.master
             && doc.master(m).is_none()
         {
@@ -203,7 +203,7 @@ pub fn validate(doc: &Document) -> Vec<Warning> {
     let mut out = Vec::new();
     let page_box = Rect::new(0.0, 0.0, doc.setup.size.width, doc.setup.size.height);
     let bleed_box = page_box.outset(doc.setup.bleed);
-    for page in &doc.pages {
+    for page in doc.pages.iter() {
         for id in doc.all_frames_of(Owner::Page(page.id)) {
             let Some(f) = doc.frame(id) else { continue };
             let warn = |code, message: String, hint: &str| Warning {
@@ -358,7 +358,7 @@ mod tests {
     fn integrity_catches_dangling_references() {
         let (mut ids, mut ed) = editor();
         let mut doc = ed.doc().clone();
-        doc.pages[0].frames.push(FrameId::new(&mut ids));
+        doc.pages_mut()[0].frames.push(FrameId::new(&mut ids));
         assert_eq!(check_integrity(&doc).len(), 1);
         ed.reset(doc);
     }

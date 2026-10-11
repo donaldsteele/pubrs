@@ -307,7 +307,7 @@ fn rejects_corrupt_and_inconsistent_files() {
     let doc = rich_document();
     // Break integrity: reference a missing frame.
     let mut broken = doc.clone();
-    broken.pages[0]
+    broken.pages_mut()[0]
         .frames
         .push(FrameId::new(&mut SeqIds::new(99)));
     let bytes = write_bytes(&broken, None).unwrap();

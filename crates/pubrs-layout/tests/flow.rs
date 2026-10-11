@@ -435,7 +435,7 @@ fn rotated_wrap_doc(obstacle: Rect) -> (Document, FrameId) {
     )
     .unwrap();
     let mut doc = b.finish();
-    doc.frames.get_mut(&f).unwrap().rotation = 90.0;
+    doc.frame_mut(f).unwrap().rotation = 90.0;
     (doc, f)
 }
 
@@ -461,7 +461,7 @@ fn wrap_does_not_cut_rotated_text_frame_where_it_does_not_overlap() {
     let ft = lay.frame(f).unwrap();
     let mut clear = doc.clone();
     for fr in clear.frames.values_mut() {
-        fr.wrap.mode = WrapMode::None;
+        std::sync::Arc::make_mut(fr).wrap.mode = WrapMode::None;
     }
     let base = layout(&clear);
     let base_ft = base.frame(f).unwrap();

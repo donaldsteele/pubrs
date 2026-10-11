@@ -182,12 +182,12 @@ pub(crate) struct DocIndex {
 impl DocIndex {
     pub(crate) fn new(doc: &Document) -> Self {
         let mut parent = HashMap::with_capacity(doc.frames.len());
-        for p in &doc.pages {
+        for p in doc.pages.iter() {
             for f in &p.frames {
                 parent.entry(*f).or_insert(Parent::Page(p.id));
             }
         }
-        for m in &doc.masters {
+        for m in doc.masters.iter() {
             for f in &m.frames {
                 parent.entry(*f).or_insert(Parent::Master(m.id));
             }

@@ -499,7 +499,7 @@ fn document_props(app: &mut PubrsApp, ui: &mut egui::Ui, doc: &pubrs_api::core::
                         master: None,
                     });
                 }
-                for m in &doc.masters {
+                for m in doc.masters.iter() {
                     if ui
                         .selectable_label(page.master == Some(m.id), &m.name)
                         .clicked()

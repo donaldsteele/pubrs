@@ -1,6 +1,8 @@
 //! Property tests: random command sequences (including failing ones) keep
 //! undo/redo exact.
 
+use std::sync::Arc;
+
 use proptest::prelude::*;
 use pubrs_core::*;
 
@@ -200,7 +202,27 @@ proptest! {
                 w.ed.execute(cmd)
             };
             match r {
-                Ok(_) => {}
+                Ok(change) => {
+                    // Sharing: whatever the change did not touch is the very
+                    // same allocation as before (no copy, no churn).
+                    let after = w.ed.doc();
+                    if change.touched != Touched::default() {
+                        for (id, f) in &before.frames {
+                            if let Some(g) = after.frames.get(id)
+                                && !change.touched.frames.contains(id)
+                            {
+                                prop_assert!(Arc::ptr_eq(f, g), "frame {id:?} copied but untouched");
+                            }
+                        }
+                        for (id, s) in &before.stories {
+                            if let Some(t) = after.stories.get(id)
+                                && !change.touched.stories.contains(id)
+                            {
+                                prop_assert!(Arc::ptr_eq(s, t), "story {id:?} copied but untouched");
+                            }
+                        }
+                    }
+                }
                 Err(_) => {
                     prop_assert_eq!(w.ed.doc(), &before, "failed command left doc changed");
                 }

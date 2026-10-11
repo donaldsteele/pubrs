@@ -463,3 +463,454 @@ fn delete_page_removes_its_frames_and_last_page_is_protected() {
     assert!(fx.ed.doc().story(s).is_none());
     assert!(fx.ed.execute(Command::DeletePage { page: p2 }).is_err());
 }
+
+// ---- golden patch JSON (Risk 3: the Arc refactor must not change patches) ----
+
+struct Recorder {
+    fx: Fixture,
+    out: Vec<serde_json::Value>,
+}
+
+impl Recorder {
+    fn record(&mut self, name: &str, f: impl FnOnce(&mut Editor)) {
+        let before = self.fx.ed.doc().clone();
+        f(&mut self.fx.ed);
+        let after = self.fx.ed.doc();
+        let fwd = Patch::diff(&before, after);
+        let bwd = Patch::diff(after, &before);
+        self.out.push(serde_json::json!({
+            "step": name,
+            "forward": serde_json::to_value(&fwd).unwrap(),
+            "backward": serde_json::to_value(&bwd).unwrap(),
+        }));
+    }
+
+    fn run(&mut self, c: Command) {
+        let name = c.name().to_string();
+        self.record(&name, |ed| {
+            ed.execute(c).unwrap();
+        });
+    }
+}
+
+#[test]
+fn patch_json_matches_the_golden_corpus() {
+    let mut r = Recorder {
+        fx: Fixture::new(),
+        out: Vec::new(),
+    };
+    let ids = &mut r.fx.ids;
+    let page = r.fx.ed.doc().pages[0].id;
+    let page2 = PageId::new(ids);
+    let page3 = PageId::new(ids);
+    let master = MasterId::new(ids);
+    let g1 = GuideId::new(ids);
+    let g2 = GuideId::new(ids);
+    let mg = GuideId::new(ids);
+    let (f1, s1) = (FrameId::new(ids), StoryId::new(ids));
+    let (f2, s2) = (FrameId::new(ids), StoryId::new(ids));
+    let (f3, s3) = (FrameId::new(ids), StoryId::new(ids));
+    let shape = FrameId::new(ids);
+    let img = FrameId::new(ids);
+    let group = FrameId::new(ids);
+    let mframe = FrameId::new(ids);
+    let new_story = StoryId::new(ids);
+    let asset = AssetId::new(ids);
+    let asset2 = AssetId::new(ids);
+    let cstyle = StyleId::new(ids);
+    let pstyle = StyleId::new(ids);
+    let text_frame = |fid, sid, rect| {
+        (
+            Frame::new(fid, rect, FrameContent::Text(TextFrame::new(sid))),
+            Story::new(sid, fid),
+        )
+    };
+
+    r.run(Command::SetMeta {
+        title: Some("Golden".into()),
+        author: Some("Ann".into()),
+    });
+    r.run(Command::SetPageSize {
+        size: PageSizePreset::A4.size(),
+    });
+    r.run(Command::SetMargins {
+        margins: Margins::uniform(30.0),
+    });
+    r.run(Command::SetBleed { bleed: 9.0 });
+    r.run(Command::SetGrid {
+        grid: GridSettings {
+            show_grid: true,
+            ..Default::default()
+        },
+    });
+    r.run(Command::AddPage {
+        page: Page::new(page2),
+        index: None,
+    });
+    r.run(Command::AddPage {
+        page: Page::new(page3),
+        index: Some(0),
+    });
+    r.run(Command::MovePage {
+        page: page3,
+        index: 2,
+    });
+    r.run(Command::AddMaster {
+        master: MasterPage {
+            id: master,
+            name: "M".into(),
+            frames: vec![],
+            guides: vec![],
+        },
+    });
+    r.run(Command::RenameMaster {
+        master,
+        name: "Master A".into(),
+    });
+    r.run(Command::SetPageMaster {
+        page,
+        master: Some(master),
+    });
+    r.run(Command::AddGuide {
+        owner: Owner::Page(page),
+        guide: Guide {
+            id: g1,
+            axis: Axis::Vertical,
+            position: 100.0,
+        },
+    });
+    r.run(Command::AddGuide {
+        owner: Owner::Page(page),
+        guide: Guide {
+            id: g2,
+            axis: Axis::Horizontal,
+            position: 50.0,
+        },
+    });
+    r.run(Command::MoveGuide {
+        owner: Owner::Page(page),
+        guide: g1,
+        position: 120.0,
+    });
+    r.run(Command::RemoveGuide {
+        owner: Owner::Page(page),
+        guide: g2,
+    });
+    r.run(Command::AddGuide {
+        owner: Owner::Master(master),
+        guide: Guide {
+            id: mg,
+            axis: Axis::Vertical,
+            position: 10.0,
+        },
+    });
+    let (fr, st) = text_frame(f1, s1, Rect::new(36.0, 36.0, 200.0, 100.0));
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame: fr,
+        story: Some(st),
+    });
+    let (fr, st) = text_frame(f2, s2, Rect::new(36.0, 200.0, 200.0, 100.0));
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: Some(0),
+        frame: fr,
+        story: Some(st),
+    });
+    let (fr, st) = text_frame(f3, s3, Rect::new(36.0, 400.0, 200.0, 100.0));
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page2),
+        index: None,
+        frame: fr,
+        story: Some(st),
+    });
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame: Frame::new(
+            shape,
+            Rect::new(300.0, 300.0, 50.0, 50.0),
+            FrameContent::Shape(ShapeFrame {
+                shape: Shape::Ellipse,
+            }),
+        ),
+        story: None,
+    });
+    r.run(Command::AddFrame {
+        parent: Parent::Master(master),
+        index: None,
+        frame: Frame::new(
+            mframe,
+            Rect::new(0.0, 0.0, 20.0, 20.0),
+            FrameContent::Shape(ShapeFrame {
+                shape: Shape::Rectangle { corner_radius: 2.0 },
+            }),
+        ),
+        story: None,
+    });
+    r.run(Command::AddAsset {
+        asset: Asset {
+            id: asset,
+            name: "a.png".into(),
+            format: ImageFormat::Png,
+            pixel_width: 2,
+            pixel_height: 2,
+        },
+        data: Bytes::new(vec![1, 2, 3, 4]),
+    });
+    r.run(Command::AddAsset {
+        asset: Asset {
+            id: asset2,
+            name: "b.png".into(),
+            format: ImageFormat::Png,
+            pixel_width: 1,
+            pixel_height: 1,
+        },
+        data: Bytes::new(vec![9]),
+    });
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page2),
+        index: None,
+        frame: Frame::new(
+            img,
+            Rect::new(10.0, 10.0, 80.0, 60.0),
+            FrameContent::Image(ImageFrame::new(None)),
+        ),
+        story: None,
+    });
+    r.run(Command::SetImage {
+        frame: img,
+        asset: Some(asset),
+    });
+    r.run(Command::SetImageCrop {
+        frame: img,
+        crop: Crop {
+            left: 0.1,
+            ..Default::default()
+        },
+    });
+    r.run(Command::SetImageFit {
+        frame: img,
+        fit: ImageFit::Fit,
+    });
+    r.run(Command::SetLockAspect {
+        frame: img,
+        lock: false,
+    });
+    r.run(Command::RemoveAsset { asset: asset2 });
+    r.run(Command::SetFrameRect {
+        frame: f1,
+        rect: Rect::new(40.0, 40.0, 220.0, 120.0),
+    });
+    r.run(Command::SetRotation {
+        frame: shape,
+        degrees: 30.0,
+    });
+    r.run(Command::SetZIndex {
+        frame: f1,
+        index: 0,
+    });
+    r.run(Command::SetLocked {
+        frame: shape,
+        locked: true,
+    });
+    r.run(Command::SetLocked {
+        frame: shape,
+        locked: false,
+    });
+    r.run(Command::SetFrameStyle {
+        frame: shape,
+        style: FrameStyle {
+            fill: Some(Color::rgb(10, 20, 30)),
+            stroke: None,
+            opacity: 0.5,
+        },
+    });
+    r.run(Command::SetWrap {
+        frame: shape,
+        wrap: TextWrap {
+            mode: WrapMode::Square,
+            margin: 4.0,
+        },
+    });
+    r.run(Command::SetFrameName {
+        frame: shape,
+        name: Some("Blob".into()),
+    });
+    r.run(Command::SetPlaceholder {
+        frame: f2,
+        placeholder: Some(Placeholder {
+            name: "headline".into(),
+            kind: PlaceholderKind::Text,
+            hint: "Type".into(),
+        }),
+    });
+    r.run(Command::SetTextFrame {
+        frame: f1,
+        props: TextFrameProps {
+            columns: Some(2),
+            column_gap: Some(10.0),
+            ..Default::default()
+        },
+    });
+    r.run(Command::SetShape {
+        frame: shape,
+        shape: Shape::Rectangle { corner_radius: 5.0 },
+    });
+    r.run(Command::SetStory {
+        story: s1,
+        paragraphs: vec![Paragraph::default()],
+    });
+    r.run(Command::InsertText {
+        story: s1,
+        at: 0,
+        text: "Hello world\nSecond paragraph".into(),
+        format: None,
+    });
+    r.run(Command::ReplaceText {
+        story: s1,
+        start: 0,
+        end: 5,
+        text: "Howdy".into(),
+    });
+    r.run(Command::DeleteText {
+        story: s1,
+        start: 5,
+        end: 6,
+    });
+    r.run(Command::ApplyCharProps {
+        story: s1,
+        start: 0,
+        end: 5,
+        props: CharProps {
+            bold: Some(true),
+            ..Default::default()
+        },
+    });
+    r.run(Command::AddStyle {
+        style: Style {
+            id: cstyle,
+            name: "Loud".into(),
+            kind: StyleKind::Character,
+            based_on: None,
+            paragraph: ParaProps::default(),
+            character: CharProps {
+                italic: Some(true),
+                ..Default::default()
+            },
+        },
+    });
+    r.run(Command::AddStyle {
+        style: Style {
+            id: pstyle,
+            name: "Pull".into(),
+            kind: StyleKind::Paragraph,
+            based_on: None,
+            paragraph: ParaProps::default(),
+            character: CharProps::default(),
+        },
+    });
+    r.run(Command::SetCharStyle {
+        story: s1,
+        start: 1,
+        end: 3,
+        style: Some(cstyle),
+    });
+    r.run(Command::ClearCharFormat {
+        story: s1,
+        start: 0,
+        end: 2,
+    });
+    r.run(Command::ApplyParaProps {
+        story: s1,
+        start: 0,
+        end: 3,
+        props: ParaProps {
+            align: Some(Align::Center),
+            ..Default::default()
+        },
+    });
+    r.run(Command::SetParaStyle {
+        story: s1,
+        start: 0,
+        end: 3,
+        style: Some(pstyle),
+    });
+    let mut updated = r.fx.ed.doc().styles.styles.last().unwrap().clone();
+    updated.name = "Pull Quote".into();
+    r.run(Command::UpdateStyle { style: updated });
+    r.run(Command::DeleteStyle { style: cstyle });
+    r.run(Command::LinkFrames { from: f1, to: f2 });
+    r.run(Command::UnlinkFrame {
+        frame: f1,
+        new_story,
+    });
+    r.run(Command::Group {
+        group,
+        frames: vec![f1, shape],
+    });
+    r.run(Command::Ungroup { group });
+    r.run(Command::SetPageMaster { page, master: None });
+    r.run(Command::DeleteMaster { master });
+    r.run(Command::Batch {
+        label: "batch".into(),
+        commands: vec![
+            Command::SetBleed { bleed: 3.0 },
+            Command::InsertText {
+                story: s3,
+                at: 0,
+                text: "in batch".into(),
+                format: None,
+            },
+        ],
+    });
+    r.run(Command::DeleteFrame { frame: shape });
+    r.run(Command::DeletePage { page: page3 });
+    let raw = Patch {
+        setup: Some(PageSetup::default()),
+        ..Default::default()
+    };
+    r.run(Command::Patch(raw));
+
+    // Coalesced typing is one history entry; the patch spans all keystrokes.
+    r.record("coalesced typing", |ed| {
+        for (i, ch) in ["a", "b", "c"].into_iter().enumerate() {
+            ed.execute_coalesced(
+                Command::InsertText {
+                    story: s3,
+                    at: i,
+                    text: ch.into(),
+                    format: None,
+                },
+                "typing",
+            )
+            .unwrap();
+        }
+    });
+    r.record("undo", |ed| {
+        ed.undo().unwrap();
+    });
+    r.record("redo", |ed| {
+        ed.redo().unwrap();
+    });
+    r.record("undo twice", |ed| {
+        ed.undo().unwrap();
+        ed.undo().unwrap();
+    });
+
+    let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/patch_corpus.json");
+    if std::env::var_os("PUBRS_BLESS").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &actual).unwrap();
+    }
+    let expected = std::fs::read_to_string(&path)
+        .expect("fixture missing; run with PUBRS_BLESS=1 on known-good code");
+    assert!(
+        expected == actual,
+        "patch JSON drifted from {}; if intended, re-run with PUBRS_BLESS=1",
+        path.display()
+    );
+}

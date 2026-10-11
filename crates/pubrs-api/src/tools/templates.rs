@@ -101,7 +101,7 @@ impl Session {
         let doc = open.doc();
         let mut placeholders = Vec::new();
         let mut named_frames = BTreeMap::new();
-        for page in &doc.pages {
+        for page in doc.pages.iter() {
             for id in doc.all_frames_of(Owner::Page(page.id)) {
                 let Some(f) = doc.frame(id) else { continue };
                 match &f.placeholder {

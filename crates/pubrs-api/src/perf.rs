@@ -87,6 +87,13 @@ pub const BUDGETS: &[(usize, &str, Budget)] = &[
     // Layout per keystroke stays near the cost of one story however long the
     // publication is: measured 8.5 ms, of which 1.4 ms builds the cache keys.
     (200, "keystroke.layout", enforced(20.0)),
+    // M12: commands cost what they change. Frames, stories and pages are
+    // shared by `Arc`, one diff per command. Measured on the development
+    // machine: 0.12 ms at 50 pages (was 0.54) and 0.25 ms at 200 pages (was
+    // 2.13). The CI bound keeps the plan's 2 ms; 0.5 ms is the dev-machine
+    // bound at 200 pages (ADR 0001 addendum).
+    (50, "keystroke.command", enforced(2.0)),
+    (200, "keystroke.command", enforced(0.5)),
 ];
 
 fn budget_for(key: &str, pages: usize) -> Option<Budget> {
@@ -195,7 +202,11 @@ impl fmt::Display for PerfReport {
         for r in &self.rows {
             let (budget, verdict) = match (r.budget, r.exceeded()) {
                 (Some(b), Some(over)) => (
-                    format!("{:.0}", b.max_ms),
+                    if b.max_ms < 10.0 {
+                        format!("{:.1}", b.max_ms)
+                    } else {
+                        format!("{:.0}", b.max_ms)
+                    },
                     match (over, b.enforced) {
                         (false, _) => "ok",
                         (true, true) => "FAIL",

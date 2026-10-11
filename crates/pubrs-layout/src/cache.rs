@@ -12,7 +12,6 @@
 //! every pass is followed by a layout from scratch, and a story that differs
 //! panics with its id. Tests run with it to prove the key is complete.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -26,7 +25,7 @@ use crate::types::{DocumentLayout, StoryLayout};
 /// [`StoryLayout`]s; the key is a snapshot compared by equality (no hash,
 /// so no collisions). Built by [`story_key`] only.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct StoryKey<'a> {
+pub(crate) struct StoryKey {
     /// Stylesheet generation: bumped whenever the document's stylesheet
     /// differs from the one the cache saw last.
     styles: u64,
@@ -40,18 +39,19 @@ pub(crate) struct StoryKey<'a> {
     /// The story: chain (frame ids in order), paragraphs, runs, text,
     /// style references and local overrides. Compared last: it is the
     /// largest field.
-    story: Cow<'a, Story>,
+    story: SharedStory,
 }
 
-impl StoryKey<'_> {
-    fn into_owned(self) -> StoryKey<'static> {
-        StoryKey {
-            styles: self.styles,
-            fonts: self.fonts,
-            text_frames: self.text_frames,
-            regions: self.regions,
-            story: Cow::Owned(self.story.into_owned()),
-        }
+/// A story snapshot compared by pointer first: an unchanged story keeps its
+/// `Arc` across commands, so the common case costs no text comparison.
+/// Different pointers fall back to full equality (undo/redo or an equal
+/// rewrite still hit).
+#[derive(Debug, Clone)]
+struct SharedStory(Arc<Story>);
+
+impl PartialEq for SharedStory {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || *self.0 == *other.0
     }
 }
 
@@ -78,13 +78,13 @@ impl StoryKey<'_> {
 ///
 /// When the flow starts reading something new, add it here; the
 /// verification mode and `tests/cache.rs` fail until it is.
-pub(crate) fn story_key<'a>(
+pub(crate) fn story_key(
     doc: &Document,
     index: &mut DocIndex,
-    story: &'a Story,
+    story: &Arc<Story>,
     styles: u64,
     fonts: (usize, usize),
-) -> StoryKey<'a> {
+) -> StoryKey {
     StoryKey {
         styles,
         fonts,
@@ -94,7 +94,7 @@ pub(crate) fn story_key<'a>(
             .map(|f| doc.frame(*f).and_then(|f| f.as_text()).is_some())
             .collect(),
         regions: regions_for(doc, index, &story.frames),
-        story: Cow::Borrowed(story),
+        story: SharedStory(Arc::clone(story)),
     }
 }
 
@@ -114,7 +114,7 @@ pub struct CacheStats {
 }
 
 struct Entry {
-    key: StoryKey<'static>,
+    key: StoryKey,
     layout: Arc<StoryLayout>,
 }
 
@@ -213,7 +213,7 @@ impl StoryLayoutCache {
                     self.entries.insert(
                         *id,
                         Entry {
-                            key: key.into_owned(),
+                            key,
                             layout: l.clone(),
                         },
                     );

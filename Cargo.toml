@@ -27,7 +27,7 @@ pubrs-io = { path = "crates/pubrs-io" }
 pubrs-api = { path = "crates/pubrs-api" }
 pubrs-mcp = { path = "crates/pubrs-mcp" }
 
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 schemars = "1.2"
 uuid = { version = "1.28", default-features = false, features = ["serde"] }

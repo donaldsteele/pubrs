@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** Phase 2, M12 (T4) Commands cost what they change, per the plan on branch `plan/publisher-parity`.
+**Next step:** Phase 2, M13 (T5) Viewport rendering off the UI thread, per the plan on branch `plan/publisher-parity`.
 
 
 ## Phase 2: Publisher parity
@@ -24,8 +24,9 @@ Plan: `~/.claude/plans/pubrs-publisher-parity.md`, branch `plan/publisher-parity
 | Milestone | Status | Notes |
 |-----------|--------|-------|
 | M9 Performance harness in the tree | done; CI green (run 38110112006) | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
-| M10 Robustness and guard rails | done | panic rollback (`CommandError::Internal`), proptest suites (undo/redo, save/load, loader fuzz), wrap around rotated text frames fixed, workspace lints (`unsafe_code` deny, `unwrap_used`, `dbg_macro`, `todo`, `undocumented_unsafe_blocks`), crate layering test; +12 tests (141 tests total, was 129) |
+| M10 Robustness and guard rails | done; CI green (run 38110596754) | panic rollback (`CommandError::Internal`), proptest suites (undo/redo, save/load, loader fuzz), wrap around rotated text frames fixed, workspace lints (`unsafe_code` deny, `unwrap_used`, `dbg_macro`, `todo`, `undocumented_unsafe_blocks`), crate layering test; +12 tests (141 tests total, was 129) |
 | M11 Incremental layout | done | `StoryLayoutCache` (per-story snapshot keys compared by equality, ADR 0012), `PUBRS_LAYOUT_VERIFY=1`, carets from one cluster-offset table per paragraph (bit-identical to parley), no whole-document clones in export or the canvas, budgets keyed by page count and enforced (CI: `perf --pages 50 --check`); keystroke layout 8.54 ms at 200 pages (budget 20); +7 layout tests (148 tests total, was 141) |
+| M12 Commands cost what they change | done | frames, stories, pages and masters shared by `Arc` (serde `rc`, JSON unchanged, pinned by a golden patch corpus `crates/pubrs-core/tests/fixtures/patch_corpus.json` blessed before the refactor), `Patch::diff_pair` and `compose_pair` (one diff per command, coalesced typing included), shallow `check()`, layout keys compare stories by `Arc::ptr_eq`; keystroke command 0.12 ms at 50 pages (was 0.54) and 0.23 ms at 200 (was 2.13), enforced 2 ms at 50 and 0.5 ms at 200; +1 core test, plus a sharing property in the undo/redo proptest (149 tests total, was 148) |
 
 ### Baseline performance (M9)
 

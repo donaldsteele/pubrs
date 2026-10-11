@@ -85,15 +85,17 @@ fn page_snapshot(
     fn add_story(
         doc: &Document,
         story: StoryId,
-        frames: &mut BTreeMap<FrameId, Frame>,
-        stories: &mut BTreeMap<StoryId, Story>,
+        frames: &mut BTreeMap<FrameId, std::sync::Arc<Frame>>,
+        stories: &mut BTreeMap<StoryId, std::sync::Arc<Story>>,
     ) {
         if stories.contains_key(&story) {
             return;
         }
-        let Some(s) = doc.story(story) else { return };
+        let Some(s) = doc.stories.get(&story) else {
+            return;
+        };
         for f in &s.frames {
-            if let Some(frame) = doc.frame(*f) {
+            if let Some(frame) = doc.frames.get(f) {
                 frames.entry(*f).or_insert_with(|| frame.clone());
             }
         }
@@ -114,7 +116,9 @@ fn page_snapshot(
         .chain(masters.iter().flat_map(|m| m.frames.iter()))
         .chain(selection);
     for id in seeds.flat_map(|f| doc.descendants(*f)) {
-        let Some(f) = doc.frame(id) else { continue };
+        let Some(f) = doc.frames.get(&id) else {
+            continue;
+        };
         frames.insert(id, f.clone());
         if let Some(t) = f.as_text() {
             add_story(doc, t.story, &mut frames, &mut stories);
@@ -129,8 +133,8 @@ fn page_snapshot(
         meta: doc.meta.clone(),
         setup: doc.setup,
         grid: doc.grid,
-        pages: vec![page],
-        masters,
+        pages: std::sync::Arc::new(vec![page]),
+        masters: std::sync::Arc::new(masters),
         frames,
         stories,
         styles: doc.styles.clone(),

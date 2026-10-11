@@ -6,6 +6,8 @@
 //! document before and after and stores the result as a [`Patch`], which is
 //! itself a command (`op: "patch"`).
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::bytes::Bytes;
@@ -452,7 +454,7 @@ impl Command {
                     require_master(doc, m)?;
                 }
                 let at = index.unwrap_or(doc.pages.len()).min(doc.pages.len());
-                doc.pages.insert(at, page.clone());
+                doc.pages_mut().insert(at, page.clone());
                 Ok(())
             }
             Self::DeletePage { page } => {
@@ -464,16 +466,16 @@ impl Command {
                 }
                 let frames = doc.all_frames_of(crate::model::Owner::Page(*page));
                 remove_frames(doc, &frames);
-                doc.pages.remove(idx);
+                doc.pages_mut().remove(idx);
                 Ok(())
             }
             Self::MovePage { page, index } => {
                 let idx = doc
                     .page_index(*page)
                     .ok_or_else(|| CommandError::not_found("page", page))?;
-                let p = doc.pages.remove(idx);
+                let p = doc.pages_mut().remove(idx);
                 let at = (*index).min(doc.pages.len());
-                doc.pages.insert(at, p);
+                doc.pages_mut().insert(at, p);
                 Ok(())
             }
             Self::AddMaster { master } => {
@@ -483,15 +485,15 @@ impl Command {
                 if !master.frames.is_empty() {
                     return Err(CommandError::invalid("new masters must be empty"));
                 }
-                doc.masters.push(master.clone());
+                doc.masters_mut().push(master.clone());
                 Ok(())
             }
             Self::DeleteMaster { master } => {
                 require_master(doc, *master)?;
                 let frames = doc.all_frames_of(crate::model::Owner::Master(*master));
                 remove_frames(doc, &frames);
-                doc.masters.retain(|m| m.id != *master);
-                for p in &mut doc.pages {
+                doc.masters_mut().retain(|m| m.id != *master);
+                for p in doc.pages_mut() {
                     if p.master == Some(*master) {
                         p.master = None;
                     }
@@ -585,7 +587,7 @@ impl Command {
                 if is_group {
                     transform_group(doc, *frame, old, *rect, rotation);
                 }
-                doc.frames.get_mut(frame).expect("checked").rect = *rect;
+                doc.frame_mut(*frame).expect("checked").rect = *rect;
                 refresh_ancestors(doc, *frame);
                 Ok(())
             }
@@ -603,7 +605,7 @@ impl Command {
                 if is_group {
                     let delta = deg - old;
                     for d in doc.descendants(*frame).into_iter().skip(1) {
-                        if let Some(c) = doc.frames.get_mut(&d) {
+                        if let Some(c) = doc.frame_mut(d) {
                             let nc = c.rect.center().rotated_about(center, delta);
                             let oc = c.rect.center();
                             c.rect = c.rect.translate(nc.x - oc.x, nc.y - oc.y);
@@ -611,7 +613,7 @@ impl Command {
                         }
                     }
                 }
-                doc.frames.get_mut(frame).expect("checked").rotation = deg;
+                doc.frame_mut(*frame).expect("checked").rotation = deg;
                 refresh_ancestors(doc, *frame);
                 Ok(())
             }
@@ -1157,7 +1159,7 @@ fn add_frame(
     if let Some(p) = &frame.placeholder {
         check_placeholder(doc, frame, p)?;
     }
-    doc.frames.insert(frame.id, frame.clone());
+    doc.frames.insert(frame.id, Arc::new(frame.clone()));
     if let Some(s) = story {
         let mut s = s.clone();
         if s.paragraphs.is_empty() {
@@ -1166,7 +1168,7 @@ fn add_frame(
         for p in &mut s.paragraphs {
             normalize_paragraph(p);
         }
-        doc.stories.insert(s.id, s);
+        doc.stories.insert(s.id, Arc::new(s));
     }
     let list = doc.children_mut(parent).expect("checked");
     let at = index.unwrap_or(list.len()).min(list.len());
@@ -1187,9 +1189,9 @@ fn remove_frames(doc: &mut Document, frames: &[FrameId]) {
             list.retain(|f| f != id);
         }
         if let Some(f) = doc.frames.remove(id)
-            && let FrameContent::Text(t) = f.content
+            && let FrameContent::Text(t) = &f.content
         {
-            let empty = match doc.stories.get_mut(&t.story) {
+            let empty = match doc.story_mut(t.story) {
                 Some(s) => {
                     s.frames.retain(|f| f != id);
                     s.frames.is_empty()
@@ -1237,7 +1239,7 @@ fn refresh_group_chain(doc: &mut Document, parent: Parent) {
             .iter()
             .filter_map(|c| doc.frame(*c).map(Frame::bounds))
             .reduce(|a, b| a.union(&b));
-        if let (Some(b), Some(f)) = (bounds, doc.frames.get_mut(&g)) {
+        if let (Some(b), Some(f)) = (bounds, doc.frame_mut(g)) {
             f.rect = b;
             f.rotation = 0.0;
         }
@@ -1261,7 +1263,7 @@ fn transform_group(doc: &mut Document, group: FrameId, old: Rect, new: Rect, rot
         1.0
     };
     for d in doc.descendants(group).into_iter().skip(1) {
-        let Some(f) = doc.frames.get_mut(&d) else {
+        let Some(f) = doc.frame_mut(d) else {
             continue;
         };
         let local = f.rect.center().rotated_about(old.center(), -rotation);
@@ -1327,7 +1329,7 @@ fn group_frames(doc: &mut Document, group: FrameId, frames: &[FrameId]) -> CmdRe
     let list = doc.children_mut(parent).expect("exists");
     list.retain(|f| !members.contains(f));
     list.insert(insert_at, group);
-    doc.frames.insert(group, g);
+    doc.frames.insert(group, Arc::new(g));
     refresh_group_chain(doc, parent);
     Ok(())
 }
@@ -1374,8 +1376,7 @@ fn link_frames(doc: &mut Document, from: FrameId, to: FrameId) -> CmdResult {
         .ok_or_else(|| CommandError::invalid("source frame missing from its story chain"))?;
     src.frames.insert(pos + 1, to);
     doc.stories.remove(&to_story);
-    doc.frames
-        .get_mut(&to)
+    doc.frame_mut(to)
         .and_then(Frame::as_text_mut)
         .expect("checked")
         .story = from_story;
@@ -1413,17 +1414,17 @@ fn unlink_frame(doc: &mut Document, frame: FrameId, new_story: StoryId) -> CmdRe
     }
     normalize_paragraph(&mut para);
     for f in &rest {
-        if let Some(t) = doc.frames.get_mut(f).and_then(Frame::as_text_mut) {
+        if let Some(t) = doc.frame_mut(*f).and_then(Frame::as_text_mut) {
             t.story = new_story;
         }
     }
     doc.stories.insert(
         new_story,
-        Story {
+        Arc::new(Story {
             id: new_story,
             frames: rest,
             paragraphs: vec![para],
-        },
+        }),
     );
     Ok(())
 }
@@ -1445,8 +1446,13 @@ fn delete_style(doc: &mut Document, id: StyleId) -> CmdResult {
             s.based_on = parent;
         }
     }
-    for story in doc.stories.values_mut() {
-        for p in &mut story.paragraphs {
+    let uses = |s: &Story| {
+        s.paragraphs
+            .iter()
+            .any(|p| p.style == Some(id) || p.runs.iter().any(|r| r.style == Some(id)))
+    };
+    for story in doc.stories.values_mut().filter(|s| uses(s)) {
+        for p in &mut Arc::make_mut(story).paragraphs {
             if p.style == Some(id) {
                 p.style = None;
             }
