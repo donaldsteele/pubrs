@@ -1168,3 +1168,8 @@ impl Session {
         })
     }
 }
+
+pub use super::clip::{
+    ClipAsset, ClipPayload, ClipSwatch, FrameCopyOut, FrameCopyToDoc, MAX_CLIP_FRAMES, Offset,
+    PasteAt,
+};

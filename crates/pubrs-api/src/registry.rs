@@ -215,6 +215,8 @@ pub static TOOLS: &[ToolDef] = &[
         "Set one column's width in points. The table frame's width follows the sum of the columns."),
     tool!("table_set_row_height", "Tables", table_set_row_height, tables::TableSetRowHeight => Changed, ro = false, destructive = false, image = None,
         "Set a row's minimum height in points. The row still grows to fit its text, up to the frame's bottom."),
+    tool!("frame_copy_to_doc", "Frames", frame_copy_to_doc, frames::FrameCopyToDoc => frames::FrameCopyOut, ro = false, destructive = false, image = None,
+        "Copy frames from one open document into another (or the same one): text frames keep their text and chain, picture frames bring their images (an image the target already holds is reused), groups stay groups. Styles are matched by name, missing ones are added; swatches the target lacks become their colours. One undo step in the target. Give the page by page_index (from 0) and an optional offset in points."),
     // ---------------------------------------------------------------- text
     tool!("text_set", "Text", text_set, text::TextSet => text::TextChangeOut, ro = false, destructive = false, image = None,
         "Replace all text of a text frame's story (the whole linked chain). Keeps the existing first-paragraph formatting, so filling a template placeholder keeps its style. markup: true enables # headings and **bold**/*italic*/__underline__. Reports overflow."),

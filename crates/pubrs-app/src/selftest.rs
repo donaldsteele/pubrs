@@ -140,6 +140,10 @@ struct Data {
     m17: Option<FrameId>,
     /// M18: the text frame and the ellipse it wraps around.
     m18: Option<(FrameId, FrameId)>,
+    /// M27: the publication copied from and the one pasted into.
+    m27_docs: Option<(pubrs_api::core::DocumentId, pubrs_api::core::DocumentId)>,
+    /// M27: the frame the input method types into and the Hebrew frame.
+    m27_frames: Option<(FrameId, FrameId)>,
 }
 
 pub struct SelfTest {
@@ -3264,6 +3268,281 @@ impl SelfTest {
                     "exported the table page as PDF ({} bytes: header, one page object, xref and EOF present; the cell text is in compressed subset-font streams, so it is not checked here)",
                     bytes.len()
                 ));
+            }
+            185 => {
+                // M27: copy frames (a text frame and a picture) in one
+                // publication, then open another.
+                app.new_blank();
+                let a = app.doc_id().ok_or("no document")?;
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 40.0, "width": 240.0, "height": 60.0,
+                        "text": "Copy me",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let text = app
+                    .session
+                    .frame_add_text(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                let path = self.out.join("m27-picture.png");
+                std::fs::write(&path, png(48, 32, 9)).map_err(|e| e.to_string())?;
+                // The session resolves relative paths against its documents folder.
+                let path = path.canonicalize().map_err(|e| e.to_string())?;
+                let req: pubrs_api::tools::frames::FrameAddImage =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 140.0, "width": 96.0, "height": 64.0,
+                        "path": path.display().to_string(),
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let img = app
+                    .session
+                    .frame_add_image(req)
+                    .map_err(|e| e.message)?
+                    .frame_id;
+                app.select(vec![text, img]);
+                app.run_action(ctx, Action::Copy);
+                app.new_blank();
+                let b = app.doc_id().ok_or("no second document")?;
+                self.data.m27_docs = Some((a, b));
+            }
+            186 => {
+                // Edit > Paste into the other publication: both frames
+                // arrive, with their text and their picture's bytes, as one
+                // undo step; a second paste reuses the picture.
+                let (a, b) = self.data.m27_docs.ok_or("no M27 documents")?;
+                if app.doc_id() != Some(b) {
+                    return Err("the second publication is not active".into());
+                }
+                let source_bytes = {
+                    let d = app.session.get(Some(a)).map_err(|e| e.message)?.doc();
+                    d.blobs
+                        .values()
+                        .next()
+                        .cloned()
+                        .ok_or("source has no picture")?
+                };
+                app.run_action(ctx, Action::Paste);
+                let (n_frames, text, asset_ok) = {
+                    let d = app.doc().ok_or("no document")?;
+                    let page = d.pages[0].id;
+                    let ids = d
+                        .children(pubrs_api::core::Parent::Page(page))
+                        .cloned()
+                        .unwrap_or_default();
+                    let text = ids
+                        .iter()
+                        .filter_map(|f| d.frame(*f).and_then(|f| f.as_text()))
+                        .filter_map(|t| d.story(t.story))
+                        .map(|s| s.plain_text())
+                        .collect::<Vec<_>>();
+                    let asset_ok = ids
+                        .iter()
+                        .filter_map(|f| {
+                            d.frame(*f).and_then(|f| f.as_image()).and_then(|i| i.asset)
+                        })
+                        .all(|a| d.blobs.get(&a).is_some_and(|b| b[..] == source_bytes[..]))
+                        && d.frames
+                            .values()
+                            .any(|f| f.as_image().is_some_and(|i| i.asset.is_some()));
+                    (ids.len(), text, asset_ok)
+                };
+                if n_frames != 2 || text != ["Copy me"] || !asset_ok {
+                    return Err(format!(
+                        "paste into the second publication gave {n_frames} frame(s), text {text:?}, picture bytes ok {asset_ok}"
+                    ));
+                }
+                if Self::done_steps(app) != 1 {
+                    return Err(format!(
+                        "paste took {} undo steps, not 1",
+                        Self::done_steps(app)
+                    ));
+                }
+                app.run_action(ctx, Action::Paste);
+                let assets = app.doc().map_or(0, |d| d.assets.len());
+                let frames = app.doc().map_or(0, |d| d.frames.len());
+                if assets != 1 || frames != 4 {
+                    return Err(format!(
+                        "second paste: {assets} asset(s) (want 1, reused), {frames} frames (want 4)"
+                    ));
+                }
+                app.run_action(ctx, Action::Undo);
+                app.run_action(ctx, Action::Undo);
+                let left = app.doc().map_or(9, |d| d.frames.len() + d.assets.len());
+                let source = app
+                    .session
+                    .get(Some(a))
+                    .map_err(|e| e.message)?
+                    .doc()
+                    .frames
+                    .len();
+                if left != 0 || source != 2 {
+                    return Err(format!(
+                        "after two undos {left} frame(s)/asset(s) remain; the source has {source} frames"
+                    ));
+                }
+                self.ok("Edit \u{25b8} Paste put copied frames into another open publication with their picture (reused the second time), in one undo step each");
+            }
+            187 => {
+                // A picture on the OS clipboard becomes a picture frame; one
+                // above 8,000 px a side is scaled down, with a warning.
+                app.platform
+                    .clipboard
+                    .set_image(crate::platform::ClipImage {
+                        width: 9000,
+                        height: 40,
+                        rgba: vec![200; 9000 * 40 * 4],
+                    });
+                app.run_action(ctx, Action::Paste);
+                let big = app.doc().and_then(|d| {
+                    d.assets
+                        .values()
+                        .next()
+                        .map(|a| (a.pixel_width, a.pixel_height))
+                });
+                let status = app.status.as_ref().map(|s| s.0.clone()).unwrap_or_default();
+                if big != Some((8000, 36)) || !status.contains("scaled down") {
+                    return Err(format!(
+                        "9000x40 picture pasted as {big:?}; status {status:?}"
+                    ));
+                }
+                app.platform
+                    .clipboard
+                    .set_image(crate::platform::ClipImage {
+                        width: 64,
+                        height: 32,
+                        rgba: vec![90; 64 * 32 * 4],
+                    });
+                app.run_action(ctx, Action::Paste);
+                let small = app.doc().is_some_and(|d| {
+                    d.frames.values().any(|f| {
+                        f.as_image()
+                            .and_then(|i| i.asset)
+                            .and_then(|a| d.assets.get(&a))
+                            .is_some_and(|a| (a.pixel_width, a.pixel_height) == (64, 32))
+                            && (f.rect.width - 48.0).abs() < 0.01
+                    })
+                });
+                if !small || app.selection().len() != 1 {
+                    return Err(
+                        "a 64x32 picture did not paste as a 48 x 24 pt picture frame".into(),
+                    );
+                }
+                self.ok("a picture on the clipboard pasted as a picture frame; 9000 px wide was scaled down to 8000 with a status warning");
+            }
+            188 => {
+                // Input method: composition text, then its commit, while
+                // editing text.
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 300.0, "width": 240.0, "height": 40.0,
+                        "text": "ab",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let out = app.session.frame_add_text(req).map_err(|e| e.message)?;
+                let story = out.story_id.ok_or("no story")?;
+                crate::canvas::begin_edit(app, out.frame_id, story, 2);
+                self.data.m27_frames = Some((out.frame_id, out.frame_id));
+                self.data.hist = Self::done_steps(app);
+                self.pending
+                    .push_back(vec![Event::Ime(egui::ImeEvent::Preedit {
+                        text: "\u{306b}\u{307b}\u{3093}".to_string(),
+                        active_range_chars: Some(0..3),
+                    })]);
+            }
+            189 => {
+                // The composition is shown, not inserted: no new undo step.
+                let (f, _) = self.data.m27_frames.ok_or("no M27 frame")?;
+                let text = crate::canvas::story_text(app, f).unwrap_or_default();
+                let pre = app
+                    .view()
+                    .and_then(|v| v.edit.as_ref())
+                    .and_then(|e| e.preedit.clone());
+                if text != "ab"
+                    || pre.map(|p| p.text) != Some("\u{306b}\u{307b}\u{3093}".to_string())
+                {
+                    return Err(format!(
+                        "preedit changed the story ({text:?}) or was not kept"
+                    ));
+                }
+                if Self::done_steps(app) != self.data.hist {
+                    return Err("composition text made an undo step".into());
+                }
+                self.screenshot(ctx);
+                self.pending
+                    .push_back(vec![Event::Ime(egui::ImeEvent::Commit(
+                        "\u{65e5}\u{672c}".to_string(),
+                    ))]);
+            }
+            190 => {
+                let (f, _) = self.data.m27_frames.ok_or("no M27 frame")?;
+                let text = crate::canvas::story_text(app, f).unwrap_or_default();
+                let edit = app
+                    .view()
+                    .and_then(|v| v.edit.clone())
+                    .ok_or("editing ended")?;
+                if text != "ab\u{65e5}\u{672c}" || edit.preedit.is_some() || edit.caret != 4 {
+                    return Err(format!(
+                        "after the commit: text {text:?}, caret {}, preedit {:?}",
+                        edit.caret, edit.preedit
+                    ));
+                }
+                if Self::done_steps(app) != self.data.hist + 1 {
+                    return Err(format!(
+                        "the commit took {} undo steps, not 1",
+                        Self::done_steps(app) - self.data.hist
+                    ));
+                }
+                app.run_action(ctx, Action::Undo);
+                let text = crate::canvas::story_text(app, f).unwrap_or_default();
+                if text != "ab" {
+                    return Err(format!("one undo left {text:?}, not \"ab\""));
+                }
+                self.ok("input method: preedit drawn but not inserted (no undo step), commit inserted \u{65e5}\u{672c} as one undo step");
+            }
+            191 => {
+                // Right-to-left text: arrows move by position on the line.
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 380.0, "width": 240.0, "height": 40.0,
+                        "text": "\u{5e9}\u{5dc}\u{5d5}\u{5dd}",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let out = app.session.frame_add_text(req).map_err(|e| e.message)?;
+                let story = out.story_id.ok_or("no story")?;
+                crate::canvas::begin_edit(app, out.frame_id, story, 4);
+                self.data.m27_frames = Some((out.frame_id, out.frame_id));
+                self.key(Key::ArrowRight, Modifiers::NONE);
+            }
+            192 => {
+                // The caret was at the logical end (left edge of the line):
+                // Right moves it right, which is one letter back.
+                let caret = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.caret);
+                if caret != Some(3) {
+                    return Err(format!(
+                        "Right in a Hebrew word put the caret at {caret:?}, not 3"
+                    ));
+                }
+                self.key(Key::Home, Modifiers::NONE);
+            }
+            193 => {
+                let caret = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.caret);
+                if caret != Some(0) {
+                    return Err(format!(
+                        "Home in a Hebrew line put the caret at {caret:?}, not 0 (its right end)"
+                    ));
+                }
+                self.key(Key::ArrowLeft, Modifiers::NONE);
+            }
+            194 => {
+                let caret = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.caret);
+                if caret != Some(1) {
+                    return Err(format!(
+                        "Left from the right end of a Hebrew line put the caret at {caret:?}, not 1"
+                    ));
+                }
+                self.ok("right-to-left line: Right/Left/Home follow position on the line, not the order of the text");
+                self.screenshot(ctx);
                 return Ok(true);
             }
             _ => return Ok(true),

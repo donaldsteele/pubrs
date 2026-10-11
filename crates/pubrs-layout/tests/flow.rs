@@ -1010,3 +1010,209 @@ fn bottom_alignment_counts_the_drop_cap() {
     assert!(cap_base > l.rect.bottom(), "the cap reaches below its line");
     assert!((cap_base - 196.0).abs() < 0.01, "{cap_base}");
 }
+
+// ---------------------------------------------------------------- bidi
+
+fn one_line(text: &str) -> (Document, LineBox) {
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 400.0, 100.0), text)
+        .unwrap();
+    let doc = b.finish();
+    let lay = layout(&doc);
+    let s = &lay.stories[&doc.story_of(f).unwrap()];
+    let ft = &s.frames[&f];
+    assert_eq!(ft.lines.len(), 1, "one line");
+    let line = ft.lines[0].clone();
+    (doc, line)
+}
+
+const HEBREW: &str = "שלום עולם";
+const MIXED: &str = "abc שלום def";
+
+/// Walk right through every caret place of a bidi line.
+fn walk_right(l: &LineBox) -> Vec<(usize, f64)> {
+    let mut at = l.visual_edge(false, false);
+    let mut out = vec![at];
+    while let Some(next) = l.visual_step(at.0, at.1, false) {
+        assert!(next.1 > at.1, "x rises on every step");
+        out.push(next);
+        at = next;
+    }
+    out
+}
+
+#[test]
+fn rtl_line_carets_fall_and_hit_testing_round_trips() {
+    let (_, l) = one_line(HEBREW);
+    assert!(l.is_bidi() && l.is_rtl());
+    let xs: Vec<f64> = l.carets.iter().map(|c| c.1).collect();
+    assert_eq!(xs.len(), 10);
+    assert!(
+        xs.windows(2).all(|w| w[0] > w[1]),
+        "first character is rightmost: {xs:?}"
+    );
+    for &(o, x) in &l.carets {
+        assert_eq!(l.caret_x(o), x);
+        assert_eq!(l.offset_at_x(x), o);
+        assert_eq!(l.offset_at_x(x + 0.2), o);
+    }
+    // Past either end of the line the nearest caret is the end's.
+    assert_eq!(l.offset_at_x(xs[0] + 50.0), 0);
+    assert_eq!(l.offset_at_x(xs[9] - 50.0), 9);
+    // Home (start of an RTL line) is its right end, End the left.
+    assert_eq!(l.visual_edge(true, false).0, 0);
+    assert_eq!(l.visual_edge(false, false).0, 9);
+}
+
+#[test]
+fn rtl_arrows_move_by_position() {
+    let (_, l) = one_line(HEBREW);
+    let order: Vec<usize> = walk_right(&l).iter().map(|s| s.0).collect();
+    assert_eq!(
+        order,
+        (0..=9).rev().collect::<Vec<_>>(),
+        "left to right is end to start"
+    );
+    // One step left of the first character is nothing: the line ends.
+    let first = l.carets[0];
+    assert_eq!(l.visual_step(first.0, first.1, false), None);
+    assert_eq!(l.visual_step(0, first.1, true).map(|s| s.0), Some(1));
+}
+
+#[test]
+fn mixed_line_visits_every_caret_in_visual_order() {
+    let (_, l) = one_line(MIXED);
+    assert!(l.is_bidi() && !l.is_rtl());
+    // The Hebrew word is reversed: its first letter is right of its last.
+    let x = |o: usize| l.caret_x(o);
+    assert!(x(4) > x(5) && x(5) > x(6) && x(6) > x(7));
+    // The Latin text around it is in order.
+    assert!(x(0) < x(1) && x(1) < x(2) && x(2) < x(3) && x(9) < x(10) && x(10) < x(11));
+    let right = walk_right(&l);
+    let mut at = *right.last().unwrap();
+    let mut left = vec![at];
+    while let Some(n) = l.visual_step(at.0, at.1, true) {
+        assert!(n.1 < at.1);
+        left.push(n);
+        at = n;
+    }
+    left.reverse();
+    // Both walks cover the same places on the line...
+    let xs = |w: &[(usize, f64)]| w.iter().map(|s| s.1).collect::<Vec<_>>();
+    assert_eq!(xs(&right), xs(&left));
+    // ...and together reach every offset. At the two places where the
+    // Hebrew word meets the spaces, two offsets share one x; the walk takes
+    // the one nearest the offset it comes from.
+    let mut seen: Vec<usize> = right.iter().chain(&left).map(|s| s.0).collect();
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen, (0..=12).collect::<Vec<_>>(), "{right:?} {left:?}");
+    assert_eq!(right.len(), 13, "{right:?}");
+    // End of a left-to-right line is its right end.
+    assert_eq!(l.visual_edge(true, false).0, 12);
+    assert_eq!(l.visual_edge(false, false).0, 0);
+}
+
+#[test]
+fn mixed_line_hit_testing_picks_the_visually_nearest_place() {
+    let (_, l) = one_line(MIXED);
+    for (o, x) in l.slots() {
+        let (ho, hx) = l.slot_at_x(x + 0.1);
+        assert!((hx - x).abs() < 1e-9, "{o} at {x} -> {ho} at {hx}");
+        assert_eq!(l.slot_x(o, Some(x)), x);
+    }
+    for &(o, x) in &l.carets {
+        let hit = l.offset_at_x(x);
+        assert_eq!(l.caret_x(hit), x, "offset {o} at {x} hits {hit}");
+    }
+    // The twin place of offset 4 is at the left edge of the word.
+    let left_edge = l
+        .slots()
+        .into_iter()
+        .filter(|s| s.0 == 4)
+        .map(|s| s.1)
+        .fold(f64::MAX, f64::min);
+    assert!(left_edge < l.caret_x(7), "{left_edge}");
+}
+
+#[test]
+fn bidi_selection_is_one_piece_per_visual_run() {
+    let (_, l) = one_line(MIXED);
+    // The whole Hebrew word: one piece between its outer carets.
+    let word = l.selection_spans(4, 8);
+    assert_eq!(word.len(), 1, "{word:?}");
+    assert!((word[0].1 - l.caret_x(4)).abs() < 0.01);
+    assert!(word[0].0 < l.caret_x(7));
+    // "c", the space and the first Hebrew letter: Latin text and the word's
+    // right end are apart.
+    let split = l.selection_spans(2, 5);
+    assert_eq!(split.len(), 2, "{split:?}");
+    assert!(split[0].1 < split[1].0);
+    // Everything: one piece covering the line.
+    let all = l.selection_spans(0, 12);
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert!((all[0].0 - l.caret_x(0)).abs() < 0.01);
+    assert!((all[0].1 - l.caret_x(12)).abs() < 0.01);
+    // A right-to-left line, same.
+    let (_, h) = one_line(HEBREW);
+    let part = h.selection_spans(2, 5);
+    assert_eq!(part.len(), 1);
+    assert!((part[0].1 - h.caret_x(2)).abs() < 0.01 && (part[0].0 - h.caret_x(5)).abs() < 0.01);
+}
+
+#[test]
+fn left_to_right_lines_carry_no_bidi_data() {
+    let (_, l) = one_line("Hello world");
+    assert!(l.spans.is_empty() && l.slots().is_empty() && !l.is_bidi());
+    let spans = l.selection_spans(2, 6);
+    assert_eq!(spans, vec![(l.caret_x(2), l.caret_x(6))]);
+}
+
+#[test]
+fn tabs_in_right_to_left_text_still_lay_out() {
+    // Tab stops are measured from the left edge also in right-to-left
+    // paragraphs (TODO.md); this pins that nothing breaks.
+    let (_, l) = one_line("שלום\tעולם");
+    assert_eq!(l.carets.len(), 10);
+    assert!(l.carets.iter().all(|c| c.1.is_finite()));
+}
+
+#[test]
+fn odd_lines_have_sane_carets() {
+    // An empty paragraph, a tab alone, and Hebrew with vowel points
+    // (combining marks): no panic, one caret per character boundary, finite
+    // positions, and hit-testing returns a caret that exists.
+    for text in [
+        "",
+        "\t",
+        "\u{5e9}\u{5b8}\u{5c1}\u{5dc}\u{5d5}\u{5b9}\u{5dd}",
+        "a\tb",
+    ] {
+        let (_, l) = one_line(text);
+        let n = text.chars().count();
+        assert_eq!(l.carets.len(), n + 1, "{text:?}: {:?}", l.carets);
+        assert!(l.carets.iter().all(|c| c.1.is_finite()), "{text:?}");
+        assert!(l.spans.is_empty() || l.spans.len() == l.carets.len());
+        for &(o, x) in &l.carets {
+            assert_eq!(l.caret_x(o), x);
+            let hit = l.offset_at_x(x);
+            assert_eq!(l.caret_x(hit), x, "{text:?} offset {o}");
+        }
+        // The walks terminate and stay on the line.
+        let start = l.visual_edge(false, false);
+        let mut at = start;
+        for _ in 0..=n * 2 + 2 {
+            match l.visual_step(at.0, at.1, false) {
+                Some(next) => {
+                    assert!(next.1 > at.1);
+                    at = next;
+                }
+                None => break,
+            }
+        }
+        let spans = l.selection_spans(0, n);
+        assert!(spans.iter().all(|s| s.0.is_finite() && s.1 >= s.0));
+    }
+}

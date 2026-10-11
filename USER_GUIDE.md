@@ -180,6 +180,24 @@ onto the window to place it in the selected picture frame.
   side), and the width of the current column and the minimum height of the
   current row. A change to several cells is one undo step.
 
+### Copying, pasting and international text
+
+- **Copy and paste frames.** Copy puts the selected frames on the system clipboard, and Paste puts them on the
+  current page: into the same publication (nudged 18 pt), or into another open publication, with their text,
+  linked frames, groups and pictures. Styles are matched by name (missing ones are added); colours from a swatch the
+  other publication lacks are kept as plain colours. One undo step.
+- **Paste from other programs.** A picture on the clipboard becomes a picture frame (larger than 8,000 pixels a side
+  it is scaled down, and the status bar says so). Text pasted while editing keeps bold, italic, underline, size and
+  colour from web pages and rich text; with no text being edited it goes into a new text frame. Copied frames pasted while editing text give their text. For a
+  picture use Edit > Paste (on Windows and Linux Ctrl+V pastes text only).
+- **Input methods.** Chinese, Japanese and Korean input works while editing text: the text you are composing shows
+  at the cursor with an underline and the candidate window opens beside it; it becomes part of the text, in one undo
+  step with the typing around it, when you confirm it.
+- **Right-to-left text.** Hebrew and Arabic read right to left. The arrow keys move the cursor the way they point on
+  the screen (in a Hebrew word, Right goes one letter back in the text), Home and End go to the start and end of the
+  line (the right end, for a right-to-left line), and clicking and selecting follow the letters you see. Tab stops
+  still count from the left edge.
+
 ### Keyboard shortcuts
 
 | Action | Windows / Linux | macOS |

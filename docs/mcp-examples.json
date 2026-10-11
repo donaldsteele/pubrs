@@ -163,5 +163,9 @@
   {"tool": "spell_suggest", "args": {"word": "chaton", "language": "fr-FR"}, "expect_error": "not_found", "note": "No dictionary for French: add fr_FR.dic and fr_FR.aff to the dictionaries folder."},
   {"tool": "spell_add_word", "args": {"word": "pubrs"}, "note": "Without a dictionaries folder (as in this example session) the word lasts for the session; the app and the CLI save it to user-words.txt."},
   {"tool": "spell_check", "args": {}, "note": "The whole document, after adding pubrs."},
+  {"tool": "doc_new", "args": {"title": "Copy target"}, "as": "target"},
+  {"tool": "frame_copy_to_doc", "args": {"from_doc_id": "${proof.doc_id}", "frame_ids": ["${prooftext.frame_id}"], "to_doc_id": "${target.doc_id}", "page_index": 0, "offset": {"x": 0, "y": 36}}, "note": "Copies frames between two open documents as one undo step in the target: text frames keep their text and chain, pictures bring their image (reused if the target already has the same bytes), groups stay groups. Styles are matched by name (missing ones are added) and swatches the target lacks become their colours."},
+  {"tool": "frame_copy_to_doc", "args": {"from_doc_id": "${proof.doc_id}", "frame_ids": ["${prooftext.frame_id}"], "to_doc_id": "${target.doc_id}", "page_index": 3}, "expect_error": "not_found", "note": "page_index counts from 0 in the target document."},
+  {"tool": "doc_close", "args": {"doc_id": "${target.doc_id}", "confirm": true}},
   {"tool": "doc_close", "args": {"doc_id": "${proof.doc_id}", "confirm": true}}
 ]

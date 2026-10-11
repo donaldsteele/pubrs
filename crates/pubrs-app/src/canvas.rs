@@ -486,15 +486,23 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     ));
                 }
                 if let Some((f, top, bottom)) =
-                    textedit::caret_segment(doc, layout, e.story, e.caret)
+                    textedit::caret_segment_at(doc, layout, e.story, e.caret, e.visual_x)
                     && doc.owner_of(f) == Some(owner)
                 {
+                    let (top_s, bottom_s) = (xf.to_screen(top), xf.to_screen(bottom));
                     let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
-                    if blink || e.has_selection() {
-                        painter.line_segment(
-                            [xf.to_screen(top), xf.to_screen(bottom)],
-                            Stroke::new(1.5, Color32::BLACK),
-                        );
+                    let mut pre_width = 0.0;
+                    if let Some(pre) = &e.preedit {
+                        pre_width = textedit::draw_preedit(&painter, pre, top_s, bottom_s);
+                    } else if blink || e.has_selection() {
+                        painter.line_segment([top_s, bottom_s], Stroke::new(1.5, Color32::BLACK));
+                    }
+                    if let Some(fr) = doc.frame(f) {
+                        let c = xf.corners(fr.rect, fr.rotation);
+                        let area = c.iter().fold(egui::Rect::from_min_max(c[0], c[0]), |r, p| {
+                            r.union(egui::Rect::from_min_max(*p, *p))
+                        });
+                        textedit::publish_ime_area(ui.ctx(), area, top_s, bottom_s, pre_width);
                     }
                     ui.ctx()
                         .request_repaint_after(std::time::Duration::from_millis(500));
@@ -818,13 +826,15 @@ fn handle_input(
             if let Some(leaf) = leaf
                 && doc.story_of(leaf) == Some(e.story)
             {
-                let at = textedit::offset_at(doc, layout, e.story, leaf, p).unwrap_or(e.caret);
+                let (at, hint) = textedit::offset_at_slot(doc, layout, e.story, leaf, p)
+                    .unwrap_or((e.caret, None));
                 if let Some(v) = app.view_mut()
                     && let Some(ed) = &mut v.edit
                 {
                     ed.set(at, modifiers.shift);
                     ed.frame = leaf;
                     ed.goal_x = None;
+                    ed.visual_x = hint;
                 }
                 return;
             }
@@ -1402,7 +1412,8 @@ fn text_keys(
         let len = doc.story(story).map_or(0, |s| s.char_len());
         match ev {
             egui::Event::Text(t) => edit_insert(app, &e, &t),
-            egui::Event::Paste(t) => edit_insert(app, &e, &t),
+            egui::Event::Ime(ime) => textedit::ime_event(app, &e, &ime),
+            egui::Event::Paste(t) => app.paste_into_text(&e, Some(&t)),
             egui::Event::Copy | egui::Event::Cut => {
                 if e.has_selection() {
                     let (s, t) = e.range();
@@ -1459,25 +1470,36 @@ fn text_keys(
                     egui::Key::Tab => tab_key(app, doc, &e, modifiers),
                     egui::Key::Backspace => edit_delete(app, &e, false, word, &chars),
                     egui::Key::Delete => edit_delete(app, &e, true, word, &chars),
-                    egui::Key::ArrowLeft => {
-                        let at = if e.has_selection() && !extend {
-                            e.range().0
-                        } else if word {
-                            textedit::word_boundary(&chars, e.caret, false)
+                    egui::Key::ArrowLeft | egui::Key::ArrowRight => {
+                        let left = key == egui::Key::ArrowLeft;
+                        let collapse = e.has_selection() && !extend;
+                        // Right-to-left text: left is later in the text.
+                        let rtl = word && textedit::line_is_rtl(doc, layout, story, e.caret);
+                        let stepped = if collapse || word {
+                            None
                         } else {
-                            e.caret.saturating_sub(1)
+                            textedit::horizontal(doc, layout, &e, left)
                         };
-                        set(app, at, None);
-                    }
-                    egui::Key::ArrowRight => {
-                        let at = if e.has_selection() && !extend {
-                            e.range().1
-                        } else if word {
-                            textedit::word_boundary(&chars, e.caret, true)
+                        if let Some((at, hint)) = stepped {
+                            set(app, at, None);
+                            if let Some(ed) = app.view_mut().and_then(|v| v.edit.as_mut()) {
+                                ed.visual_x = hint;
+                            }
                         } else {
-                            e.caret + 1
-                        };
-                        set(app, at, None);
+                            let at = match (collapse, word, left != rtl) {
+                                (true, _, _) if left => e.range().0,
+                                (true, _, _) => e.range().1,
+                                (false, true, true) => {
+                                    textedit::word_boundary(&chars, e.caret, false)
+                                }
+                                (false, true, false) => {
+                                    textedit::word_boundary(&chars, e.caret, true)
+                                }
+                                (false, false, _) if left => e.caret.saturating_sub(1),
+                                (false, false, _) => e.caret + 1,
+                            };
+                            set(app, at, None);
+                        }
                     }
                     egui::Key::ArrowUp | egui::Key::ArrowDown => {
                         let dir = if key == egui::Key::ArrowUp { -1 } else { 1 };
@@ -1487,21 +1509,25 @@ fn text_keys(
                             set(app, at, Some(x));
                         }
                     }
-                    egui::Key::Home => {
-                        let at = if modifiers.command {
-                            0
+                    egui::Key::Home | egui::Key::End => {
+                        let end = key == egui::Key::End;
+                        let bidi = (!modifiers.command)
+                            .then(|| textedit::home_end(doc, layout, story, e.caret, end))
+                            .flatten();
+                        if let Some((at, hint)) = bidi {
+                            set(app, at, None);
+                            if let Some(ed) = app.view_mut().and_then(|v| v.edit.as_mut()) {
+                                ed.visual_x = hint;
+                            }
                         } else {
-                            textedit::line_edge(doc, layout, story, e.caret, false).unwrap_or(0)
-                        };
-                        set(app, at, None);
-                    }
-                    egui::Key::End => {
-                        let at = if modifiers.command {
-                            len
-                        } else {
-                            textedit::line_edge(doc, layout, story, e.caret, true).unwrap_or(len)
-                        };
-                        set(app, at, None);
+                            let at = if modifiers.command {
+                                if end { len } else { 0 }
+                            } else {
+                                textedit::line_edge(doc, layout, story, e.caret, end)
+                                    .unwrap_or(if end { len } else { 0 })
+                            };
+                            set(app, at, None);
+                        }
                     }
                     egui::Key::A if modifiers.command => {
                         if let Some(v) = app.view_mut()

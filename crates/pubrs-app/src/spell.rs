@@ -872,7 +872,7 @@ fn select(app: &mut PubrsApp, i: &Issue) {
             story: i.story,
             caret: i.end,
             anchor: i.start,
-            goal_x: None,
+            ..TextEdit::new(frame, i.story, i.end)
         });
         v.scroll_to = rect;
     }

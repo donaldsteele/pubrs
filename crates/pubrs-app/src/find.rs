@@ -273,7 +273,7 @@ fn goto(app: &mut PubrsApp, m: &FindMatch) {
             story,
             caret: m.end,
             anchor: m.start,
-            goal_x: None,
+            ..TextEdit::new(frame, story, m.end)
         });
         v.scroll_to = rect;
     }

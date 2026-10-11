@@ -96,6 +96,76 @@ pub fn import_image(
     Ok((asset, Bytes::new(bytes)))
 }
 
+/// Longest side of an image pasted from the clipboard, in pixels.
+pub const PASTE_MAX_SIDE: u32 = 8_000;
+
+/// A PNG made from clipboard pixels.
+#[derive(Debug, Clone)]
+pub struct PastedPng {
+    pub png: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    /// The image was larger than the limit and was scaled down.
+    pub downscaled: bool,
+    /// Size of the original, in pixels.
+    pub original: (u32, u32),
+}
+
+/// Encode straight RGBA pixels as PNG, scaling them down first when a side
+/// is longer than `max_side` (aspect ratio kept).
+pub fn rgba_to_png(
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    max_side: u32,
+) -> Result<PastedPng, IoError> {
+    if width == 0 || height == 0 || rgba.len() as u64 != u64::from(width) * u64::from(height) * 4 {
+        return Err(IoError::Image(
+            "clipboard image has no usable pixels".into(),
+        ));
+    }
+    let img = image::RgbaImage::from_raw(width, height, rgba)
+        .ok_or_else(|| IoError::Image("clipboard image has no usable pixels".into()))?;
+    let longest = width.max(height);
+    let (img, downscaled) = if longest > max_side {
+        let scale = f64::from(max_side) / f64::from(longest);
+        let w = ((f64::from(width) * scale).round() as u32).clamp(1, max_side);
+        let h = ((f64::from(height) * scale).round() as u32).clamp(1, max_side);
+        (
+            image::imageops::resize(&img, w, h, image::imageops::FilterType::Triangle),
+            true,
+        )
+    } else {
+        (img, false)
+    };
+    let mut png = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| IoError::Image(e.to_string()))?;
+    Ok(PastedPng {
+        png,
+        width: img.width(),
+        height: img.height(),
+        downscaled,
+        original: (width, height),
+    })
+}
+
+/// Cut a rectangle (pixels, clamped to the image) out of a PNG and encode
+/// it again.
+pub fn crop_png(png: &[u8], x: u32, y: u32, w: u32, h: u32) -> Result<Vec<u8>, IoError> {
+    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .map_err(|e| IoError::Image(e.to_string()))?;
+    let x = x.min(img.width().saturating_sub(1));
+    let y = y.min(img.height().saturating_sub(1));
+    let w = w.clamp(1, img.width() - x);
+    let h = h.clamp(1, img.height() - y);
+    let mut out = Vec::new();
+    img.crop_imm(x, y, w, h)
+        .write_to(&mut Cursor::new(&mut out), image::ImageFormat::Png)
+        .map_err(|e| IoError::Image(e.to_string()))?;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +176,22 @@ mod tests {
         let info = image_info(svg).unwrap();
         assert_eq!(info.format, ImageFormat::Svg);
         assert_eq!((info.width, info.height), (120, 80));
+    }
+
+    #[test]
+    fn pasted_pixels_become_png_and_shrink_past_the_limit() {
+        let small = rgba_to_png(vec![255; 4 * 6 * 3], 6, 3, 8).unwrap();
+        assert!(!small.downscaled);
+        let info = image_info(&small.png).unwrap();
+        assert_eq!((info.width, info.height), (6, 3));
+        let big = rgba_to_png(vec![200; 4 * 40 * 10], 40, 10, 8).unwrap();
+        assert!(big.downscaled);
+        assert_eq!((big.width, big.height), (8, 2));
+        assert_eq!(big.original, (40, 10));
+        assert!(rgba_to_png(vec![0; 3], 1, 1, 8).is_err());
+        let cut = crop_png(&small.png, 2, 1, 100, 100).unwrap();
+        let info = image_info(&cut).unwrap();
+        assert_eq!((info.width, info.height), (4, 2));
     }
 
     #[test]

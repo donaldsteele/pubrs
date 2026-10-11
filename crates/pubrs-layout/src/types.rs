@@ -92,6 +92,14 @@ pub struct LineBox {
     pub decorations: Vec<Decoration>,
     /// Caret x position for every character offset in `chars` (and its end), ascending.
     pub carets: Vec<(usize, f64)>,
+    /// For lines that can reorder (right-to-left paragraphs or characters
+    /// only; empty otherwise): the box of the character at each caret, as
+    /// offsets from the caret's x, `(left, right)`. A caret is the leading
+    /// edge of the character after it, so a right-to-left character lies
+    /// left of its caret. Parallel to `carets`; the last entry is empty.
+    pub spans: Vec<(f32, f32)>,
+    /// The paragraph runs right to left (parley's base direction).
+    pub rtl: bool,
     /// True for the last line of a paragraph.
     pub ends_paragraph: bool,
     /// The bullet or number drawn in the hanging indent of a list item's
@@ -111,12 +119,162 @@ impl LineBox {
         }
     }
 
-    /// Story offset nearest to frame-local `x` on this line.
+    /// Story offset nearest to frame-local `x` on this line. Carets need not
+    /// rise with the offset (right-to-left text); the visually nearest wins,
+    /// and of equal ones the earliest offset.
     pub fn offset_at_x(&self, x: f64) -> usize {
         self.carets
             .iter()
             .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
             .map_or(self.chars.start, |c| c.0)
+    }
+
+    /// True if characters of this line can be out of reading order (it has
+    /// right-to-left characters or sits in a right-to-left paragraph).
+    pub fn is_bidi(&self) -> bool {
+        !self.spans.is_empty()
+    }
+
+    /// True if the line's paragraph runs right to left (stored by layout).
+    pub fn is_rtl(&self) -> bool {
+        self.rtl
+    }
+
+    /// Every place a caret can be drawn on a bidi line, as (offset, x). Each
+    /// offset has its `carets` entry (the leading edge of the character
+    /// after it) and, where the character before it lies the other way,
+    /// a second place: that character's trailing edge. At the edge of a
+    /// right-to-left word inside left-to-right text the two are far apart.
+    /// Empty for lines in reading order, where `carets` is all there is.
+    pub fn slots(&self) -> Vec<(usize, f64)> {
+        if !self.is_bidi() {
+            return Vec::new();
+        }
+        let mut v = Vec::with_capacity(self.carets.len() * 2);
+        for (i, &(o, x)) in self.carets.iter().enumerate() {
+            v.push((o, x));
+            if i > 0 {
+                let (px, (lo, hi)) = (self.carets[i - 1].1, self.spans[i - 1]);
+                let t = px + f64::from(if lo < 0.0 { lo } else { hi });
+                if (t - x).abs() > 0.01 {
+                    v.push((o, t));
+                }
+            }
+        }
+        v
+    }
+
+    /// The caret place nearest to `x`: (offset, x). Equal ones: the
+    /// earliest offset.
+    pub fn slot_at_x(&self, x: f64) -> (usize, f64) {
+        let slots = self.slots();
+        let all: &[(usize, f64)] = if slots.is_empty() {
+            &self.carets
+        } else {
+            &slots
+        };
+        all.iter()
+            .copied()
+            .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
+            .unwrap_or((self.chars.start, self.rect.x))
+    }
+
+    /// Where `offset` is drawn: the place nearest `hint` (the x it was
+    /// last put at, by an arrow key or a click), else its leading edge.
+    pub fn slot_x(&self, offset: usize, hint: Option<f64>) -> f64 {
+        let primary = self.caret_x(offset);
+        let Some(h) = hint else { return primary };
+        self.slots()
+            .into_iter()
+            .filter(|s| s.0 == offset)
+            .map(|s| s.1)
+            .min_by(|a, b| (a - h).abs().total_cmp(&(b - h).abs()))
+            .filter(|x| (x - h).abs() < 0.5)
+            .unwrap_or(primary)
+    }
+
+    /// The caret place one step left or right of (`offset`, `x`) by
+    /// position on the line, not by order in the text. `None` at the
+    /// line's visual end (the caller then moves to the next line).
+    pub fn visual_step(&self, offset: usize, x: f64, left: bool) -> Option<(usize, f64)> {
+        const EPS: f64 = 0.01;
+        let mut best: Option<(usize, f64)> = None;
+        for (o, cx) in self.slots() {
+            let ahead = if left { cx < x - EPS } else { cx > x + EPS };
+            if !ahead {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some((bo, bx)) => {
+                    if (cx - bx).abs() <= EPS {
+                        o.abs_diff(offset) < bo.abs_diff(offset)
+                    } else if left {
+                        cx > bx
+                    } else {
+                        cx < bx
+                    }
+                }
+            };
+            if better {
+                best = Some((o, cx));
+            }
+        }
+        best
+    }
+
+    /// The leftmost (or rightmost) caret place of a bidi line, not
+    /// counting the offset after a soft-wrap space when `skip_end` (it is
+    /// drawn on the next line). Of places at the same x, the earliest
+    /// offset at the left edge and the latest at the right.
+    pub fn visual_edge(&self, right: bool, skip_end: bool) -> (usize, f64) {
+        const EPS: f64 = 0.01;
+        let mut best: Option<(usize, f64)> = None;
+        for (o, cx) in self.slots() {
+            if skip_end && o == self.chars.end && self.chars.end > self.chars.start {
+                continue;
+            }
+            best = match best {
+                None => Some((o, cx)),
+                Some((bo, bx)) => {
+                    let beats = if right { cx > bx + EPS } else { cx < bx - EPS };
+                    let ties = (cx - bx).abs() <= EPS;
+                    if beats || (ties && (if right { o > bo } else { o < bo })) {
+                        Some((o, cx))
+                    } else {
+                        Some((bo, bx))
+                    }
+                }
+            };
+        }
+        best.unwrap_or((self.chars.start, self.caret_x(self.chars.start)))
+    }
+
+    /// Horizontal extents (left, right) of the characters `from..to` on
+    /// this line, merged where they touch. On a line in reading order that
+    /// is one extent from caret to caret; on a bidi line a selection can
+    /// be several pieces.
+    pub fn selection_spans(&self, from: usize, to: usize) -> Vec<(f64, f64)> {
+        if !self.is_bidi() {
+            return vec![(self.caret_x(from), self.caret_x(to))];
+        }
+        let mut v: Vec<(f64, f64)> = self
+            .carets
+            .iter()
+            .zip(&self.spans)
+            .filter(|((o, _), _)| *o >= from && *o < to)
+            .map(|((_, x), (lo, hi))| (x + f64::from(*lo), x + f64::from(*hi)))
+            .filter(|(a, b)| b > a)
+            .collect();
+        v.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut out: Vec<(f64, f64)> = Vec::new();
+        for (a, b) in v {
+            match out.last_mut() {
+                Some(last) if a <= last.1 + 0.5 => last.1 = last.1.max(b),
+                _ => out.push((a, b)),
+            }
+        }
+        out
     }
 }
 

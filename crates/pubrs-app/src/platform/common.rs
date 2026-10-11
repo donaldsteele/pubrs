@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{AppPaths, Clipboard, FileDialogs};
+use super::{AppPaths, ClipImage, Clipboard, FileDialogs};
 
 /// Native dialogs via rfd.
 pub struct NativeDialogs;
@@ -162,12 +162,60 @@ impl Clipboard for DesktopClipboard {
             None => self.fallback.set_text(text),
         }
     }
+
+    fn get_image(&mut self) -> Option<ClipImage> {
+        match &mut self.inner {
+            Some(c) => c.get_image().ok().map(|i| ClipImage {
+                width: i.width,
+                height: i.height,
+                rgba: i.bytes.into_owned(),
+            }),
+            None => self.fallback.get_image(),
+        }
+    }
+
+    fn set_image(&mut self, image: ClipImage) {
+        match &mut self.inner {
+            Some(c) => {
+                let data = arboard::ImageData {
+                    width: image.width,
+                    height: image.height,
+                    bytes: image.rgba.into(),
+                };
+                if let Err(e) = c.set_image(data) {
+                    tracing::warn!("clipboard: {e}");
+                }
+            }
+            None => self.fallback.set_image(image),
+        }
+    }
+
+    fn get_html(&mut self) -> Option<String> {
+        match &mut self.inner {
+            Some(c) => c.get().html().ok(),
+            None => self.fallback.get_html(),
+        }
+    }
+
+    fn set_html(&mut self, html: &str, alt_text: &str) {
+        match &mut self.inner {
+            Some(c) => {
+                if let Err(e) = c.set_html(html, Some(alt_text)) {
+                    tracing::warn!("clipboard: {e}");
+                }
+            }
+            None => self.fallback.set_html(html, alt_text),
+        }
+    }
 }
 
-/// An in-memory clipboard.
+/// An in-memory clipboard. Like the real one, setting one kind of content
+/// replaces the others (HTML keeps its text alternative).
 #[derive(Debug, Default)]
 pub struct NoClipboard {
     text: Option<String>,
+    html: Option<String>,
+    image: Option<ClipImage>,
 }
 
 impl Clipboard for NoClipboard {
@@ -176,5 +224,23 @@ impl Clipboard for NoClipboard {
     }
     fn set_text(&mut self, text: &str) {
         self.text = Some(text.to_string());
+        self.html = None;
+        self.image = None;
+    }
+    fn get_image(&mut self) -> Option<ClipImage> {
+        self.image.clone()
+    }
+    fn set_image(&mut self, image: ClipImage) {
+        self.text = None;
+        self.html = None;
+        self.image = Some(image);
+    }
+    fn get_html(&mut self) -> Option<String> {
+        self.html.clone()
+    }
+    fn set_html(&mut self, html: &str, alt_text: &str) {
+        self.text = Some(alt_text.to_string());
+        self.html = Some(html.to_string());
+        self.image = None;
     }
 }

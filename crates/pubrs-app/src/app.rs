@@ -130,7 +130,8 @@ pub struct PubrsApp {
     outcome: Rc<RefCell<Outcome>>,
     pub frames_drawn: u64,
     pub selftest: Option<SelfTest>,
-    copied: Option<(DocumentId, Vec<FrameId>)>,
+    /// Frames copied in this process (see `clipboard.rs`).
+    pub clip: Option<crate::clipboard::InProcessClip>,
     allow_close: bool,
     saved_settings: Option<Settings>,
     pub perf: Option<crate::perf::FrameStats>,
@@ -202,7 +203,7 @@ impl PubrsApp {
             args: args.clone(),
             outcome,
             frames_drawn: 0,
-            copied: None,
+            clip: None,
             allow_close: false,
             saved_settings: None,
             perf: crate::perf::FrameStats::from_env(),
@@ -1181,9 +1182,7 @@ impl PubrsApp {
                 // (keyboard shortcuts arrive as egui clipboard events instead).
                 if let Some(e) = self.view().and_then(|v| v.edit.clone()) {
                     if action == Paste {
-                        if let Some(t) = self.platform.clipboard.get_text() {
-                            crate::canvas::edit_insert(self, &e, &t);
-                        }
+                        self.paste_into_text(&e, None);
                     } else if e.has_selection() {
                         let (s, t) = e.range();
                         let text: String = self
@@ -1436,31 +1435,6 @@ impl PubrsApp {
             McpHelp => self.dialog = Some(Dialog::McpHelp),
             Spelling => crate::spell::open_dialog(self),
         }
-    }
-
-    fn copy_frames(&mut self) {
-        if let (Some(id), sel) = (self.doc_id(), self.selection())
-            && !sel.is_empty()
-        {
-            self.copied = Some((id, sel));
-            self.notify("Copied");
-        }
-    }
-
-    fn paste_frames(&mut self) {
-        let Some((from, frames)) = self.copied.clone() else {
-            return;
-        };
-        if Some(from) != self.doc_id() {
-            self.notify("Pasting between publications is not supported yet");
-            return;
-        }
-        let page = self.page_owner().and_then(|o| match o {
-            Owner::Page(p) => Some(p),
-            Owner::Master(_) => None,
-        });
-        self.select(frames);
-        self.duplicate_selection(page, 18.0);
     }
 
     pub fn save_template(&mut self, name: &str) {

@@ -1684,7 +1684,7 @@ impl Layouter {
                 }];
                 runs.push(hr);
             }
-            let mut carets = caret_positions(
+            let (mut carets, mut spans) = caret_positions(
                 &layout,
                 &offsets,
                 text,
@@ -1900,6 +1900,11 @@ impl Layouter {
                     .collect();
                 cc.append(&mut carets);
                 carets = cc;
+                if !spans.is_empty() {
+                    let mut sp = vec![(0.0, 0.0); cap_chars];
+                    sp.append(&mut spans);
+                    spans = sp;
+                }
                 chars.start = para_start;
                 let right = rect.right();
                 rect.x = rect.x.min(cap_x);
@@ -1915,6 +1920,8 @@ impl Layouter {
                     runs,
                     decorations,
                     carets,
+                    spans,
+                    rtl: layout.is_rtl(),
                     ends_paragraph,
                     list_label,
                 },
@@ -2396,6 +2403,9 @@ fn push_attrs(
     }
 }
 
+/// A character's box as offsets from its caret, `(left, right)`.
+type CharSpan = (f32, f32);
+
 /// Caret x for each character boundary of the line whose paragraph bytes
 /// are `bytes`; `first` is the story offset of its first character.
 /// `text` is the shadow text: boundaries at an inserted soft hyphen are
@@ -2413,8 +2423,11 @@ fn caret_positions(
     first: usize,
     letter: f64,
     line_x: f64,
-) -> Vec<(usize, f64)> {
+) -> (Vec<(usize, f64)>, Vec<CharSpan>) {
     let (b0, b1) = (bytes.start, bytes.end);
+    // Boxes of the characters are only kept for lines that can reorder.
+    let bidi = layout.is_rtl() || text.get(b0..b1).is_some_and(|l| l.chars().any(is_rtl_char));
+    let mut spans: Vec<CharSpan> = Vec::new();
     let mut boundaries: Vec<usize> = match text.get(b0..b1) {
         Some(line) => line.char_indices().map(|(i, _)| b0 + i).collect(),
         None => text
@@ -2441,9 +2454,46 @@ fn caret_positions(
             first + k,
             line_x + caret_x(layout, offsets, cursor) + k as f64 * letter,
         ));
+        if bidi {
+            spans.push(char_span(layout, text, *b, *b == b1));
+        }
         k += 1;
     }
-    out
+    (out, spans)
+}
+
+/// Whether `c` is written right to left (Hebrew, Arabic, Syriac, Thaana,
+/// N'Ko and their presentation forms, and the historic right-to-left scripts).
+pub(crate) fn is_rtl_char(c: char) -> bool {
+    matches!(c as u32,
+        0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF
+        | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF | 0x200F | 0x202B | 0x202E | 0x2067)
+}
+
+/// The box of the character at paragraph byte `b`, as offsets from its
+/// caret: a left-to-right character extends right of its caret, a
+/// right-to-left one left of it. (A caret sits at the leading edge of the
+/// character after it, so at a change of direction it is not next to the
+/// character before it; this is what tells them apart.) The end of the
+/// line has an empty box.
+fn char_span(layout: &Layout<Ink>, text: &str, b: usize, end: bool) -> CharSpan {
+    if end {
+        return (0.0, 0.0);
+    }
+    let Some(c) = Cluster::from_byte_index(layout, b) else {
+        return (0.0, 0.0);
+    };
+    let r = c.text_range();
+    let n = text.get(r.clone()).map_or(1, |t| t.chars().count()).max(1);
+    let k = text
+        .get(r.start..b.min(r.end))
+        .map_or(0, |t| t.chars().count()) as f32;
+    let w = c.advance() / n as f32;
+    if c.is_rtl() {
+        (-(k + 1.0) * w, -k * w)
+    } else {
+        (k * w, (k + 1.0) * w)
+    }
 }
 
 /// Leading-edge x of every cluster of a laid-out paragraph, indexed by the

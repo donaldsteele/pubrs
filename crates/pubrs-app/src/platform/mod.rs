@@ -38,10 +38,25 @@ pub trait AppPaths {
     fn documents_dir(&self) -> PathBuf;
 }
 
-/// Text clipboard.
+/// Straight (non-premultiplied) RGBA pixels from or for the clipboard.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipImage {
+    pub width: usize,
+    pub height: usize,
+    pub rgba: Vec<u8>,
+}
+
+/// The system clipboard: text, an image, and HTML (with a plain-text
+/// alternative). Each `set_*` replaces what was there.
 pub trait Clipboard {
     fn get_text(&mut self) -> Option<String>;
     fn set_text(&mut self, text: &str);
+    fn get_image(&mut self) -> Option<ClipImage>;
+    fn set_image(&mut self, image: ClipImage);
+    fn get_html(&mut self) -> Option<String>;
+    /// Put `html` on the clipboard with `alt_text` for programs that only
+    /// read text.
+    fn set_html(&mut self, html: &str, alt_text: &str);
 }
 
 /// Font discovery policy.

@@ -3280,6 +3280,87 @@ Result:
 }
 ```
 
+## Frames
+
+### `frame_copy_to_doc`
+
+Copy frames from one open document into another (or the same one): text frames keep their text and chain, picture frames bring their images (an image the target already holds is reused), groups stay groups. Styles are matched by name, missing ones are added; swatches the target lacks become their colours. One undo step in the target. Give the page by page_index (from 0) and an optional offset in points.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `frame_ids` | array of uuid | yes | Frames to copy (groups come with their members; members of a copied group need not be listed). |
+| `from_doc_id` | uuid | yes | The document the frames are in. |
+| `offset` | object |  | Shift of the copies in points (default 0, 0). |
+| `page_index` | integer | yes | Page of the target document, counted from 0. |
+| `to_doc_id` | uuid | yes | The document that receives the copies. May be the same document. |
+
+**Result fields:** `affected_ids`, `doc_id`, `frame_ids`, `revision`
+
+**Example** — Copies frames between two open documents as one undo step in the target: text frames keep their text and chain, pictures bring their image (reused if the target already has the same bytes), groups stay groups. Styles are matched by name (missing ones are added) and swatches the target lacks become their colours.
+
+```json
+{
+  "arguments": {
+    "frame_ids": [
+      "00000000-0000-87ea-8000-000000000051"
+    ],
+    "from_doc_id": "00000000-0000-87ea-8000-000000000050",
+    "offset": {
+      "x": 0,
+      "y": 36
+    },
+    "page_index": 0,
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005c"
+  },
+  "name": "frame_copy_to_doc"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000054",
+    "00000000-0000-87ea-8000-00000000005d",
+    "00000000-0000-87ea-8000-00000000005e"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000005c",
+  "frame_ids": [
+    "00000000-0000-87ea-8000-00000000005d"
+  ],
+  "revision": 2
+}
+```
+
+**Example** — page_index counts from 0 in the target document.
+
+```json
+{
+  "arguments": {
+    "frame_ids": [
+      "00000000-0000-87ea-8000-000000000051"
+    ],
+    "from_doc_id": "00000000-0000-87ea-8000-000000000050",
+    "page_index": 3,
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005c"
+  },
+  "name": "frame_copy_to_doc"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "not_found",
+  "hint": "page_index counts from 0; list pages with page_list",
+  "message": "page 3 not found"
+}
+```
+
 ## Text
 
 ### `text_set`

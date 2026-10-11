@@ -19,9 +19,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - The GPU renderer ignores `Node.clip` (only imposed sheets use it, and those are never drawn on the GPU).
 - The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); the design checker (M29) replaces it. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.
-- Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
-- GUI: copy/paste of frames works within one publication only (no cross-document or OS-clipboard frame paste).
-- GUI: text editing has no IME composition support (direct key/text input only).
 - Character formatting (M17, ADR 0021): real `smcp` is detected from the GSUB feature list only (not per-letter coverage); a strikethrough through synthesized small caps is stepped; the Character dialog has no preview and no letter-spacing or colour fields (the text panel has them); the super/subscript buttons are in the text panel, not a toolbar.
 - Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
 - macOS: double-clicking a `.pubrs` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events. Workaround: File → Open, or drag the file onto the pubrs window (ADR 0010).
@@ -136,3 +133,12 @@ Deferred and partial work. Each entry says what is missing and why.
 
 - A drop cap beside a multi-slot (both-sides/through) row can be overlapped by the second slot.
 - Up/Down move by story line, not by visual row, in multi-slot rows.
+- Clipboard (M27, ADR 0025): frames go on the OS clipboard as HTML with the pubrs payload in a comment (plus a PNG and the text alternative) because arboard replaces the clipboard on every set; a native multi-format offer per OS (pubrs flavour, PNG and text together) is not done.
+- Clipboard (M27): RTF is not read (arboard has no RTF format); only HTML, text and images are.
+- Clipboard (M27): Ctrl/Cmd+V with only an image on the clipboard does nothing, on Windows and Linux, because egui-winit 0.36.2 swallows the paste shortcut (it reads clipboard text, sends `Event::Paste` only if non-empty, and returns without a key event), so the app cannot see the keypress at all; Edit > Paste works, and on macOS the native menu's Cmd+V does too. Needs a key hook in the window layer (own winit event handling or an egui-winit change).
+- Clipboard (M27): a pasted picture is always a PNG, and large clipboard payloads (HTML over 48 MB) are kept only inside the running app.
+- IME (M27): the preedit is drawn with the UI font, which lacks CJK glyphs unless the system provides them to egui, and not with the document's font and size; IME events cannot be verified end to end here (no input method in the test environment), only the egui events are injected.
+- Right-to-left (M27): tab stops in right-to-left paragraphs are measured from the left edge, not the right; Left/Right with a selection collapse it by text order, not by position; where two offsets share one place (Hebrew word edges in English text) an arrow walk reaches only one of them in each direction.
+- Clipboard (M27): `paste_image` encodes, scales and places a clipboard picture on the UI thread (up to 8,000 px a side, so a visible pause for a big picture); it belongs on a worker.
+- Clipboard (M27): copying renders the whole page at 96 dpi to crop a preview of the selection; a small selection on a big page, or a very long copy, pays for the full page.
+- Clipboard (M27): a pasted group keeps its name, style and wrap but not its rotation (setting a group's rotation rotates its members again).

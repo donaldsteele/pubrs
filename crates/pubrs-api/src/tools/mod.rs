@@ -8,6 +8,7 @@
 //! - `doc_id` is optional and defaults to the most recently used document.
 //! - Mutating tools return `doc_id`, `revision` and `affected_ids`.
 
+pub mod clip;
 pub mod color;
 pub mod doc;
 pub mod export;
