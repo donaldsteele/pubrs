@@ -145,3 +145,17 @@ pubrs always has Liberation Sans and Liberation Serif (same widths as Arial
 and Times New Roman), and uses the fonts installed on your computer. If a
 publication uses a font your computer doesn't have, pubrs substitutes a
 bundled font and **Check** reports it.
+
+## Troubleshooting
+
+**pubrs is slow and uses a lot of CPU when you move the mouse.** Look at
+the bottom-right corner of the window. **⚠ Drawing without a GPU** means no
+graphics driver is available to pubrs, so the window is drawn on the CPU.
+This is common in virtual machines and remote desktop sessions. Install the
+graphics driver, or turn on 3D acceleration in the virtual machine's
+settings. **Help → About** shows what draws the window ("Window drawing")
+and the pages ("Page rendering").
+
+To measure, start pubrs from a terminal with `PUBRS_PERF=1` set (Windows:
+`set PUBRS_PERF=1` then `"C:\Program Files\pubrs\bin\pubrs-app.exe"`). It
+then prints frames per second and drawing times once a second.

@@ -1,11 +1,13 @@
 //! pubrs desktop app.
 
+mod adapter;
 mod app;
 mod autosave;
 mod canvas;
 mod dialogs;
 mod keymap;
 mod panels;
+mod perf;
 mod platform;
 mod selftest;
 mod textedit;
@@ -85,9 +87,12 @@ fn options(renderer: eframe::Renderer) -> eframe::NativeOptions {
         viewport,
         ..Default::default()
     };
-    // egui draws with Vulkan/Metal/DX12 here and leaves GL to the glow fallback.
+    // Every backend, so a GPU that wgpu reaches only through OpenGL is found;
+    // `adapter::select` takes hardware first (docs/adr/0011-gui-adapter.md).
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(c) = &mut opts.wgpu_options.wgpu_setup {
-        c.instance_descriptor.backends = eframe::wgpu::Backends::PRIMARY;
+        c.instance_descriptor.backends =
+            eframe::wgpu::Backends::PRIMARY | eframe::wgpu::Backends::GL;
+        c.native_adapter_selector = Some(std::sync::Arc::new(adapter::select));
     }
     opts
 }

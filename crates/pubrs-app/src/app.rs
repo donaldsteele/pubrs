@@ -67,6 +67,38 @@ impl Units {
     }
 }
 
+/// What draws the window, for the About box and the software-drawing warning.
+#[derive(Debug, Clone, Default)]
+pub struct WindowRenderer {
+    pub name: String,
+    pub api: String,
+    pub software: bool,
+}
+
+impl WindowRenderer {
+    fn detect(cc: &eframe::CreationContext<'_>) -> Self {
+        if let Some(rs) = &cc.wgpu_render_state {
+            let a = rs.adapter.get_info();
+            return Self {
+                software: crate::adapter::is_software(&a),
+                api: format!("{:?}", a.backend),
+                name: a.name,
+            };
+        }
+        if let Some(gl) = &cc.gl {
+            use eframe::glow::HasContext as _;
+            // SAFETY: eframe made this context current for the creation callback.
+            let name = unsafe { gl.get_parameter_string(eframe::glow::RENDERER) };
+            return Self {
+                software: crate::adapter::is_software_name(&name),
+                api: "OpenGL".into(),
+                name,
+            };
+        }
+        Self::default()
+    }
+}
+
 pub struct PubrsApp {
     pub session: Session,
     pub platform: Platform,
@@ -89,6 +121,8 @@ pub struct PubrsApp {
     copied: Option<(DocumentId, Vec<FrameId>)>,
     allow_close: bool,
     saved_settings: Option<Settings>,
+    pub perf: Option<crate::perf::FrameStats>,
+    pub window: WindowRenderer,
 }
 
 impl PubrsApp {
@@ -136,6 +170,8 @@ impl PubrsApp {
             copied: None,
             allow_close: false,
             saved_settings: None,
+            perf: crate::perf::FrameStats::from_env(),
+            window: WindowRenderer::detect(cc),
         };
         app.load_settings();
         app.fonts = app
@@ -143,6 +179,13 @@ impl PubrsApp {
             .fonts_list(DocRef::default())
             .map(|f| f.families.into_iter().map(|f| f.family).collect())
             .unwrap_or_default();
+        let w = &app.window;
+        tracing::info!(renderer = %w.name, api = %w.api, software = w.software, "window drawing");
+        if w.software {
+            tracing::warn!(
+                "no GPU driver for the window: drawing on the CPU is slow and uses a lot of it"
+            );
+        }
         tracing::info!(backend = %app.session.render_backend(), "page rendering backend");
         for f in &args.files {
             app.open_path(f);
@@ -1039,8 +1082,9 @@ impl eframe::App for PubrsApp {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let started = Instant::now();
         self.frames_drawn += 1;
         if !self.menu_tried && self.selftest.is_none() && !self.args.smoke_test {
             self.menu_tried = true;
@@ -1105,6 +1149,9 @@ impl eframe::App for PubrsApp {
             && t.elapsed().as_secs() > 8
         {
             self.status = None;
+        }
+        if let Some(p) = &mut self.perf {
+            p.frame(&ctx, started.elapsed(), frame.info().cpu_usage);
         }
     }
 }

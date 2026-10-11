@@ -160,6 +160,17 @@ pub fn status_bar(app: &mut PubrsApp, ui: &mut egui::Ui) {
             if let Some((msg, _)) = &app.status {
                 ui.label(RichText::new(msg.as_str()).color(Color32::from_rgb(30, 64, 120)));
             }
+            if app.window.software {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(RichText::new("⚠ Drawing without a GPU").color(Color32::from_rgb(180, 83, 9)))
+                        .on_hover_text(format!(
+                            "No graphics driver is available to this window, so {} draws it on the CPU. \
+                             pubrs will be slow and use a lot of CPU. Install the graphics driver, or turn on \
+                             3D acceleration if this is a virtual machine.",
+                            app.window.name
+                        ));
+                });
+            }
         });
     });
 }
@@ -184,6 +195,7 @@ pub fn pages_panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
             });
             if let Some(i) = stale {
                 let dpi = (96.0 * 72.0 / size.width.max(size.height)).clamp(4.0, 72.0);
+                let t0 = std::time::Instant::now();
                 let r = app.session.page_rgba(
                     Some(doc_id),
                     i,
@@ -192,6 +204,9 @@ pub fn pages_panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
                         ..Default::default()
                     },
                 );
+                if let Some(p) = &mut app.perf {
+                    p.raster(t0.elapsed());
+                }
                 if let Ok((w, h, px)) = r {
                     let img =
                         egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px);

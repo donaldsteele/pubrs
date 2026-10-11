@@ -196,6 +196,16 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             ui.heading("pubrs");
             ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.label("Desktop publishing for flyers, brochures, cards and newsletters.");
+            ui.label(format!(
+                "Window drawing: {} ({}{})",
+                app.window.name,
+                app.window.api,
+                if app.window.software {
+                    ", software"
+                } else {
+                    ""
+                }
+            ));
             ui.label(format!("Page rendering: {}", app.session.render_backend()));
             ui.label(format!("Printing: {}", app.platform.print.name()));
             ui.small(

@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** none scheduled. The manual per-installer check in RELEASE.md on real desktops is still open (it needs physical Windows, macOS and Linux machines); then tag `v0.1.0`. Further work is listed in TODO.md.
+**Next step:** `v0.1.0` is tagged and its release is a draft (run 38090646384). Before publishing: the manual per-installer check in RELEASE.md on real desktops, and a decision on bundling Mesa llvmpipe for Windows without a GPU driver (TODO.md, ADR 0011). Further work is listed in TODO.md.
 
 ## Verification per milestone
 
@@ -46,3 +46,13 @@ None.
   38085477371 is green on all four OSes at eacbb3c.
 - CI fixes found on first real runs: libxkbcommon-x11 on Linux, verbatim Windows paths, relative GUI paths, vello
   on the WARP software adapter, self-test timing on slow renderers, WiX/cargo-bundle packaging details.
+
+## After 0.1.0: high CPU on Windows (2026-10-11)
+
+- Report: about 80% CPU on Windows. Reproduced on the windows-latest runner, which has no GPU. While the cursor
+  moves, egui draws on WARP at about 5 fps and 0.5 CPU-seconds per frame, using 76% of the machine. Idle is 0%.
+  Measurements and the options tried are in ADR 0011.
+- Fix: the GUI adapter is chosen across Vulkan/Metal/DX12/OpenGL, hardware first (`crates/pubrs-app/src/adapter.rs`,
+  +5 app tests, 125 tests in total). Help → About and the status bar show when the window is drawn in software.
+  `PUBRS_PERF=1` logs frame statistics.
+- Open: Windows with no GPU driver at all still uses WARP. Mesa llvmpipe measured 16× cheaper per frame (TODO.md).

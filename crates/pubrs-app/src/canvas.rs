@@ -123,6 +123,7 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 .view()
                 .is_none_or(|v| v.page_tex.as_ref().is_none_or(|t| t.key != key));
             if needs {
+                let t0 = std::time::Instant::now();
                 let r = app.session.page_rgba(
                     Some(doc_id),
                     page_index,
@@ -132,6 +133,9 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                         background: Some(Color::WHITE),
                     },
                 );
+                if let Some(p) = &mut app.perf {
+                    p.raster(t0.elapsed());
+                }
                 match r {
                     Ok((w, h, px)) => {
                         let img =
