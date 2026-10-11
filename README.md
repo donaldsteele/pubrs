@@ -37,7 +37,7 @@ Get the installer for your system from the [latest release](https://github.com/d
 - Mail merge from CSV or XLSX to labels, letters, PDF or a new publication.
 - A Design Checker, spell check, rulers and guides, and find and replace.
 - Clipboard, input method (IME) and right-to-left text support.
-- Import of Microsoft Publisher `.pub` files: text, pictures, shapes, tables and colour schemes from Publisher 2002 and later, text only from 98 and 2000. Some content, such as WMF drawings, goes into an import report instead.
+- Import of Microsoft Publisher `.pub` files: text, pictures, shapes, tables and colour schemes from Publisher 2002 and later, text and the colour scheme from 98 and 2000. Some content, such as WMF drawings, goes into an import report instead.
 - A command line (`pubrs`) and an MCP server (`pubrs-mcp`) so AI assistants can create and edit publications.
 - An open, documented file format (`.pubrs`).
 

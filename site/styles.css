@@ -168,3 +168,10 @@ footer .wrap { display: grid; gap: 24px; }
 @media (min-width: 800px) { footer .wrap { grid-template-columns: 1fr 1fr; } }
 footer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; }
 footer p { margin: 0 0 8px; max-width: 52ch; }
+
+/* gallery rows: flex-grow follows aspect ratio so pages in a row share a height */
+.gallery { display: block; }
+.grow { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 28px; }
+.grow .frame { min-width: 0; padding: 10px; }
+.frame.page img { aspect-ratio: auto; height: auto; object-fit: contain; }
+@media (max-width: 640px) { .grow { flex-direction: column; align-items: stretch; margin-bottom: 0; gap: 20px; } .grow .frame { flex: none !important; margin-bottom: 8px; } }
