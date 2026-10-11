@@ -5998,5 +5998,269 @@
       }
     },
     "step": "set_image_alt"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": null
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010",
+            "00000000-0000-802a-8000-000000000021",
+            "00000000-0000-802a-8000-000000000022"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": {
+          "content": {
+            "fill": "#C81E1E",
+            "font": "Liberation Serif",
+            "size": 48.0,
+            "text": "Grand Opening",
+            "type": "word_art",
+            "warp": "arch_up"
+          },
+          "id": "00000000-0000-802a-8000-000000000023",
+          "locked": false,
+          "rect": {
+            "height": 120.0,
+            "width": 300.0,
+            "x": 20.0,
+            "y": 20.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010",
+            "00000000-0000-802a-8000-000000000021",
+            "00000000-0000-802a-8000-000000000022",
+            "00000000-0000-802a-8000-000000000023"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "step": "add_frame"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": {
+          "content": {
+            "fill": "#C81E1E",
+            "font": "Liberation Serif",
+            "size": 48.0,
+            "text": "Grand Opening",
+            "type": "word_art",
+            "warp": "arch_up"
+          },
+          "id": "00000000-0000-802a-8000-000000000023",
+          "locked": false,
+          "rect": {
+            "height": 120.0,
+            "width": 300.0,
+            "x": 20.0,
+            "y": 20.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": {
+          "content": {
+            "fill": "#C81E1E",
+            "font": "Liberation Serif",
+            "outline": {
+              "color": "#FFFFFF",
+              "dash": "solid",
+              "width": 1.5
+            },
+            "shadow": {
+              "blur": 2.5,
+              "color": "#000000",
+              "offset_x": 3.0,
+              "offset_y": 4.0,
+              "opacity": 0.6
+            },
+            "size": 48.0,
+            "text": "Grand Opening",
+            "type": "word_art",
+            "warp": "wave"
+          },
+          "id": "00000000-0000-802a-8000-000000000023",
+          "locked": false,
+          "rect": {
+            "height": 120.0,
+            "width": 300.0,
+            "x": 20.0,
+            "y": 20.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "step": "set_wordart"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": {
+          "content": {
+            "fill": "#C81E1E",
+            "font": "Liberation Serif",
+            "outline": {
+              "color": "#FFFFFF",
+              "dash": "solid",
+              "width": 1.5
+            },
+            "shadow": {
+              "blur": 2.5,
+              "color": "#000000",
+              "offset_x": 3.0,
+              "offset_y": 4.0,
+              "opacity": 0.6
+            },
+            "size": 48.0,
+            "text": "Grand Opening",
+            "type": "word_art",
+            "warp": "wave"
+          },
+          "id": "00000000-0000-802a-8000-000000000023",
+          "locked": false,
+          "rect": {
+            "height": 120.0,
+            "width": 300.0,
+            "x": 20.0,
+            "y": 20.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000023": {
+          "content": {
+            "fill": "#C81E1E",
+            "font": "Liberation Serif",
+            "outline": {
+              "color": "#FFFFFF",
+              "dash": "solid",
+              "width": 1.5
+            },
+            "shadow": {
+              "blur": 2.5,
+              "color": "#000000",
+              "offset_x": 3.0,
+              "offset_y": 4.0,
+              "opacity": 0.6
+            },
+            "size": 48.0,
+            "text": "Grand Opening",
+            "type": "word_art",
+            "warp": "wave"
+          },
+          "id": "00000000-0000-802a-8000-000000000023",
+          "locked": false,
+          "rect": {
+            "height": 120.0,
+            "width": 300.0,
+            "x": 20.0,
+            "y": 20.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "border_art": {
+              "pattern": "stars",
+              "width": 18.0
+            },
+            "opacity": 1.0,
+            "shadow": {
+              "blur": 2.5,
+              "color": "#000000",
+              "offset_x": 3.0,
+              "offset_y": 4.0,
+              "opacity": 0.6
+            }
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "step": "set_frame_style"
   }
 ]

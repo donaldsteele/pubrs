@@ -122,6 +122,10 @@ struct Data {
     spell_frame: Option<FrameId>,
     spell_range: Option<(usize, usize)>,
     suggestion: Option<String>,
+    /// M25: the WordArt frame and the shape given a shadow and a border.
+    m25: Option<(FrameId, FrameId)>,
+    /// Undo steps done before the step being checked (M25).
+    m25_hist: usize,
     /// The step being retried and how often.
     retry: (usize, u32),
     /// M16: the list frame and the price frame.
@@ -1384,7 +1388,7 @@ impl SelfTest {
                     .view()
                     .and_then(|v| v.edit.clone())
                     .ok_or("Enter did not select a match")?;
-                if e.range() != (m[0].start, m[0].end) || e.story != m[0].story_id {
+                if e.range() != (m[0].start, m[0].end) || Some(e.story) != m[0].story_id {
                     return Err(format!("selection {:?} is not the first match", e.range()));
                 }
                 self.data.first_match = Some(e.range());
@@ -2503,6 +2507,231 @@ impl SelfTest {
                     line.decorations.len()
                 ));
                 self.screenshot(ctx);
+            }
+            139 => {
+                // M25: WordArt, shadows and Border Art. A blank publication
+                // with a rectangle low on the page.
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddShape =
+                    serde_json::from_value(serde_json::json!({
+                        "shape": "rectangle", "x": 72.0, "y": 560.0, "width": 220.0, "height": 120.0,
+                        "fill": "#BFDBFE",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let out = app.session.frame_add_shape(req).map_err(|e| e.message)?;
+                self.data.m25 = Some((out.frame_id, out.frame_id));
+                app.select(Vec::new());
+                app.run_action(ctx, Action::InsertWordArt);
+            }
+            140 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::WordArt(_))) {
+                    return Err("Insert ▸ WordArt… did not open the gallery".into());
+                }
+                // The gallery's previews are rendered by the real renderer.
+                self.screenshot(ctx);
+            }
+            141 => {
+                self.click_target(ctx, "wordart-style-1")?;
+            }
+            142 => {
+                self.data.m25_hist = Self::done_steps(app);
+                self.click_target(ctx, "ok")?;
+            }
+            143 => {
+                if app.dialog.is_some() {
+                    return Err("the WordArt gallery stayed open after Insert".into());
+                }
+                let doc = app.doc().ok_or("no doc")?;
+                let art = doc
+                    .frames
+                    .values()
+                    .find_map(|f| f.as_wordart().map(|w| (f.id, w.clone())))
+                    .ok_or("Insert did not add a WordArt frame")?;
+                let r = doc.frame(art.0).map(|f| f.rect).ok_or("frame")?;
+                if art.1.warp != pubrs_api::core::Warp::ArchUp || art.1.text != "Your text" {
+                    return Err(format!(
+                        "gallery style 2 gave {:?} / {:?}",
+                        art.1.warp, art.1.text
+                    ));
+                }
+                if Self::done_steps(app) != self.data.m25_hist + 1 {
+                    return Err("inserting WordArt was not one undo step".into());
+                }
+                if app.selection() != vec![art.0] {
+                    return Err("the new WordArt is not selected".into());
+                }
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                self.data.m25 = Some((art.0, rect));
+                // The page shows letters where the frame is.
+                let mut dark = 0;
+                for dx in (0..r.width as u32).step_by(3) {
+                    for dy in (0..r.height as u32).step_by(3) {
+                        let px = Self::probe_pixel(app, r.x as u32 + dx, r.y as u32 + dy)?;
+                        if px[0] != 255 || px[1] != 255 || px[2] != 255 {
+                            dark += 1;
+                        }
+                    }
+                }
+                if dark < 100 {
+                    return Err(format!("the WordArt drew only {dark} sample points"));
+                }
+                self.ok(format!(
+                    "Insert ▸ WordArt…: gallery style 2 (arch) added in one undo step and selected; the page shows {dark} inked samples"
+                ));
+                self.screenshot(ctx);
+            }
+            144 => {
+                // Change the warp from the properties panel.
+                self.click_target(ctx, "wordart-warp")?;
+            }
+            145 => {
+                self.click_target(ctx, "warp:wave")?;
+            }
+            146 => {
+                let (wa, _) = self.data.m25.ok_or("no m25")?;
+                let warp = app
+                    .doc()
+                    .and_then(|d| d.frame(wa))
+                    .and_then(|f| f.as_wordart().map(|w| w.warp))
+                    .ok_or("no WordArt")?;
+                if warp != pubrs_api::core::Warp::Wave {
+                    return Err(format!("the Shape menu left the warp at {warp:?}"));
+                }
+                self.ok("WordArt panel: Shape ▸ Wave changed the warp");
+                self.screenshot(ctx);
+                // Select the rectangle for the shadow.
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                app.select(vec![rect]);
+            }
+            147 => {
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                self.data.m25_hist = Self::done_steps(app);
+                if app.selection() != vec![rect] {
+                    return Err("the rectangle is not selected".into());
+                }
+                self.click_target(ctx, "shadow-on")?;
+            }
+            148 => {
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                let st = app
+                    .doc()
+                    .and_then(|d| d.frame(rect))
+                    .map(|f| f.style.clone())
+                    .ok_or("no rectangle")?;
+                let Some(sh) = st.shadow else {
+                    return Err("the Shadow checkbox did not add a shadow".into());
+                };
+                if Self::done_steps(app) != self.data.m25_hist + 1 {
+                    return Err("the shadow was not one undo step".into());
+                }
+                // The shadow falls right of and below the rectangle: grey where
+                // the page was white.
+                let px = Self::probe_pixel(app, 72 + 220 + 2, 560 + 60)?;
+                if px[0] > 235 || px[0] != px[1] {
+                    return Err(format!("no shadow right of the rectangle: {px:?} ({sh:?})"));
+                }
+                self.ok(format!(
+                    "Shadow checkbox: a {:.0} pt shadow, {:.0} pt blur falls beside the rectangle (pixel {px:?})",
+                    sh.offset_x, sh.blur
+                ));
+            }
+            149 => {
+                self.click_target(ctx, "border-art-combo")?;
+            }
+            150 => {
+                self.click_target(ctx, "border:stars")?;
+            }
+            151 => {
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                let b = app
+                    .doc()
+                    .and_then(|d| d.frame(rect))
+                    .and_then(|f| f.style.border_art.clone())
+                    .ok_or("the Border art menu did not set a border")?;
+                if b.pattern != "stars" {
+                    return Err(format!("border pattern {:?}", b.pattern));
+                }
+                // Gold stars sit in the band: some pixel there is orange-ish.
+                let mut gold = 0;
+                for dx in 0..40u32 {
+                    for dy in 0..b.width as u32 {
+                        let px = Self::probe_pixel(app, 72 + dx, 560 + dy)?;
+                        if px[0] > 200 && px[2] < 120 {
+                            gold += 1;
+                        }
+                    }
+                }
+                if gold < 10 {
+                    return Err(format!("no gold star pixels in the border band ({gold})"));
+                }
+                self.ok(format!(
+                    "Border art menu: stars, {:.0} pt wide ({gold} gold pixels on the top edge)",
+                    b.width
+                ));
+                self.screenshot(ctx);
+                // The Border Art… dialog from the Format menu.
+                app.run_action(ctx, Action::BorderArt);
+            }
+            152 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::BorderArt(_))) {
+                    return Err("Format ▸ Border Art… did not open its dialog".into());
+                }
+                self.screenshot(ctx);
+            }
+            153 => {
+                self.click_target(ctx, "border-art-hearts")?;
+            }
+            154 => {
+                self.data.m25_hist = Self::done_steps(app);
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            155 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the Border Art dialog".into());
+                }
+                let (_, rect) = self.data.m25.ok_or("no m25")?;
+                let b = app
+                    .doc()
+                    .and_then(|d| d.frame(rect))
+                    .and_then(|f| f.style.border_art.clone())
+                    .ok_or("no border")?;
+                if b.pattern != "hearts" || Self::done_steps(app) != self.data.m25_hist + 1 {
+                    return Err(format!("dialog gave {b:?}"));
+                }
+                self.ok("Format ▸ Border Art…: picked hearts with the mouse, Enter applied it in one undo step");
+                // Export PNG and PDF.
+                let png = self.out.join("wordart.png");
+                let pdf = self.out.join("wordart.pdf");
+                let r = app
+                    .session
+                    .export_png(pubrs_api::tools::export::ExportPng {
+                        path: Some(
+                            std::path::absolute(&png)
+                                .map_err(|e| e.to_string())?
+                                .display()
+                                .to_string(),
+                        ),
+                        dpi: Some(100.0),
+                        ..Default::default()
+                    })
+                    .map_err(|e| e.message)?;
+                if r.width == 0 || std::fs::metadata(&png).map_or(0, |m| m.len()) < 1000 {
+                    return Err("PNG export wrote nothing".into());
+                }
+                if !app.export_pdf_to(&pdf) {
+                    return Err("PDF export failed".into());
+                }
+                let bytes = std::fs::read(&pdf).map_err(|e| e.to_string())?;
+                let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+                if !has(b"/SMask") {
+                    return Err("the PDF has no soft-masked shadow image".into());
+                }
+                self.ok(format!(
+                    "exported the page as PNG ({}x{}) and PDF ({} bytes, shadow as a soft-masked image, WordArt as outlines)",
+                    r.width,
+                    r.height,
+                    bytes.len()
+                ));
                 return Ok(true);
             }
             _ => return Ok(true),

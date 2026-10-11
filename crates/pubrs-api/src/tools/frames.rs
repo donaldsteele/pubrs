@@ -372,6 +372,14 @@ pub struct FrameSetStyle {
     /// 0 (invisible) to 1 (opaque).
     #[serde(default)]
     pub opacity: Option<f64>,
+    /// Drop shadow of the frame (shapes, pictures, text frames, WordArt):
+    /// {offset_x, offset_y, blur, color, opacity}, or "none". Omit to keep.
+    #[serde(default)]
+    pub shadow: Option<super::wordart::NoneOr<super::wordart::ShadowIn>>,
+    /// A BorderArt border: {pattern, width} (patterns from border_art_list),
+    /// or "none". Omit to keep.
+    #[serde(default)]
+    pub border_art: Option<super::wordart::NoneOr<super::wordart::BorderArtIn>>,
     /// Display name (empty string clears).
     /// Display name shown in frame lists.
     #[serde(default)]
@@ -418,7 +426,7 @@ pub struct FrameList {
     /// Only frames on this master page.
     #[serde(default)]
     pub master_id: Option<MasterId>,
-    /// Only frames of this kind: text, image, shape or group.
+    /// Only frames of this kind: text, image, shape, group or word_art.
     #[serde(default)]
     pub kind: Option<FrameKind>,
 }
@@ -915,6 +923,12 @@ impl Session {
         });
         if let Some(o) = req.opacity {
             style.opacity = o;
+        }
+        if let Some(s) = req.shadow {
+            style.shadow = s.0.map(super::wordart::ShadowIn::into_shadow);
+        }
+        if let Some(b) = req.border_art {
+            style.border_art = b.0.map(super::wordart::BorderArtIn::into_border);
         }
         let mut commands = vec![Command::SetFrameStyle {
             frame: req.frame_id,

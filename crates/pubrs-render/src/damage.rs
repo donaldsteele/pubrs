@@ -361,11 +361,39 @@ fn frame_bounds(state: PageState, id: FrameId) -> Option<Rect> {
             Prim::Image { clip, .. } => Some(*clip),
             Prim::Rect { rect, .. } => Some(*rect),
             Prim::Glyphs(run, _) => run_ink(run, &mut fonts),
+            Prim::Svg { clip, .. } => Some(*clip),
+            Prim::Path {
+                path,
+                stroke,
+                origin,
+                ..
+            } => path.bounds().map(|(l, t, r, b)| {
+                let g = stroke.as_ref().map_or(0.0, |s| 2.0 * s.width.max(0.5));
+                Rect::new(
+                    l + origin.0 - g,
+                    t + origin.1 - g,
+                    r - l + 2.0 * g,
+                    b - t + 2.0 * g,
+                )
+            }),
         };
         if let Some(r) = local {
             let m = map_rect(node.transform, r);
             out = Some(out.map_or(m, |o| o.union(&m)));
         }
+    }
+    // A drop shadow reaches its offset away plus three box passes of blur
+    // (ADR 0020); `out` is in page points, like the shadow offset.
+    if let (Some(sh), Some(o)) = (&node.shadow, out) {
+        let moved = Rect::new(o.x + sh.dx, o.y + sh.dy, o.width, o.height);
+        let g = 3.0 * sh.blur + 2.0;
+        let u = o.union(&moved);
+        out = Some(Rect::new(
+            u.x - g,
+            u.y - g,
+            u.width + 2.0 * g,
+            u.height + 2.0 * g,
+        ));
     }
     out
 }
@@ -610,6 +638,39 @@ mod tests {
         )
         .unwrap();
         (b.finish(), f)
+    }
+
+    #[test]
+    fn a_shadow_grows_the_damage_by_offset_and_three_blurs() {
+        use pubrs_core::{Color, Shadow};
+        let (doc, f) = shape_doc();
+        // The shape is the rectangle (20, 20, 60, 40); the shadow moves it
+        // (10, 12) away and blurs by 5: reach 3 * 5 + 2 beyond that.
+        let (with, touched) = apply(
+            &doc,
+            Command::SetFrameStyle {
+                frame: f,
+                style: FrameStyle {
+                    fill: Some(Color::BLACK.into()),
+                    shadow: Some(Shadow {
+                        offset_x: 10.0,
+                        offset_y: 12.0,
+                        blur: 5.0,
+                        color: Color::BLACK.into(),
+                        opacity: 0.5,
+                    }),
+                    ..Default::default()
+                },
+            },
+        );
+        let d = damage(&doc, &with, Some(&touched));
+        assert!(covers(&d, Rect::new(20.0, 20.0, 60.0, 40.0)));
+        // Far corner of the shadow plus its blur: (80 + 10 + 15, 60 + 12 + 15).
+        assert!(touches(&d, 105.0, 87.0), "{d:?}");
+        assert!(!touches(&d, 120.0, 120.0), "{d:?}");
+        // Taking the shadow away damages the same area.
+        let d = damage(&with, &doc, None);
+        assert!(touches(&d, 105.0, 87.0), "{d:?}");
     }
 
     #[test]

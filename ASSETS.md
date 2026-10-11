@@ -69,3 +69,17 @@ Not a data file, but third-party code that pubrs adapted, so it is credited here
 | Path | Source | Licence | SHA-256 |
 | --- | --- | --- | --- |
 | `crates/pubrs-render/src/pdfx.rs` | Ported from DesignCraft `16a7365`: `crates/pdf/src/pdfx.rs` (`make_pdfx4`, `check_pdfx4`, the RGB walk) and the byte-level helpers of `crates/pdf/src/transitions.rs` (`find`, `rfind`, `int_after`, `object`); copyright "ArtCraft Team and DesignCraft contributors" | MIT OR Apache-2.0 | Upstream `pdfx.rs` at `16a7365`: `9ad509a353ad27d3d7144d70256bd554cef3d967bae25e9ebdafb5b5a38e1ae2` (this file is a modified port, so its own hash differs) |
+
+## BorderArt (pubrs-original SVG)
+
+Twelve decorative border patterns, each a tile (`<name>-tile.svg`, repeated along an edge) and a corner
+(`<name>-corner.svg`), 32 x 32 user units. They were drawn by hand for pubrs in 2026 (M25) as plain
+geometric shapes, are compiled into the binary with `include_bytes!` (`crates/pubrs-render/src/scene.rs`),
+and are released under CC0 1.0 Universal (public domain dedication). `assets/borderart/LICENSE` holds the
+legal code, downloaded from <https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt> on 2026-10-11.
+The patterns are: stars, hearts, dots, waves, zigzag, diamonds, leaves, ropes, checks, scallops, arrows
+and snowflakes. They contain no Microsoft or Adobe artwork.
+
+| Path | Source | Licence | SHA-256 |
+| --- | --- | --- | --- |
+| `assets/borderart/` | Original SVG drawn for pubrs (M25); `LICENSE` is the CC0 1.0 legal code | CC0 1.0 Universal (original work for pubrs) | `assets/borderart/SHA256SUMS` |

@@ -47,6 +47,7 @@ fn gpu_matches_software_within_tolerance() {
             fill: Some(Color::rgb(30, 120, 220).into()),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -59,6 +60,7 @@ fn gpu_matches_software_within_tolerance() {
             fill: Some(Color::rgb(220, 40, 40).into()),
             stroke: None,
             opacity: 0.5,
+            ..Default::default()
         },
     )
     .unwrap();

@@ -153,6 +153,7 @@ pub fn colour_document() -> Document {
                 fill: Some(paint),
                 stroke,
                 opacity: 1.0,
+                ..Default::default()
             },
         )
         .unwrap();

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Key};
 use pubrs_api::core::text::FindOptions;
-use pubrs_api::core::{Command, DocumentId, FrameId, Owner, Story, StoryId};
+use pubrs_api::core::{Command, DocumentId, Frame, FrameId, Owner, Story, StoryId};
 use pubrs_api::tools::find::{FindMatch, TextFind, TextReplaceAll};
 
 use crate::app::PubrsApp;
@@ -26,6 +26,8 @@ pub enum Mode {
 }
 
 type StoryMatches = BTreeMap<StoryId, (Arc<Story>, Vec<(usize, usize)>)>;
+/// WordArt frames with matches, by frame (their text is not a story).
+type WordArtMatches = BTreeMap<FrameId, (Arc<Frame>, Vec<(usize, usize)>)>;
 type Scope = Option<(StoryId, usize, usize)>;
 
 /// What the cached matches were found with.
@@ -45,18 +47,31 @@ pub struct MatchCache {
     key: Option<CacheKey>,
     rev: u64,
     stories: StoryMatches,
+    wordart: WordArtMatches,
     total: usize,
     /// Stories scanned so far (for tests).
     pub scans: usize,
 }
 
 impl MatchCache {
-    fn update(&mut self, key: CacheKey, rev: u64, stories: &BTreeMap<StoryId, Arc<Story>>) {
+    fn update(
+        &mut self,
+        key: CacheKey,
+        rev: u64,
+        stories: &BTreeMap<StoryId, Arc<Story>>,
+        frames: &BTreeMap<FrameId, Arc<Frame>>,
+    ) {
         if self.key.as_ref() == Some(&key) && self.rev == rev {
             return;
         }
-        let old = if self.key.as_ref() == Some(&key) {
+        let same_key = self.key.as_ref() == Some(&key);
+        let old = if same_key {
             std::mem::take(&mut self.stories)
+        } else {
+            BTreeMap::new()
+        };
+        let old_wordart = if same_key {
+            std::mem::take(&mut self.wordart)
         } else {
             BTreeMap::new()
         };
@@ -82,10 +97,32 @@ impl MatchCache {
                 new.insert(*id, (arc.clone(), ranges));
             }
         }
+        // WordArt text is searched too, unless the search is limited to a
+        // selection in a story.
+        let mut wordart = BTreeMap::new();
+        if !key.query.is_empty() && key.scope.is_none() {
+            for (id, arc) in frames {
+                let Some(w) = arc.as_wordart() else { continue };
+                let ranges = match old_wordart.get(id) {
+                    Some((a, r)) if Arc::ptr_eq(a, arc) => r.clone(),
+                    _ => pubrs_api::core::text::find_matches(&w.text, &key.query, opts, None),
+                };
+                total += ranges.len();
+                wordart.insert(*id, (arc.clone(), ranges));
+            }
+        }
+        self.wordart = wordart;
         self.stories = new;
         self.total = total;
         self.key = Some(key);
         self.rev = rev;
+    }
+
+    /// The first match in a WordArt frame.
+    fn wordart_match(&self, frame: FrameId) -> Option<(usize, usize)> {
+        self.wordart
+            .get(&frame)
+            .and_then(|(_, r)| r.first().copied())
     }
 
     fn contains(&self, story: StoryId, lo: usize, hi: usize) -> bool {
@@ -167,7 +204,8 @@ fn refresh(app: &mut PubrsApp) {
         scope: if f.selection_only { f.scope } else { None },
     };
     let stories = open.doc().stories.clone();
-    app.find.cache.update(key, rev, &stories);
+    let frames = open.doc().frames.clone();
+    app.find.cache.update(key, rev, &stories, &frames);
 }
 
 /// The page index a frame is on, if it is on a page.
@@ -202,10 +240,21 @@ fn navigable(app: &mut PubrsApp) -> Vec<FindMatch> {
         .text_find(req)
         .map(|o| o.matches)
         .unwrap_or_default();
+    // One stop per WordArt frame: its matches all select the frame.
+    let mut seen = std::collections::BTreeSet::new();
     found
         .into_iter()
         .filter(|m| m.frame_id.is_some_and(|f| page_of(app, f).is_some()))
+        .filter(|m| m.story_id.is_some() || m.frame_id.is_some_and(|f| seen.insert(f)))
         .collect()
+}
+
+/// What a match is in: a story, or a WordArt frame.
+fn source(m: &FindMatch) -> (Option<StoryId>, Option<FrameId>) {
+    (
+        m.story_id,
+        m.story_id.is_none().then_some(m.frame_id).flatten(),
+    )
 }
 
 /// Select a match: go to its page, scroll to its frame, select its text.
@@ -218,9 +267,10 @@ fn goto(app: &mut PubrsApp, m: &FindMatch) {
     if let Some(v) = app.view_mut() {
         v.page = page;
         v.selection = vec![frame];
-        v.edit = Some(TextEdit {
+        // WordArt text is not edited in place: its frame is selected.
+        v.edit = m.story_id.map(|story| TextEdit {
             frame,
-            story: m.story_id,
+            story,
             caret: m.end,
             anchor: m.start,
             goal_x: None,
@@ -250,7 +300,21 @@ pub fn step(app: &mut PubrsApp, forward: bool) {
         return;
     }
     let edit = app.view().and_then(|v| v.edit.clone());
-    let pick = match edit {
+    // Where stepping continues from: the text being edited, or a selected
+    // WordArt frame that has a match.
+    let from = match &edit {
+        Some(e) => Some(((Some(e.story), None), e.range())),
+        None => app
+            .view()
+            .and_then(|v| v.selection.first().copied())
+            .filter(|f| {
+                app.doc()
+                    .and_then(|d| d.frame(*f))
+                    .is_some_and(|f| f.as_wordart().is_some())
+            })
+            .map(|f| ((None, Some(f)), (0, usize::MAX))),
+    };
+    let pick = match from {
         None => {
             if forward {
                 all.first()
@@ -258,22 +322,21 @@ pub fn step(app: &mut PubrsApp, forward: bool) {
                 all.last()
             }
         }
-        Some(e) => {
-            let (lo, hi) = e.range();
-            let order: Vec<StoryId> = {
-                let mut v: Vec<StoryId> = Vec::new();
+        Some((src, (lo, hi))) => {
+            let order: Vec<_> = {
+                let mut v = Vec::new();
                 for m in &all {
-                    if !v.contains(&m.story_id) {
-                        v.push(m.story_id);
+                    if !v.contains(&source(m)) {
+                        v.push(source(m));
                     }
                 }
                 v
             };
-            let rank = |s: StoryId| order.iter().position(|x| *x == s);
-            let cur = rank(e.story);
+            let rank = |s: (Option<StoryId>, Option<FrameId>)| order.iter().position(|x| *x == s);
+            let cur = rank(src);
             if forward {
                 all.iter()
-                    .find(|m| match (rank(m.story_id), cur) {
+                    .find(|m| match (rank(source(m)), cur) {
                         (Some(a), Some(b)) => a > b || (a == b && m.start >= hi),
                         _ => false,
                     })
@@ -286,7 +349,7 @@ pub fn step(app: &mut PubrsApp, forward: bool) {
             } else {
                 all.iter()
                     .rev()
-                    .find(|m| match (rank(m.story_id), cur) {
+                    .find(|m| match (rank(source(m)), cur) {
                         (Some(a), Some(b)) => a < b || (a == b && m.end <= lo),
                         _ => false,
                     })
@@ -313,6 +376,21 @@ fn selection_scope(app: &PubrsApp) -> Option<(StoryId, usize, usize)> {
 pub fn replace_current(app: &mut PubrsApp) {
     refresh(app);
     let Some(e) = app.view().and_then(|v| v.edit.clone()) else {
+        // A selected WordArt frame with a match: replace its first one.
+        let sel = app.view().and_then(|v| v.selection.first().copied());
+        if let Some(frame) = sel
+            && let Some((lo, hi)) = app.find.cache.wordart_match(frame)
+            && let Some(mut art) = app
+                .doc()
+                .and_then(|d| d.frame(frame))
+                .and_then(|f| f.as_wordart().cloned())
+        {
+            let mut chars: Vec<char> = art.text.chars().collect();
+            chars.splice(lo..hi, app.find.replacement.chars());
+            art.text = chars.into_iter().collect();
+            app.exec(Command::SetWordArt { frame, art });
+            refresh(app);
+        }
         return step(app, true);
     };
     let (lo, hi) = e.range();
@@ -582,22 +660,22 @@ mod tests {
             scope: None,
         };
         let mut c = MatchCache::default();
-        c.update(key.clone(), 1, &stories);
+        c.update(key.clone(), 1, &stories, &BTreeMap::new());
         assert_eq!((c.scans, c.total), (4, 4));
         // Same revision: nothing to do.
-        c.update(key.clone(), 1, &stories);
+        c.update(key.clone(), 1, &stories, &BTreeMap::new());
         assert_eq!(c.scans, 4);
         // Edit one story (a new Arc), others keep theirs.
         let first = *stories.keys().next().expect("stories");
         let mut edited = (*stories[&first]).clone();
         edited.insert_text(0, "the ", None);
         stories.insert(first, Arc::new(edited));
-        c.update(key.clone(), 2, &stories);
+        c.update(key.clone(), 2, &stories, &BTreeMap::new());
         assert_eq!((c.scans, c.total), (5, 5));
         // A deleted story drops out without a scan.
         let (before, gone) = (c.total, c.stories[&first].1.len());
         stories.remove(&first);
-        c.update(key, 3, &stories);
+        c.update(key, 3, &stories, &BTreeMap::new());
         assert_eq!((c.scans, c.total), (5, before - gone));
     }
 }

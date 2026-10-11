@@ -45,6 +45,7 @@ fn style(fill: Option<Color>, stroke: Option<(Color, f64, Dash)>, opacity: f64) 
             dash,
         }),
         opacity,
+        ..Default::default()
     }
 }
 
@@ -582,6 +583,7 @@ fn colour() -> Page {
                 fill: Some(fill),
                 stroke: None,
                 opacity,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -661,6 +663,183 @@ fn colour() -> Page {
     }
 }
 
+fn art(text: &str, warp: Warp, fill: Paint) -> WordArtFrame {
+    WordArtFrame {
+        text: text.into(),
+        font: "Liberation Sans".into(),
+        size: 40.0,
+        warp,
+        fill,
+        outline: Some(pubrs_core::Stroke {
+            color: Color::rgb(20, 20, 60).into(),
+            width: 1.5,
+            dash: Dash::Solid,
+        }),
+        shadow: None,
+    }
+}
+
+fn drop_shadow(dx: f64, dy: f64, blur: f64, opacity: f64) -> Shadow {
+    Shadow {
+        offset_x: dx,
+        offset_y: dy,
+        blur,
+        color: Color::rgb(0, 0, 0).into(),
+        opacity,
+    }
+}
+
+/// WordArt (curved, gradient, outlined) and BorderArt, without shadows:
+/// these tile for real.
+fn effects() -> Page {
+    let mut b = DocBuilder::new(SeqIds::new(8), small_page());
+    let p = b.page(0);
+    let grad = Paint::Gradient {
+        gradient: GradientKind::Linear,
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::rgb(250, 204, 21).into(),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::rgb(220, 38, 38).into(),
+            },
+        ],
+        angle: 90.0,
+    };
+    b.wordart(
+        p,
+        Rect::new(10.0, 10.0, 140.0, 90.0),
+        art("Grand Opening", Warp::ArchUp, grad),
+    )
+    .unwrap();
+    let w = b
+        .wordart(
+            p,
+            Rect::new(150.0, 20.0, 140.0, 60.0),
+            art("Wavy", Warp::Wave, Color::rgb(30, 120, 220).into()),
+        )
+        .unwrap();
+    b.exec(Command::SetRotation {
+        frame: w,
+        degrees: 12.0,
+    })
+    .unwrap();
+    let c = b
+        .wordart(
+            p,
+            Rect::new(190.0, 90.0, 100.0, 100.0),
+            art(
+                "Round and round",
+                Warp::Circle,
+                Color::rgb(0, 120, 80).into(),
+            ),
+        )
+        .unwrap();
+    b.exec(Command::SetFrameStyle {
+        frame: c,
+        style: FrameStyle {
+            border_art: Some(BorderArt {
+                pattern: "stars".into(),
+                width: 10.0,
+            }),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let r = b
+        .shape(
+            p,
+            Rect::new(15.0, 110.0, 150.0, 80.0),
+            Shape::Rectangle { corner_radius: 0.0 },
+        )
+        .unwrap();
+    b.exec(Command::SetFrameStyle {
+        frame: r,
+        style: FrameStyle {
+            fill: Some(Color::rgb(254, 243, 199).into()),
+            border_art: Some(BorderArt {
+                pattern: "hearts".into(),
+                width: 17.0,
+            }),
+            opacity: 0.9,
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    Page {
+        name: "effects",
+        doc: b.finish(),
+        images: ImageSnapshot::new(HashMap::new()),
+        opts: opts144(),
+    }
+}
+
+/// Drop shadows on a shape, text, WordArt and a rotated translucent frame.
+fn shadows() -> Page {
+    let mut b = DocBuilder::new(SeqIds::new(9), small_page());
+    let p = b.page(0);
+    let r = b
+        .shape(p, Rect::new(20.0, 20.0, 110.0, 70.0), Shape::Ellipse)
+        .unwrap();
+    b.exec(Command::SetFrameStyle {
+        frame: r,
+        style: FrameStyle {
+            fill: Some(Color::rgb(30, 120, 220).into()),
+            shadow: Some(drop_shadow(5.0, 6.0, 4.0, 0.6)),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let t = b
+        .text(p, Rect::new(150.0, 20.0, 130.0, 50.0), "Shadowed text")
+        .unwrap();
+    b.exec(Command::SetFrameStyle {
+        frame: t,
+        style: FrameStyle {
+            shadow: Some(drop_shadow(2.0, 2.0, 0.0, 1.0)),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let mut a = art("Soft", Warp::SlantUp, Color::rgb(220, 38, 38).into());
+    a.shadow = Some(drop_shadow(-4.0, 5.0, 6.0, 0.5));
+    b.wordart(p, Rect::new(20.0, 110.0, 150.0, 70.0), a)
+        .unwrap();
+    let q = b
+        .shape(
+            p,
+            Rect::new(190.0, 100.0, 80.0, 60.0),
+            Shape::Rectangle { corner_radius: 8.0 },
+        )
+        .unwrap();
+    b.exec(Command::SetFrameStyle {
+        frame: q,
+        style: FrameStyle {
+            fill: Some(Color::rgb(250, 204, 21).into()),
+            opacity: 0.7,
+            shadow: Some(drop_shadow(7.0, 7.0, 10.0, 0.8)),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::SetRotation {
+        frame: q,
+        degrees: 20.0,
+    })
+    .unwrap();
+    Page {
+        name: "shadows",
+        doc: b.finish(),
+        images: ImageSnapshot::new(HashMap::new()),
+        opts: RasterOptions {
+            include_bleed: true,
+            ..opts144()
+        },
+    }
+}
+
 fn scene(page: &Page) -> PageScene {
     let layout = Layouter::new(fonts()).layout_document(&page.doc);
     build_page_scene_with(
@@ -706,6 +885,8 @@ fn every_golden_page_tiles_byte_identically() {
         master_bleed(),
         stress(),
         colour(),
+        effects(),
+        shadows(),
     ] {
         let scene = scene(&page);
         let reference = RasterRenderer::new()

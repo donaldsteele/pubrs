@@ -314,6 +314,61 @@ impl Layouter {
             out.stories
                 .insert(*id, Arc::new(self.flow_story(doc, *id, &regions)));
         }
+        for (id, f) in &doc.frames {
+            if let Some(w) = f.as_wordart() {
+                out.wordart.insert(*id, Arc::new(self.layout_wordart(w)));
+            }
+        }
+        out
+    }
+
+    /// Shape a WordArt frame's text on one line at its size, with the
+    /// baseline at y = 0 and the first pen position at x = 0 (ADR 0020).
+    /// The warp and the fit to the frame are applied at render time.
+    pub fn layout_wordart(
+        &mut self,
+        art: &pubrs_core::WordArtFrame,
+    ) -> crate::types::WordArtLayout {
+        let text: String = art
+            .text
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
+        let mut out = crate::types::WordArtLayout::default();
+        if text.trim().is_empty() {
+            return out;
+        }
+        if !self.fonts.ensure_family(&art.font) {
+            out.missing_font = Some(art.font.clone());
+        }
+        let attrs = CharAttrs {
+            font_family: art.font.clone(),
+            font_size: art.size,
+            ..CharAttrs::default()
+        };
+        let text_arc: Arc<str> = Arc::from(text.as_str());
+        for (font, run) in self.shape_one_line(&text, &attrs, art.size) {
+            let mut glyphs = Vec::with_capacity(run.glyphs.len());
+            for (id, x, y, advance, range) in run.glyphs {
+                out.width = out.width.max(x + advance);
+                glyphs.push(PositionedGlyph {
+                    id,
+                    x,
+                    y,
+                    advance,
+                    text: range,
+                });
+            }
+            out.runs.push(GlyphRun {
+                font,
+                font_size: run.size,
+                color: run.color,
+                synthetic_bold: run.bold,
+                synthetic_skew: run.skew,
+                text: text_arc.clone(),
+                glyphs,
+            });
+        }
         out
     }
 
@@ -2209,7 +2264,11 @@ pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameI
         let Some(owner) = index.owner_of(*fid) else {
             continue;
         };
-        let content = Rect::new(0.0, 0.0, f.rect.width, f.rect.height).inset(&t.insets);
+        let mut content = Rect::new(0.0, 0.0, f.rect.width, f.rect.height).inset(&t.insets);
+        // BorderArt takes its width off the text area (ADR 0020).
+        if let Some(b) = &f.style.border_art {
+            content = content.inset(&pubrs_core::Margins::uniform(b.width.max(0.0)));
+        }
         let cols = t.columns.max(1);
         let gap = t.column_gap.max(0.0);
         let cw = ((content.width - gap * f64::from(cols - 1)) / f64::from(cols)).max(1.0);

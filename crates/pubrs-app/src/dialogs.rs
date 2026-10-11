@@ -35,6 +35,10 @@ pub enum Dialog {
     Swatch(SwatchEditor),
     /// File → Export PDF…
     ExportPdf(ExportState),
+    /// Insert → WordArt…
+    WordArt(Box<WordArtState>),
+    /// Format → Border Art…
+    BorderArt(Box<BorderArtState>),
 }
 
 /// What kind of swatch the editor makes.
@@ -371,6 +375,8 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         Dialog::Character(state) => char_ui(app, ui, state),
         Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
         Dialog::DropCap(state) => drop_cap_ui(app, ui, state),
+        Dialog::WordArt(state) => wordart_ui(app, ui, state),
+        Dialog::BorderArt(state) => border_art_ui(app, ui, state),
         Dialog::Tabs(state) => tabs_ui(app, ui, state),
         Dialog::Lists(state) => list_ui(app, ui, state),
         Dialog::Print(printers, options) => {
@@ -2727,6 +2733,580 @@ fn char_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut CharState) -> Outcome
                     end: st.end,
                     props,
                 }) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+// ---------------------------------------------------------------------------
+// WordArt gallery and Border Art picker (M25, ADR 0020)
+
+use pubrs_api::core::{
+    BORDER_ART_PATTERNS, BorderArt, DocBuilder, Frame, FrameContent, FrameId, FrameStyle,
+    GradientKind, GradientStop, Margins, Paint, Parent, Rect, SeqIds, Shadow, Stroke, Warp,
+    WordArtFrame,
+};
+use pubrs_api::layout::{FontLibrary, Layouter};
+use pubrs_api::render::{NoImages, RasterRenderer, build_page_scene};
+
+/// One entry of the WordArt gallery: a warp with a fill, outline and shadow.
+pub struct WordArtPreset {
+    pub name: &'static str,
+    pub warp: Warp,
+    pub fill: Paint,
+    pub outline: Option<Stroke>,
+    pub shadow: Option<Shadow>,
+}
+
+fn rgb(r: u8, g: u8, b: u8) -> Paint {
+    Paint::Color(Color::rgb(r, g, b))
+}
+
+fn gradient2(a: Color, b: Color, angle: f64) -> Paint {
+    use pubrs_api::core::SolidPaint;
+    Paint::Gradient {
+        gradient: GradientKind::Linear,
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: SolidPaint::Color(a),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: SolidPaint::Color(b),
+            },
+        ],
+        angle,
+    }
+}
+
+fn line(r: u8, g: u8, b: u8, width: f64) -> Option<Stroke> {
+    Some(Stroke {
+        color: rgb(r, g, b),
+        width,
+        dash: pubrs_api::core::Dash::Solid,
+    })
+}
+
+fn soft(dx: f64, dy: f64, blur: f64, opacity: f64, color: Paint) -> Option<Shadow> {
+    Some(Shadow {
+        offset_x: dx,
+        offset_y: dy,
+        blur,
+        color,
+        opacity,
+    })
+}
+
+/// The twelve gallery styles.
+pub fn wordart_presets() -> Vec<WordArtPreset> {
+    let c = Color::rgb;
+    let black = rgb(0, 0, 0);
+    vec![
+        WordArtPreset {
+            name: "Plain",
+            warp: Warp::None,
+            fill: rgb(30, 58, 138),
+            outline: None,
+            shadow: None,
+        },
+        WordArtPreset {
+            name: "Arch",
+            warp: Warp::ArchUp,
+            fill: gradient2(c(250, 204, 21), c(220, 38, 38), 90.0),
+            outline: line(60, 20, 20, 1.2),
+            shadow: None,
+        },
+        WordArtPreset {
+            name: "Smile",
+            warp: Warp::ArchDown,
+            fill: rgb(14, 116, 144),
+            outline: line(8, 51, 68, 1.0),
+            shadow: soft(2.0, 3.0, 3.0, 0.4, black.clone()),
+        },
+        WordArtPreset {
+            name: "Ring",
+            warp: Warp::Circle,
+            fill: rgb(22, 101, 52),
+            outline: None,
+            shadow: None,
+        },
+        WordArtPreset {
+            name: "Wave",
+            warp: Warp::Wave,
+            fill: gradient2(c(244, 114, 182), c(124, 58, 237), 0.0),
+            outline: line(76, 29, 149, 1.0),
+            shadow: None,
+        },
+        WordArtPreset {
+            name: "Climb",
+            warp: Warp::SlantUp,
+            fill: rgb(220, 38, 38),
+            outline: None,
+            shadow: soft(3.0, 3.0, 2.0, 0.5, black.clone()),
+        },
+        WordArtPreset {
+            name: "Fall",
+            warp: Warp::SlantDown,
+            fill: rgb(234, 88, 12),
+            outline: None,
+            shadow: soft(2.0, 4.0, 5.0, 0.5, black.clone()),
+        },
+        WordArtPreset {
+            name: "Balloon",
+            warp: Warp::Inflate,
+            fill: rgb(124, 58, 237),
+            outline: line(221, 214, 254, 1.5),
+            shadow: soft(3.0, 4.0, 4.0, 0.5, black.clone()),
+        },
+        WordArtPreset {
+            name: "Sunset",
+            warp: Warp::None,
+            fill: gradient2(c(251, 146, 60), c(219, 39, 119), 90.0),
+            outline: line(124, 45, 18, 1.5),
+            shadow: soft(3.0, 3.0, 3.0, 0.45, black.clone()),
+        },
+        WordArtPreset {
+            name: "Ocean",
+            warp: Warp::Wave,
+            fill: gradient2(c(56, 189, 248), c(30, 58, 138), 90.0),
+            outline: None,
+            shadow: soft(2.0, 4.0, 5.0, 0.5, black.clone()),
+        },
+        WordArtPreset {
+            name: "Neon",
+            warp: Warp::ArchUp,
+            fill: rgb(34, 211, 238),
+            outline: line(14, 116, 144, 2.0),
+            shadow: soft(0.0, 0.0, 6.0, 0.9, rgb(34, 211, 238)),
+        },
+        WordArtPreset {
+            name: "Retro",
+            warp: Warp::SlantUp,
+            fill: rgb(250, 204, 21),
+            outline: line(31, 41, 55, 2.0),
+            shadow: soft(4.0, 4.0, 0.0, 1.0, black),
+        },
+    ]
+}
+
+impl WordArtPreset {
+    /// The WordArt this style makes of `text`.
+    pub fn art(&self, text: &str) -> WordArtFrame {
+        WordArtFrame {
+            text: text.to_string(),
+            font: pubrs_api::core::style::DEFAULT_FONT_FAMILY.to_string(),
+            size: 96.0,
+            warp: self.warp,
+            fill: self.fill.clone(),
+            outline: self.outline.clone(),
+            shadow: self.shadow.clone(),
+        }
+    }
+}
+
+/// Render a preview with the real renderer: `doc_frames` adds frames to a
+/// `w` x `h` point page that is rasterised at `scale` pixels per point.
+fn render_preview(
+    layouter: &mut Layouter,
+    (w, h): (f64, f64),
+    scale: f64,
+    fill: Color,
+    frames: impl FnOnce(&mut DocBuilder<SeqIds>, pubrs_api::core::PageId),
+) -> Option<egui::ColorImage> {
+    let setup = pubrs_api::core::PageSetup {
+        size: pubrs_api::core::Size::new(w, h),
+        margins: Margins::uniform(0.0),
+        bleed: 0.0,
+        ..Default::default()
+    };
+    let mut b = DocBuilder::new(SeqIds::new(11), setup);
+    let p = b.page(0);
+    frames(&mut b, p);
+    let doc = b.finish();
+    let layout = layouter.layout_document(&doc);
+    let scene = build_page_scene(&doc, &layout, 0)?;
+    let pm = RasterRenderer::new()
+        .render(
+            &scene,
+            &NoImages,
+            &RasterOptions {
+                dpi: 72.0 * scale,
+                include_bleed: false,
+                background: Some(fill),
+            },
+        )
+        .ok()?;
+    Some(egui::ColorImage::from_rgba_premultiplied(
+        [pm.width() as usize, pm.height() as usize],
+        pm.data(),
+    ))
+}
+
+/// Insert → WordArt…: the text and the chosen gallery style.
+pub struct WordArtState {
+    text: String,
+    selected: usize,
+    presets: Vec<WordArtPreset>,
+    previews: Vec<egui::TextureHandle>,
+    /// The text the previews show.
+    shown: Option<String>,
+    layouter: Layouter,
+    focused: bool,
+}
+
+impl WordArtState {
+    pub fn new() -> Self {
+        Self {
+            text: "Your text".into(),
+            selected: 0,
+            presets: wordart_presets(),
+            previews: Vec::new(),
+            shown: None,
+            layouter: Layouter::new(FontLibrary::bundled()),
+            focused: false,
+        }
+    }
+
+    /// Render the twelve previews of the current text (when it changed).
+    fn refresh(&mut self, ctx: &egui::Context) {
+        let text = if self.text.trim().is_empty() {
+            "Text".to_string()
+        } else {
+            self.text.clone()
+        };
+        if self.shown.as_deref() == Some(&text) {
+            return;
+        }
+        self.previews.clear();
+        for (i, p) in self.presets.iter().enumerate() {
+            let art = p.art(&text);
+            let img = render_preview(
+                &mut self.layouter,
+                (WORDART_THUMB.0 as f64, WORDART_THUMB.1 as f64),
+                2.0,
+                Color::rgb(255, 255, 255),
+                |b, page| {
+                    let _ = b.wordart(
+                        page,
+                        Rect::new(
+                            2.0,
+                            2.0,
+                            f64::from(WORDART_THUMB.0) - 4.0,
+                            f64::from(WORDART_THUMB.1) - 4.0,
+                        ),
+                        art,
+                    );
+                },
+            );
+            if let Some(img) = img {
+                self.previews.push(ctx.load_texture(
+                    format!("wordart-preview-{i}"),
+                    img,
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+        }
+        self.shown = Some(text);
+    }
+
+    /// Add the chosen style's WordArt, centred on the page shown.
+    fn insert(&self, app: &mut PubrsApp) -> bool {
+        let Some(doc) = app.doc() else { return false };
+        let Some(page) = app.view().and_then(|v| doc.pages.get(v.page)) else {
+            return false;
+        };
+        let size = doc.setup.size;
+        let w = (size.width * 0.7).clamp(72.0, 360.0);
+        let h = (w * 0.36).max(48.0);
+        let rect = Rect::new((size.width - w) / 2.0, (size.height - h) / 2.0, w, h);
+        let parent = Parent::Page(page.id);
+        let text = if self.text.trim().is_empty() {
+            "Your text"
+        } else {
+            self.text.trim()
+        };
+        let art = self.presets[self.selected].art(text);
+        let id = app.session.new_frame_id();
+        let frame = Frame::new(id, rect, FrameContent::WordArt(Box::new(art)));
+        let ok = app.exec(Command::AddFrame {
+            parent,
+            index: None,
+            frame,
+            story: None,
+        });
+        if ok {
+            app.select(vec![id]);
+        }
+        ok
+    }
+}
+
+/// Size of a gallery preview in points.
+const WORDART_THUMB: (f32, f32) = (168.0, 64.0);
+
+fn wordart_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut WordArtState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Insert WordArt");
+    ui.label("Type your text, then choose a style. You can change everything afterwards.");
+    ui.add_space(4.0);
+    let r = ui.add(
+        egui::TextEdit::singleline(&mut st.text)
+            .id_salt("wordart-text")
+            .desired_width(WORDART_THUMB.0 * 4.0 + 24.0)
+            .char_limit(pubrs_api::core::command::WORDART_MAX_CHARS),
+    );
+    mark(ui, "wordart-text", &r);
+    if !st.focused {
+        r.request_focus();
+        st.focused = true;
+    }
+    let editing = ui.ctx().text_edit_focused();
+    // Arrow keys move through the gallery unless the text is being edited.
+    if !editing {
+        let n = st.presets.len();
+        ui.input(|i| {
+            let step = |k: egui::Key, d: isize, cur: usize| {
+                if i.key_pressed(k) {
+                    Some(((cur as isize + d).rem_euclid(n as isize)) as usize)
+                } else {
+                    None
+                }
+            };
+            for (k, d) in [
+                (egui::Key::ArrowRight, 1),
+                (egui::Key::ArrowLeft, -1),
+                (egui::Key::ArrowDown, 4),
+                (egui::Key::ArrowUp, -4),
+            ] {
+                if let Some(s) = step(k, d, st.selected) {
+                    st.selected = s;
+                }
+            }
+        });
+    }
+    st.refresh(ui.ctx());
+    ui.add_space(6.0);
+    egui::Grid::new("wordart-gallery")
+        .num_columns(4)
+        .spacing([8.0, 8.0])
+        .show(ui, |ui| {
+            for i in 0..st.presets.len() {
+                ui.vertical(|ui| {
+                    if let Some(t) = st.previews.get(i) {
+                        let img = egui::Image::new(egui::load::SizedTexture::new(
+                            t.id(),
+                            egui::vec2(WORDART_THUMB.0, WORDART_THUMB.1),
+                        ));
+                        let r = ui
+                            .add(egui::Button::image(img).selected(st.selected == i))
+                            .on_hover_text(st.presets[i].name);
+                        mark(ui, &format!("wordart-style-{i}"), &r);
+                        if r.clicked() {
+                            st.selected = i;
+                        }
+                    }
+                    ui.small(st.presets[i].name);
+                });
+                if i % 4 == 3 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("Insert");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || enter {
+            out = if st.insert(app) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+/// Format → Border Art…: the pattern and width for the selected frames.
+pub struct BorderArtState {
+    frames: Vec<FrameId>,
+    /// `None` removes the border.
+    pattern: Option<String>,
+    width: f64,
+    previews: Vec<egui::TextureHandle>,
+}
+
+impl BorderArtState {
+    pub fn for_selection(app: &PubrsApp, ctx: &egui::Context) -> Option<Self> {
+        let doc = app.doc()?;
+        let frames: Vec<FrameId> = app
+            .selection()
+            .into_iter()
+            .filter(|f| {
+                doc.frame(*f)
+                    .is_some_and(|f| f.kind() != pubrs_api::core::FrameKind::Group)
+            })
+            .collect();
+        let first = frames.first().and_then(|f| doc.frame(*f))?;
+        let cur = first.style.border_art.clone();
+        let mut layouter = Layouter::new(FontLibrary::bundled());
+        let mut previews = Vec::new();
+        for (i, name) in BORDER_ART_PATTERNS.iter().enumerate() {
+            let img = render_preview(
+                &mut layouter,
+                (BORDER_THUMB, BORDER_THUMB),
+                2.0,
+                Color::rgb(255, 255, 255),
+                |b, page| {
+                    let f = b
+                        .shape(
+                            page,
+                            Rect::new(0.0, 0.0, BORDER_THUMB, BORDER_THUMB),
+                            pubrs_api::core::Shape::Rectangle { corner_radius: 0.0 },
+                        )
+                        .ok();
+                    if let Some(f) = f {
+                        let _ = b.style(
+                            f,
+                            FrameStyle {
+                                border_art: Some(BorderArt {
+                                    pattern: (*name).to_string(),
+                                    width: 12.0,
+                                }),
+                                ..Default::default()
+                            },
+                        );
+                    }
+                },
+            );
+            if let Some(img) = img {
+                previews.push(ctx.load_texture(
+                    format!("border-preview-{i}"),
+                    img,
+                    egui::TextureOptions::LINEAR,
+                ));
+            }
+        }
+        Some(Self {
+            frames,
+            pattern: cur.as_ref().map(|b| b.pattern.clone()),
+            width: cur.map_or(18.0, |b| b.width),
+            previews,
+        })
+    }
+
+    fn apply(&self, app: &mut PubrsApp) -> bool {
+        let Some(doc) = app.doc() else { return false };
+        let commands: Vec<Command> = self
+            .frames
+            .iter()
+            .filter_map(|id| {
+                let mut style = doc.frame(*id)?.style.clone();
+                style.border_art = self.pattern.as_ref().map(|p| BorderArt {
+                    pattern: p.clone(),
+                    width: self.width,
+                });
+                Some(Command::SetFrameStyle { frame: *id, style })
+            })
+            .collect();
+        app.exec(Command::Batch {
+            label: "border art".into(),
+            commands,
+        })
+    }
+}
+
+/// Size of a Border Art preview in points.
+const BORDER_THUMB: f64 = 64.0;
+
+fn border_art_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut BorderArtState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Border Art");
+    ui.label("A decorative border along the inside edge of the selected frames.");
+    ui.add_space(4.0);
+    let none = ui.selectable_label(st.pattern.is_none(), "None");
+    mark(ui, "border-art-none", &none);
+    if none.clicked() {
+        st.pattern = None;
+    }
+    egui::Grid::new("border-art-gallery")
+        .num_columns(4)
+        .spacing([8.0, 8.0])
+        .show(ui, |ui| {
+            for (i, name) in BORDER_ART_PATTERNS.iter().enumerate() {
+                ui.vertical(|ui| {
+                    if let Some(t) = st.previews.get(i) {
+                        let img = egui::Image::new(egui::load::SizedTexture::new(
+                            t.id(),
+                            egui::vec2(BORDER_THUMB as f32, BORDER_THUMB as f32),
+                        ));
+                        let selected = st.pattern.as_deref() == Some(*name);
+                        let r = ui
+                            .add(egui::Button::image(img).selected(selected))
+                            .on_hover_text(*name);
+                        mark(ui, &format!("border-art-{name}"), &r);
+                        if r.clicked() {
+                            st.pattern = Some((*name).to_string());
+                        }
+                    }
+                    ui.small(*name);
+                });
+                if i % 4 == 3 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.horizontal(|ui| {
+        ui.label("Width");
+        let r = ui.add(
+            egui::DragValue::new(&mut st.width)
+                .range(pubrs_api::core::BORDER_ART_WIDTH)
+                .speed(0.5)
+                .suffix(" pt"),
+        );
+        mark(ui, "border-art-width", &r);
+        r.on_hover_text("How wide the border band is; text inside is kept clear of it");
+    });
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            out = if st.apply(app) {
                 Outcome::Close
             } else {
                 Outcome::Keep

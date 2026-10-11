@@ -377,6 +377,85 @@ impl GpuRenderer {
                 }
                 scene.pop_layer();
             }
+            Prim::Path {
+                path,
+                fill,
+                stroke,
+                origin,
+                size,
+                ..
+            } => {
+                use crate::scene::PathSeg;
+                let t = Affine::translate(origin.0, origin.1).then(t);
+                let mut bp = kurbo::BezPath::new();
+                let pt = |x: f32, y: f32| kurbo::Point::new(f64::from(x), f64::from(y));
+                for s in &path.segs {
+                    match *s {
+                        PathSeg::Move(x, y) => bp.move_to(pt(x, y)),
+                        PathSeg::Line(x, y) => bp.line_to(pt(x, y)),
+                        PathSeg::Quad(a, b, x, y) => bp.quad_to(pt(a, b), pt(x, y)),
+                        PathSeg::Cubic(a, b, c, d, x, y) => {
+                            bp.curve_to(pt(a, b), pt(c, d), pt(x, y));
+                        }
+                        PathSeg::Close => bp.close_path(),
+                    }
+                }
+                if let Some(f) = fill {
+                    match f {
+                        ResolvedPaint::Gradient(g) => {
+                            let stops: Vec<(f32, peniko::Color)> = g
+                                .stops
+                                .iter()
+                                .map(|(o, c)| (*o as f32, color(c.rgba)))
+                                .collect();
+                            let grad = match gradient_axis(g.kind, g.angle, size.0, size.1) {
+                                GradientAxis::Linear { x0, y0, x1, y1 } => {
+                                    peniko::Gradient::new_linear((x0, y0), (x1, y1))
+                                }
+                                GradientAxis::Radial { cx, cy, r } => {
+                                    peniko::Gradient::new_radial((cx, cy), r as f32)
+                                }
+                            }
+                            .with_stops(stops.as_slice());
+                            scene.fill(Fill::NonZero, k(t), &grad, None, &bp);
+                        }
+                        solid => {
+                            scene.fill(Fill::NonZero, k(t), color(solid.solid_rgba()), None, &bp)
+                        }
+                    }
+                }
+                if let Some(s) = stroke {
+                    let mut st = kurbo::Stroke::new(s.width).with_join(kurbo::Join::Round);
+                    if let Some(d) = dash_pattern(s.dash, s.width) {
+                        st = st.with_dashes(0.0, d);
+                    }
+                    scene.stroke(&st, k(t), color(s.color.rgba), None, &bp);
+                }
+            }
+            Prim::Svg {
+                tree,
+                transform,
+                clip,
+            } => {
+                let clip_rect = kurbo::Rect::new(clip.x, clip.y, clip.right(), clip.bottom());
+                scene.push_clip_layer(Fill::NonZero, k(t), &clip_rect);
+                if let Some(mut pm) = ts::Pixmap::new(w, h) {
+                    resvg::render(
+                        tree,
+                        crate::raster::to_ts(transform.then(t)),
+                        &mut pm.as_mut(),
+                    );
+                    let data = ImageData {
+                        data: Blob::from(pm.take()),
+                        format: peniko::ImageFormat::Rgba8,
+                        alpha_type: ImageAlphaType::AlphaPremultiplied,
+                        width: w,
+                        height: h,
+                    };
+                    scene.draw_image(&ImageBrush::new(data), kurbo::Affine::IDENTITY);
+                }
+                scene.pop_layer();
+            }
             Prim::Glyphs(run, ink) => {
                 let font = FontData::new(run.font.data.clone(), run.font.index);
                 let skew = run

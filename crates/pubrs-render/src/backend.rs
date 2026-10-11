@@ -55,8 +55,14 @@ impl Rasterizer {
         images: &dyn ImageResolver,
         opts: &RasterOptions,
     ) -> Result<(u32, u32, Vec<u8>), RenderError> {
+        // The GPU path has no blur: pages with a drop shadow are drawn by
+        // tiny-skia (ADR 0020).
         #[cfg(feature = "gpu")]
-        if let Rasterizer::Gpu(g) = self {
+        let shadowed = scene.nodes.iter().any(|n| n.shadow.is_some());
+        #[cfg(feature = "gpu")]
+        if let Rasterizer::Gpu(g) = self
+            && !shadowed
+        {
             match g.render_rgba(scene, images, opts) {
                 Ok(out) => return Ok(out),
                 Err(crate::gpu::GpuError::Render(e)) => return Err(e),
@@ -73,7 +79,12 @@ impl Rasterizer {
                 Ok((w, h, pm.take_demultiplied()))
             }
             #[cfg(feature = "gpu")]
-            Rasterizer::Gpu(_) => unreachable!("handled above"),
+            Rasterizer::Gpu(_) => {
+                debug_assert!(shadowed, "handled above");
+                let pm = crate::RasterRenderer::new().render(scene, images, opts)?;
+                let (w, h) = (pm.width(), pm.height());
+                Ok((w, h, pm.take_demultiplied()))
+            }
         }
     }
 }

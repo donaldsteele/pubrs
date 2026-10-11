@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+<!-- pubrs BorderArt, original work, CC0 1.0 -->
+<rect x="0" y="4" width="32" height="24" fill="none"/>
+<path d="M-8 26 L8 6 M8 26 L24 6 M24 26 L40 6" stroke="#92400E" stroke-width="5" fill="none"/>
+<path d="M-4 26 L12 6 M12 26 L28 6 M28 26 L44 6" stroke="#D6A56A" stroke-width="2" fill="none"/>
+</svg>

@@ -204,6 +204,7 @@ fn brochure() -> Document {
             fill: Some(Color::rgb(254, 243, 199).into()),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -596,6 +597,7 @@ fn ink_document() -> Document {
                 fill: Some(paint),
                 stroke: None,
                 opacity: 1.0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -681,6 +683,7 @@ fn colour_levels_are_quantised_to_u8() {
             fill: Some(Paint::swatch(id)),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -752,6 +755,7 @@ fn gradient_document(stops: [(Paint, Paint); 3]) -> Document {
                 }),
                 stroke: None,
                 opacity: 1.0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -833,6 +837,7 @@ fn gradients_export_as_shadings_in_cmyk_separation_or_rgb() {
                 }),
                 stroke: None,
                 opacity: 1.0,
+                ..Default::default()
             },
         })
         .unwrap();

@@ -158,6 +158,19 @@ pub struct StoryLayout {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DocumentLayout {
     pub stories: BTreeMap<StoryId, Arc<StoryLayout>>,
+    /// Shaped text of every WordArt frame.
+    pub wordart: BTreeMap<FrameId, Arc<WordArtLayout>>,
+}
+
+/// The shaped text of one WordArt frame: glyph pen positions on a single
+/// baseline at y = 0, starting at x = 0. The warp is applied at render time.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WordArtLayout {
+    pub runs: Vec<GlyphRun>,
+    /// Advance width of the line in points.
+    pub width: f64,
+    /// The family was requested but is not installed (a fallback is used).
+    pub missing_font: Option<String>,
 }
 
 impl DocumentLayout {
@@ -166,10 +179,16 @@ impl DocumentLayout {
         self.stories.values().find_map(|s| s.frames.get(&frame))
     }
 
+    /// The shaped text of a WordArt frame.
+    pub fn wordart(&self, frame: FrameId) -> Option<&Arc<WordArtLayout>> {
+        self.wordart.get(&frame)
+    }
+
     pub fn missing_fonts(&self) -> BTreeSet<String> {
         self.stories
             .values()
             .flat_map(|s| s.missing_fonts.iter().cloned())
+            .chain(self.wordart.values().filter_map(|w| w.missing_font.clone()))
             .collect()
     }
 }

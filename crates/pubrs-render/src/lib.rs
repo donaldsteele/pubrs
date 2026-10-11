@@ -20,6 +20,7 @@ pub mod pdfx;
 pub mod raster;
 pub mod scene;
 pub mod tiles;
+pub mod warp;
 
 pub use backend::Rasterizer;
 pub use damage::{PageDamage, PageState, page_damage, page_fingerprint};

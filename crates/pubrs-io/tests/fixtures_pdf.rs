@@ -59,6 +59,7 @@ fn label_sheet() -> Document {
             fill: Some(Paint::swatch(ink)),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -94,6 +95,7 @@ fn booklet() -> Document {
                 fill: Some(Color::rgb(254, 243, 199).into()),
                 stroke: None,
                 opacity: 1.0,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -108,6 +110,98 @@ fn booklet() -> Document {
         )
         .unwrap();
     }
+    b.finish()
+}
+
+/// WordArt (gradient fill, outline, shadow), drop shadows on a shape and a
+/// translucent frame, and BorderArt: the M25 content that must stay
+/// PDF/X-4 clean (shadows are RGBA images with a soft mask).
+fn effects() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(904), PageSetup::default());
+    let p = b.page(0);
+    let spot = SwatchId::new(&mut b.ids);
+    b.exec(Command::AddSwatch {
+        swatch: Swatch {
+            id: spot,
+            name: "Shadow Brown".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(30.0, 60.0, 80.0, 40.0)),
+        },
+    })
+    .unwrap();
+    let shadow = |color: Paint| Shadow {
+        offset_x: 5.0,
+        offset_y: 6.0,
+        blur: 4.0,
+        color,
+        opacity: 0.6,
+    };
+    let art = b
+        .wordart(
+            p,
+            Rect::new(40.0, 40.0, 500.0, 160.0),
+            WordArtFrame {
+                text: "Grand Opening".into(),
+                font: "Liberation Sans".into(),
+                size: 90.0,
+                warp: Warp::ArchUp,
+                fill: Paint::Gradient {
+                    gradient: GradientKind::Linear,
+                    stops: vec![
+                        GradientStop {
+                            offset: 0.0,
+                            color: Color::rgb(250, 204, 21).into(),
+                        },
+                        GradientStop {
+                            offset: 1.0,
+                            color: Color::rgb(220, 38, 38).into(),
+                        },
+                    ],
+                    angle: 90.0,
+                },
+                outline: Some(Stroke {
+                    color: Color::rgb(30, 20, 60).into(),
+                    width: 2.0,
+                    dash: Dash::Solid,
+                }),
+                shadow: Some(shadow(Color::BLACK.into())),
+            },
+        )
+        .unwrap();
+    let _ = art;
+    let r = b
+        .shape(
+            p,
+            Rect::new(60.0, 260.0, 220.0, 120.0),
+            Shape::Rectangle {
+                corner_radius: 10.0,
+            },
+        )
+        .unwrap();
+    b.style(
+        r,
+        FrameStyle {
+            fill: Some(Color::rgb(30, 120, 220).into()),
+            shadow: Some(shadow(Paint::swatch(spot))),
+            opacity: 0.9,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let t = b
+        .text(p, Rect::new(320.0, 260.0, 230.0, 120.0), "Bordered text")
+        .unwrap();
+    b.style(
+        t,
+        FrameStyle {
+            fill: Some(Color::rgb(254, 249, 195).into()),
+            border_art: Some(BorderArt {
+                pattern: "stars".into(),
+                width: 20.0,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     b.finish()
 }
 
@@ -131,6 +225,7 @@ fn pdfx4_checker_passes_on_newsletter_label_sheet_and_booklet() {
         ("label sheet", label_sheet()),
         ("booklet", booklet()),
         ("colour document", common::colour_document()),
+        ("effects", effects()),
     ] {
         let pdf = export(&doc, PdfStandard::PdfX4);
         let issues = pubrs_render::pdfx::check(&pdf);
@@ -153,6 +248,7 @@ fn writes_the_standards_fixtures() {
         ("label", label_sheet()),
         ("booklet", booklet()),
         ("colour", common::colour_document()),
+        ("effects", effects()),
     ] {
         std::fs::write(
             dir.join(format!("a2b-{name}.pdf")),
@@ -165,4 +261,78 @@ fn writes_the_standards_fixtures() {
         )
         .unwrap();
     }
+}
+
+/// The PDF of the effects page, rasterised by an independent renderer
+/// (hayro), puts WordArt outlines, shadow bitmaps and BorderArt where our
+/// own PNG does (8x8 block darkness, as in `pdf_export`).
+#[test]
+fn effects_pdf_renders_like_png() {
+    use hayro::hayro_interpret::InterpreterSettings;
+    use hayro::hayro_syntax::Pdf;
+    use hayro::vello_cpu::color::palette::css::WHITE;
+    use hayro::{PixmapSettings, RenderCache, RenderSettings, render};
+    use pubrs_render::RasterOptions;
+    use pubrs_render::tiny_skia::Pixmap;
+
+    let doc = effects();
+    let mut ctx = ExportContext::new(test_fonts());
+    let pdf_bytes = ctx.export_pdf(&doc, &PdfOptions::default()).unwrap();
+    let png = ctx
+        .page_png(
+            &doc,
+            0,
+            &RasterOptions {
+                dpi: 72.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let ours = Pixmap::decode_png(&png).unwrap();
+    let pdf = Pdf::new(pdf_bytes).unwrap();
+    let theirs = render(
+        &pdf.pages()[0],
+        &RenderCache::new(),
+        &InterpreterSettings::default(),
+        &RenderSettings::default(),
+        &PixmapSettings {
+            x_scale: 1.0,
+            y_scale: 1.0,
+            bg_color: WHITE,
+        },
+    )
+    .into_png()
+    .unwrap();
+    std::fs::write(out_dir().join("effects-hayro.png"), &theirs).unwrap();
+    std::fs::write(out_dir().join("effects-ours.png"), &png).unwrap();
+    let theirs = Pixmap::decode_png(&theirs).unwrap();
+    assert_eq!(
+        (theirs.width(), theirs.height()),
+        (ours.width(), ours.height())
+    );
+    let block = |pm: &Pixmap, bx: u32, by: u32| -> f64 {
+        let mut sum = 0.0;
+        for y in by * 8..(by * 8 + 8).min(pm.height()) {
+            for x in bx * 8..(bx * 8 + 8).min(pm.width()) {
+                let p = pm.pixel(x, y).unwrap();
+                sum += 765.0 - f64::from(p.red()) - f64::from(p.green()) - f64::from(p.blue());
+            }
+        }
+        sum / 64.0
+    };
+    let (bw, bh) = (ours.width() / 8, ours.height() / 8);
+    let mut bad = 0;
+    for by in 0..bh {
+        for bx in 0..bw {
+            if (block(&ours, bx, by) - block(&theirs, bx, by)).abs() > 120.0 {
+                bad += 1;
+            }
+        }
+    }
+    let total = bw * bh;
+    eprintln!("effects PDF vs PNG: {bad}/{total} blocks differ");
+    assert!(
+        f64::from(bad) / f64::from(total) < 0.02,
+        "PDF effects diverge from PNG: {bad}/{total} blocks"
+    );
 }

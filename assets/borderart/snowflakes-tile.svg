@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+<!-- pubrs BorderArt, original work, CC0 1.0 -->
+<g transform="translate(16 16)" stroke="#0369A1" stroke-width="2" stroke-linecap="round" fill="none">
+<path transform="rotate(0)" d="M-11 0 H11 M-6.6 -3.3 L-3.8499999999999996 0 L-6.6 3.3 M6.6 -3.3 L3.8499999999999996 0 L6.6 3.3"/>
+<path transform="rotate(60)" d="M-11 0 H11 M-6.6 -3.3 L-3.8499999999999996 0 L-6.6 3.3 M6.6 -3.3 L3.8499999999999996 0 L6.6 3.3"/>
+<path transform="rotate(120)" d="M-11 0 H11 M-6.6 -3.3 L-3.8499999999999996 0 L-6.6 3.3 M6.6 -3.3 L3.8499999999999996 0 L6.6 3.3"/>
+<circle r="2" fill="#0369A1"/>
+</g>
+</svg>

@@ -10,7 +10,7 @@ use skrifa::outline::OutlinePen;
 use skrifa::{FontRef, GlyphId, MetadataProvider};
 
 use crate::images::{ImageContent, ImageResolver};
-use crate::scene::{Affine, Geom, GradientAxis, Node, PageScene, Prim, gradient_axis};
+use crate::scene::{Affine, Geom, GradientAxis, Node, NodeShadow, PageScene, Prim, gradient_axis};
 
 /// Largest raster dimension accepted, in pixels.
 pub const MAX_PIXELS_PER_SIDE: u32 = 16_384;
@@ -502,6 +502,57 @@ impl RasterRenderer {
         Ok(pm)
     }
 
+    /// The node's drop shadow as a bitmap at `dpi` (capped so neither side
+    /// passes 4096 pixels), for the PDF writer: the shadow colour with the
+    /// blurred silhouette as alpha. `None` when the node has no shadow.
+    pub fn shadow_bitmap(
+        &mut self,
+        node: &Node,
+        images: &dyn ImageResolver,
+        dpi: f64,
+    ) -> Option<ShadowBitmap> {
+        let sh = node.shadow.as_ref()?;
+        let scene = PageScene {
+            width: 0.0,
+            height: 0.0,
+            bleed: 0.0,
+            nodes: vec![node.clone()],
+        };
+        self.glyphs.prepare(&scene);
+        let painter = Painter {
+            glyphs: &self.glyphs,
+            images,
+            mips: false,
+        };
+        let mut s = dpi / 72.0;
+        let (alpha, rect) = loop {
+            let base = Affine::scale(s, s);
+            let rect = painter
+                .shadow_alpha(node, sh, base, None)
+                .filter(|(r, _)| r.width <= 4096 && r.height <= 4096);
+            match rect {
+                Some((r, a)) => break (a, r),
+                None if s > 0.2 => s /= 2.0,
+                None => return None,
+            }
+        };
+        let c = sh.color.rgba;
+        let k = (sh.opacity.clamp(0.0, 1.0) * f64::from(c.a)).round() as u32;
+        let mut rgba = Vec::with_capacity(alpha.len() * 4);
+        for a in alpha {
+            rgba.extend_from_slice(&[c.r, c.g, c.b, ((u32::from(a) * k + 127) / 255) as u8]);
+        }
+        Some(ShadowBitmap {
+            x: f64::from(rect.x) / s,
+            y: f64::from(rect.y) / s,
+            width: f64::from(rect.width) / s,
+            height: f64::from(rect.height) / s,
+            px_width: rect.width,
+            px_height: rect.height,
+            rgba,
+        })
+    }
+
     /// Render a page scene to PNG bytes (straight alpha RGBA).
     pub fn render_png(
         &mut self,
@@ -541,6 +592,7 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
             let Some(mut layer) = ts::Pixmap::new(pm.width(), pm.height()) else {
                 return;
             };
+            self.draw_shadow(&mut layer, node, base);
             for p in &node.prims {
                 self.draw_prim(&mut layer, p, t, None);
             }
@@ -557,10 +609,89 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                 None,
             );
         } else {
+            self.draw_shadow(pm, node, base);
             for p in &node.prims {
                 self.draw_prim(pm, p, t, None);
             }
         }
+    }
+
+    /// Draw the node's drop shadow (if any) onto `pm`, under its prims.
+    fn draw_shadow(&self, pm: &mut ts::Pixmap, node: &Node, base: Affine) {
+        let Some(sh) = &node.shadow else {
+            return;
+        };
+        let visible = PixelRect::new(0, 0, pm.width(), pm.height());
+        let Some((rect, alpha)) = self.shadow_alpha(node, sh, base, Some(visible)) else {
+            return;
+        };
+        let Some(tinted) = tint_shadow(&alpha, rect, sh) else {
+            return;
+        };
+        pm.draw_pixmap(
+            rect.x,
+            rect.y,
+            tinted.as_ref(),
+            &ts::PixmapPaint::default(),
+            ts::Transform::identity(),
+            None,
+        );
+    }
+
+    /// The blurred alpha of a node's silhouette, offset by its shadow, as
+    /// `(device rect, one byte per pixel)`. `base` maps page points to the
+    /// device (a scale and a translation). With `visible`, only that part
+    /// of the shadow is made (the silhouette is drawn only as far as it can
+    /// reach it). Integer arithmetic throughout and a fixed pass order, so
+    /// the result is the same on every platform.
+    fn shadow_alpha(
+        &self,
+        node: &Node,
+        sh: &NodeShadow,
+        base: Affine,
+        visible: Option<PixelRect>,
+    ) -> Option<(PixelRect, Vec<u8>)> {
+        let t = node.transform.then(base);
+        let mut bounds: Option<PixelRect> = None;
+        for p in &node.prims {
+            if let Some(b) = crate::tiles::prim_box(p, t, self.glyphs) {
+                bounds = Some(bounds.map_or(b, |o| o.union(&b)));
+            }
+        }
+        let bounds = bounds?;
+        let sx = base.0[0].abs();
+        let sy = base.0[3].abs();
+        let (dx, dy) = ((sh.dx * sx).round() as i32, (sh.dy * sy).round() as i32);
+        let r = blur_radius(sh.blur * sx.max(sy));
+        let reach = 3 * r as i32;
+        let need = match visible {
+            Some(v) => v.offset(-dx, -dy).outset(reach).intersect(&bounds)?,
+            None => bounds,
+        };
+        // Silhouette on a transparent layer the size of `need`, padded by
+        // the blur's reach so it can spread.
+        let pad = reach;
+        let dest = need.outset(pad);
+        if dest.area() == 0 || dest.width > MAX_PIXELS_PER_SIDE || dest.height > MAX_PIXELS_PER_SIDE
+        {
+            return None;
+        }
+        let mut layer = ts::Pixmap::new(need.width, need.height)?;
+        let tl = t.then(Affine::translate(-f64::from(need.x), -f64::from(need.y)));
+        for p in &node.prims {
+            self.draw_prim(&mut layer, p, tl, None);
+        }
+        let (w, h) = (dest.width as usize, dest.height as usize);
+        let mut plane = vec![0u8; w * h];
+        let (nw, nh) = (need.width as usize, need.height as usize);
+        for y in 0..nh {
+            for x in 0..nw {
+                plane[(y + pad as usize) * w + x + pad as usize] =
+                    layer.pixels()[y * nw + x].alpha();
+            }
+        }
+        box_blur3(&mut plane, w, h, r as usize);
+        Some((dest.offset(dx, dy), plane))
     }
 
     /// Draw one primitive with node transform `t`. With `window`, only the
@@ -702,6 +833,54 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                     }
                 }
             }
+            Prim::Path {
+                path,
+                fill,
+                stroke,
+                origin,
+                size,
+                ..
+            } => {
+                let Some(p) = path.ts_path() else {
+                    return;
+                };
+                let tt = to_ts(Affine::translate(origin.0, origin.1).then(t));
+                if let Some(fill) = fill {
+                    let g = Geom::Rect {
+                        w: size.0,
+                        h: size.1,
+                        radius: 0.0,
+                    };
+                    pm.fill_path(p, &fill_paint_of(fill, &g), ts::FillRule::Winding, tt, None);
+                }
+                if let Some(s) = stroke {
+                    let stroke = ts::Stroke {
+                        width: s.width as f32,
+                        line_join: ts::LineJoin::Round,
+                        dash: dash_pattern(s.dash, s.width).and_then(|d| {
+                            ts::StrokeDash::new(d.into_iter().map(|v| v as f32).collect(), 0.0)
+                        }),
+                        ..Default::default()
+                    };
+                    pm.stroke_path(p, &paint_of(s.color.rgba), &stroke, tt, None);
+                }
+            }
+            Prim::Svg {
+                tree,
+                transform,
+                clip,
+            } => {
+                let Some(clip_rect) = ts::Rect::from_xywh(
+                    clip.x as f32,
+                    clip.y as f32,
+                    clip.width as f32,
+                    clip.height as f32,
+                ) else {
+                    return;
+                };
+                let clip_path = ts::PathBuilder::from_rect(clip_rect);
+                draw_svg(pm, tree, transform.then(t), &clip_path, tt, window);
+            }
             Prim::Glyphs(run, ink) => {
                 let key = run.font.key();
                 let upem = self.glyphs.cached_upem(key);
@@ -741,6 +920,88 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
             }
         }
     }
+}
+
+/// Per-pass radius of the 3-pass box blur for a blur of `px` device pixels:
+/// the three passes reach `3 r`, about 1.5 times the blur radius.
+pub(crate) fn blur_radius(px: f64) -> u32 {
+    if px <= 0.0 {
+        0
+    } else {
+        (px / 2.0).ceil().clamp(1.0, 200.0) as u32
+    }
+}
+
+/// Blur a `w` x `h` alpha plane in place: three horizontal box passes,
+/// then three vertical ones, each a window of `2 r + 1` taking zero beyond
+/// the edges, rounded to nearest. Integer sums, fixed order.
+pub(crate) fn box_blur3(plane: &mut [u8], w: usize, h: usize, r: usize) {
+    if r == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let mut line = vec![0u8; w.max(h)];
+    let mut scratch = vec![0u8; w.max(h)];
+    for _ in 0..3 {
+        for y in 0..h {
+            blur_line(&mut plane[y * w..(y + 1) * w], &mut scratch[..w], r);
+        }
+    }
+    for _ in 0..3 {
+        for x in 0..w {
+            for (y, v) in line[..h].iter_mut().enumerate() {
+                *v = plane[y * w + x];
+            }
+            blur_line(&mut line[..h], &mut scratch[..h], r);
+            for (y, v) in line[..h].iter().enumerate() {
+                plane[y * w + x] = *v;
+            }
+        }
+    }
+}
+
+/// One box pass over `data`, in place (`scratch` is as long as `data`).
+fn blur_line(data: &mut [u8], scratch: &mut [u8], r: usize) {
+    let n = data.len();
+    let win = (2 * r + 1) as u32;
+    let mut sum: u32 = data.iter().take(r + 1).map(|&v| u32::from(v)).sum();
+    for i in 0..n {
+        scratch[i] = ((sum + win / 2) / win) as u8;
+        if i + r + 1 < n {
+            sum += u32::from(data[i + r + 1]);
+        }
+        if i >= r {
+            sum -= u32::from(data[i - r]);
+        }
+    }
+    data.copy_from_slice(scratch);
+}
+
+/// The shadow colour at the blurred alpha, as a premultiplied pixmap.
+fn tint_shadow(alpha: &[u8], rect: PixelRect, sh: &NodeShadow) -> Option<ts::Pixmap> {
+    let mut pm = ts::Pixmap::new(rect.width, rect.height)?;
+    let c = sh.color.rgba;
+    let k = (sh.opacity.clamp(0.0, 1.0) * f64::from(c.a)).round() as u32;
+    for (px, &a) in pm.pixels_mut().iter_mut().zip(alpha) {
+        let a2 = (u32::from(a) * k + 127) / 255;
+        let m = |v: u8| ((u32::from(v) * a2 + 127) / 255) as u8;
+        if let Some(p) = ts::PremultipliedColorU8::from_rgba(m(c.r), m(c.g), m(c.b), a2 as u8) {
+            *px = p;
+        }
+    }
+    Some(pm)
+}
+
+/// A shadow rendered for the PDF: straight RGBA pixels and where they go.
+pub struct ShadowBitmap {
+    /// Page points of the top-left corner and the size.
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub px_width: u32,
+    pub px_height: u32,
+    /// Straight (not premultiplied) RGBA8.
+    pub rgba: Vec<u8>,
 }
 
 /// Device-pixel box of a glyph outline drawn with `gt`, grown by `grow` font
@@ -914,4 +1175,67 @@ pub(crate) fn composite(
         ..Default::default()
     };
     pm.fill_rect(r, &fill, ts::Transform::identity(), mask);
+}
+
+#[cfg(test)]
+mod blur_tests {
+    use super::*;
+
+    fn plane(w: usize, h: usize, f: impl Fn(usize, usize) -> u8) -> Vec<u8> {
+        (0..w * h).map(|i| f(i % w, i / w)).collect()
+    }
+
+    #[test]
+    fn radius_zero_is_the_identity_and_reach_is_three_radii() {
+        let mut p = plane(9, 9, |x, y| if x == 4 && y == 4 { 255 } else { 0 });
+        let before = p.clone();
+        box_blur3(&mut p, 9, 9, 0);
+        assert_eq!(p, before);
+        // An impulse spreads exactly 3 r pixels each way and no further.
+        let (w, h, r) = (31, 31, 3);
+        let mut p = plane(w, h, |x, y| if x == 15 && y == 15 { 255 } else { 0 });
+        box_blur3(&mut p, w, h, r);
+        let nz = |x: usize, y: usize| p[y * w + x] != 0;
+        assert!(nz(15 + 3 * r - 1, 15) || nz(15 + 3 * r - 2, 15));
+        assert!(!nz(15 + 3 * r + 1, 15));
+        assert!(!nz(15, 15 - 3 * r - 1));
+    }
+
+    #[test]
+    fn blur_keeps_the_mass_and_is_symmetric() {
+        let (w, h, r) = (60, 50, 4);
+        let mut p = plane(w, h, |x, y| {
+            if (20..40).contains(&x) && (15..35).contains(&y) {
+                255
+            } else {
+                0
+            }
+        });
+        let before: u64 = p.iter().map(|&v| u64::from(v)).sum();
+        box_blur3(&mut p, w, h, r);
+        let after: u64 = p.iter().map(|&v| u64::from(v)).sum();
+        let drift = (after as f64 - before as f64).abs() / before as f64;
+        assert!(drift < 0.01, "mass drifted by {drift}");
+        // The square is centred at x = 29.5, y = 24.5: mirror images agree.
+        for (x, y) in [(10, 10), (22, 20), (29, 24), (45, 30)] {
+            assert_eq!(p[y * w + x], p[(49 - y) * w + (59 - x)], "({x}, {y})");
+        }
+        // A second run gives the same bytes.
+        let mut q = plane(w, h, |x, y| {
+            if (20..40).contains(&x) && (15..35).contains(&y) {
+                255
+            } else {
+                0
+            }
+        });
+        box_blur3(&mut q, w, h, r);
+        assert_eq!(p, q);
+    }
+
+    #[test]
+    fn blur_radius_scales_with_the_blur() {
+        assert_eq!(blur_radius(0.0), 0);
+        assert_eq!(blur_radius(0.2), 1);
+        assert_eq!(blur_radius(8.0), 4);
+    }
 }

@@ -18,5 +18,5 @@ pub use flow::Layouter;
 pub use fonts::{FALLBACK_SANS, FALLBACK_SERIF, FamilyEntry, FontLibrary, FontSource};
 pub use types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
-    PositionedGlyph, StoryLayout,
+    PositionedGlyph, StoryLayout, WordArtLayout,
 };

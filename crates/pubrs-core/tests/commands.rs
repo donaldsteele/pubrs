@@ -827,6 +827,7 @@ fn patch_json_matches_the_golden_corpus() {
             fill: Some(Color::rgb(10, 20, 30).into()),
             stroke: None,
             opacity: 0.5,
+            ..Default::default()
         },
     });
     r.run(Command::SetWrap {
@@ -1107,6 +1108,59 @@ fn patch_json_matches_the_golden_corpus() {
         alt_text: String::new(),
     });
 
+    // WordArt, shadow and border art (schema 7), appended likewise.
+    let wa = FrameId::new(&mut r.fx.ids);
+    let art = WordArtFrame {
+        text: "Grand Opening".into(),
+        font: "Liberation Serif".into(),
+        size: 48.0,
+        warp: Warp::ArchUp,
+        fill: Color::rgb(200, 30, 30).into(),
+        outline: None,
+        shadow: None,
+    };
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame: Frame::new(
+            wa,
+            Rect::new(20.0, 20.0, 300.0, 120.0),
+            FrameContent::WordArt(Box::new(art.clone())),
+        ),
+        story: None,
+    });
+    let shadow = Shadow {
+        offset_x: 3.0,
+        offset_y: 4.0,
+        blur: 2.5,
+        color: Color::rgb(0, 0, 0).into(),
+        opacity: 0.6,
+    };
+    r.run(Command::SetWordArt {
+        frame: wa,
+        art: WordArtFrame {
+            warp: Warp::Wave,
+            outline: Some(Stroke {
+                color: Color::rgb(255, 255, 255).into(),
+                width: 1.5,
+                dash: Dash::Solid,
+            }),
+            shadow: Some(shadow.clone()),
+            ..art
+        },
+    });
+    r.run(Command::SetFrameStyle {
+        frame: wa,
+        style: FrameStyle {
+            shadow: Some(shadow),
+            border_art: Some(BorderArt {
+                pattern: "stars".into(),
+                width: 18.0,
+            }),
+            ..Default::default()
+        },
+    });
+
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/patch_corpus.json");
@@ -1241,6 +1295,7 @@ fn unknown_swatches_and_misplaced_gradients_are_refused() {
             fill,
             stroke,
             opacity: 1.0,
+            ..Default::default()
         },
     };
     assert!(fx.ed.execute(set(Some(ghost), None)).is_err());
@@ -1320,7 +1375,7 @@ fn old_documents_without_swatches_serialize_unchanged() {
 #[test]
 fn image_alt_text_sets_trims_clears_and_undoes() {
     let mut fx = Fixture::new();
-    let page = fx.ed.doc().pages[0].id;
+    let page = fx.page();
     let img = FrameId::new(&mut fx.ids);
     fx.ed
         .execute(Command::AddFrame {
@@ -1407,4 +1462,124 @@ fn paint_objects_reject_typos_and_bad_hex_clearly() {
     let c: Paint = serde_json::from_str("\"#1E3A8A80\"").unwrap();
     assert_eq!(c, Paint::Color(Color::rgba(0x1E, 0x3A, 0x8A, 0x80)));
     assert_eq!(serde_json::to_string(&c).unwrap(), "\"#1E3A8A80\"");
+}
+
+// ---- WordArt, shadows and border art ----
+
+#[test]
+fn wordart_and_effects_are_validated() {
+    let mut fx = Fixture::new();
+    let f = rect_with_fill(&mut fx, None);
+    let style = |shadow: Option<Shadow>, border_art: Option<BorderArt>| Command::SetFrameStyle {
+        frame: f,
+        style: FrameStyle {
+            shadow,
+            border_art,
+            ..Default::default()
+        },
+    };
+    let sh = |blur: f64, opacity: f64| Shadow {
+        offset_x: 2.0,
+        offset_y: 2.0,
+        blur,
+        color: Color::BLACK.into(),
+        opacity,
+    };
+    assert!(fx.ed.execute(style(Some(sh(3.0, 0.5)), None)).is_ok());
+    assert!(fx.ed.execute(style(Some(sh(-1.0, 0.5)), None)).is_err());
+    assert!(fx.ed.execute(style(Some(sh(51.0, 0.5)), None)).is_err());
+    assert!(fx.ed.execute(style(Some(sh(3.0, 1.5)), None)).is_err());
+    let grad = Paint::Gradient {
+        gradient: GradientKind::Linear,
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::BLACK.into(),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::WHITE.into(),
+            },
+        ],
+        angle: 0.0,
+    };
+    let mut gs = sh(1.0, 1.0);
+    gs.color = grad;
+    assert!(
+        fx.ed.execute(style(Some(gs), None)).is_err(),
+        "gradient shadow"
+    );
+    let ba = |p: &str, w: f64| BorderArt {
+        pattern: p.into(),
+        width: w,
+    };
+    assert!(fx.ed.execute(style(None, Some(ba("hearts", 12.0)))).is_ok());
+    assert!(fx.ed.execute(style(None, Some(ba("nope", 12.0)))).is_err());
+    assert!(fx.ed.execute(style(None, Some(ba("hearts", 1.0)))).is_err());
+    // SetWordArt only applies to WordArt frames.
+    let art = WordArtFrame {
+        text: "Hi".into(),
+        font: "Liberation Sans".into(),
+        size: 40.0,
+        warp: Warp::Circle,
+        fill: Color::BLACK.into(),
+        outline: None,
+        shadow: None,
+    };
+    assert!(
+        fx.ed
+            .execute(Command::SetWordArt {
+                frame: f,
+                art: art.clone()
+            })
+            .is_err()
+    );
+    let page = fx.page();
+    let wa = FrameId::new(&mut fx.ids);
+    fx.ed
+        .execute(Command::AddFrame {
+            parent: Parent::Page(page),
+            index: None,
+            frame: Frame::new(
+                wa,
+                Rect::new(0.0, 0.0, 100.0, 50.0),
+                FrameContent::WordArt(Box::new(art.clone())),
+            ),
+            story: None,
+        })
+        .unwrap();
+    let mut long = art.clone();
+    long.text = "x".repeat(201);
+    assert!(
+        fx.ed
+            .execute(Command::SetWordArt {
+                frame: wa,
+                art: long
+            })
+            .is_err()
+    );
+    let mut bad = art.clone();
+    bad.size = 0.0;
+    assert!(
+        fx.ed
+            .execute(Command::SetWordArt {
+                frame: wa,
+                art: bad
+            })
+            .is_err()
+    );
+    fx.ed
+        .execute(Command::SetWordArt {
+            frame: wa,
+            art: WordArtFrame {
+                warp: Warp::Wave,
+                ..art
+            },
+        })
+        .unwrap();
+    fx.ed.undo();
+    assert_eq!(
+        fx.ed.doc().frame(wa).unwrap().as_wordart().unwrap().warp,
+        Warp::Circle
+    );
 }

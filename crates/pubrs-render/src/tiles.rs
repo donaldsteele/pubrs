@@ -116,7 +116,7 @@ fn geom_extent(g: Geom) -> (f64, f64, f64, f64) {
     }
 }
 
-fn prim_box(prim: &Prim, t: Affine, glyphs: &GlyphCache) -> Option<PixelRect> {
+pub(crate) fn prim_box(prim: &Prim, t: Affine, glyphs: &GlyphCache) -> Option<PixelRect> {
     let pad = |r: PixelRect| Some(r.outset(2));
     match prim {
         Prim::Fill { geom, .. } => {
@@ -131,6 +131,20 @@ fn prim_box(prim: &Prim, t: Affine, glyphs: &GlyphCache) -> Option<PixelRect> {
         }
         Prim::Image { clip, .. } => pad(affine_box(t, clip.x, clip.y, clip.right(), clip.bottom())),
         Prim::Rect { rect, .. } => pad(affine_box(t, rect.x, rect.y, rect.right(), rect.bottom())),
+        Prim::Svg { clip, .. } => pad(affine_box(t, clip.x, clip.y, clip.right(), clip.bottom())),
+        Prim::Path {
+            path,
+            stroke,
+            origin,
+            ..
+        } => {
+            let (l, tp, r, b) = path.bounds()?;
+            let (l, tp, r, b) = (l + origin.0, tp + origin.1, r + origin.0, b + origin.1);
+            let g = stroke
+                .as_ref()
+                .map_or(0.0, |s| 2.0 * s.width.max(0.0) + 1.0);
+            pad(affine_box(t, l - g, tp - g, r + g, b + g))
+        }
         Prim::Glyphs(run, _) => {
             let key = run.font.key();
             let upem = glyphs.cached_upem(key);
@@ -292,7 +306,13 @@ impl TileRenderer {
         // Imposed sheets clip every node to its cell. They are only made for
         // PDF and PNG output, never for the viewport, so they take the
         // untiled path (identical by construction) instead of a tiled mask.
-        if scene.nodes.iter().any(|n| n.clip.is_some()) {
+        // Nodes with a drop shadow blur a whole layer, so they take the same
+        // untiled path (ADR 0020).
+        if scene
+            .nodes
+            .iter()
+            .any(|n| n.clip.is_some() || n.shadow.is_some())
+        {
             let pm = crate::RasterRenderer::new().render_region(scene, images, region)?;
             let src = pm.data().as_chunks::<4>().0;
             let stride = region.rect.width as usize;

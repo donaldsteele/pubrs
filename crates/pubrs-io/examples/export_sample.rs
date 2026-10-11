@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fill: Some(Color::rgb(30, 58, 138).into()),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )?;
     let (logo, data) = pubrs_io::import_image(&mut b.ids, "logo.svg", SVG.as_bytes().to_vec())?;

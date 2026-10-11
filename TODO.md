@@ -8,7 +8,6 @@ Deferred and partial work. Each entry says what is missing and why.
 - `.pub` import beyond M31 part 1 (reference: libmspub).
 - CMYK / spot colours, PDF/X output.
 - Tables.
-- WordArt-style text effects.
 - Avery label sheet presets.
 
 ## Partial features
@@ -32,7 +31,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - The Windows ARM64 MSI is built but not install-checked in CI (no ARM64 Windows runner in the release workflow).
 - The Windows ARM64 MSI has no bundled Mesa (mesa-dist-win publishes x64 and x86 only), so ARM64 Windows without a GPU driver still draws with WARP: about 0.5 CPU-seconds per frame (ADR 0011).
 - Bundled Mesa is pinned to mesa-dist-win 26.2.4. Updating it means a new version and SHA-256 in `packaging/windows/fetch-mesa.ps1` and `packaging/windows/mesa/THIRD-PARTY-NOTICES.txt`.
-- Find and replace does not search WordArt text yet (M25 must add it in `crates/pubrs-api/src/tools/find.rs`); table cells are covered because they are stories.
+- Find and replace reaches WordArt text (M25), but the GUI selects the WordArt frame (it has no caret), Replace replaces only the first match in the selected frame, and "selection only" never includes WordArt; table cells are covered because they are stories.
 - Guides on master pages are drawn on the pages using them but can only be moved through `guide_move` (there is no master-editing view in the GUI).
 
 ## Hyphenation (M14)
@@ -98,4 +97,13 @@ Deferred and partial work. Each entry says what is missing and why.
 - The word being typed is flagged at once (no wait until the word is finished), and there is no setting to turn checking as you type off.
 - Squiggles are drawn for text frames on the page shown, not for text on its master page.
 - Ignore accepts the word everywhere for the session (there is no "ignore once"; Next in the Spelling window skips one occurrence).
-- WordArt text (M25) is not checked yet (it must be added where `check_document` walks stories); table cells (M19) will be, because they are stories.
+- WordArt text (M25) is not spell checked: the spell worker's reports, squiggles and Change are all keyed to stories and a warped line has nowhere to draw a squiggle; table cells (M19) will be, because they are stories.
+
+## WordArt, shadows and BorderArt (M25)
+
+- BorderArt pattern colours are fixed in the SVGs; there is no colour option and no way to add a user pattern.
+- The WordArt text is edited in the properties panel and the gallery, not in place on the canvas, and WordArt has no per-letter formatting (one paragraph warped as a whole, Owner decision 8).
+- Shadow offsets are rounded to whole device pixels and the blur is three box passes (a Gaussian approximation). In PDF a shadow is a 150 dpi bitmap (ADR 0020), so even a hard shadow has a 150 dpi edge.
+- The GPU backend (`gpu` feature) has no blur: `Rasterizer` draws pages with a shadow with tiny-skia. Pages with a shadowed frame also skip the parallel tile path in the GUI's viewport (the untiled render is used, so output stays exact).
+- WordArt warps are fixed shapes (no adjustable handles), the text is scaled down but never up to fit the frame, and `circle` closes at 97% of a turn.
+- The Format menu holds Shadow and Border Art… only; the plan's Format menu (Paragraph…, Tabs…, Bullets and Numbering…, Drop Cap…, Character…) lives in the Text menu for now.

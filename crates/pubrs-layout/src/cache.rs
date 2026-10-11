@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 use pubrs_core::{Document, Story, StoryId, StyleSheet};
 
 use crate::flow::{DocIndex, Layouter, Region, regions_for};
-use crate::types::{DocumentLayout, StoryLayout};
+use crate::types::{DocumentLayout, StoryLayout, WordArtLayout};
+use pubrs_core::FrameId;
 
 /// Everything the flow of one story reads. Two equal keys give equal
 /// [`StoryLayout`]s; the key is a snapshot compared by equality (no hash,
@@ -124,10 +125,26 @@ struct Entry {
     layout: Arc<StoryLayout>,
 }
 
+/// What shaping a WordArt frame reads: its text, family and size (the warp,
+/// fill and outline are applied at render time) and the font library.
+#[derive(Debug, Clone, PartialEq)]
+struct WordArtKey {
+    text: String,
+    font: String,
+    size: f64,
+    fonts: (usize, usize),
+}
+
+struct WordArtEntry {
+    key: WordArtKey,
+    layout: Arc<WordArtLayout>,
+}
+
 /// Per-story layouts of one document. Keep one per open document; the
 /// [`Layouter`] (fonts and shaping caches) can be shared between them.
 pub struct StoryLayoutCache {
     entries: BTreeMap<StoryId, Entry>,
+    wordart: BTreeMap<FrameId, WordArtEntry>,
     styles: Option<StyleSheet>,
     styles_generation: u64,
     stats: CacheStats,
@@ -163,6 +180,7 @@ impl StoryLayoutCache {
     pub fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
+            wordart: BTreeMap::new(),
             styles: None,
             styles_generation: 0,
             stats: CacheStats::default(),
@@ -178,6 +196,7 @@ impl StoryLayoutCache {
     /// Forget every cached story.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.wordart.clear();
         self.styles = None;
     }
 
@@ -228,6 +247,34 @@ impl StoryLayoutCache {
             };
             out.stories.insert(*id, layout);
         }
+        // WordArt: shaped once per frame, keyed on text, family, size and fonts.
+        self.wordart
+            .retain(|id, _| doc.frame(*id).is_some_and(|f| f.as_wordart().is_some()));
+        for (id, f) in &doc.frames {
+            let Some(w) = f.as_wordart() else { continue };
+            let key = WordArtKey {
+                text: w.text.clone(),
+                font: w.font.clone(),
+                size: w.size,
+                fonts,
+            };
+            let layout = match self.wordart.get(id) {
+                Some(e) if e.key == key => e.layout.clone(),
+                _ => {
+                    recomposed += 1;
+                    let layout = Arc::new(layouter.layout_wordart(w));
+                    self.wordart.insert(
+                        *id,
+                        WordArtEntry {
+                            key,
+                            layout: layout.clone(),
+                        },
+                    );
+                    layout
+                }
+            };
+            out.wordart.insert(*id, layout);
+        }
         self.stats = CacheStats {
             recomposed,
             reused,
@@ -259,6 +306,14 @@ fn font_fingerprint(layouter: &mut Layouter) -> (usize, usize) {
 /// `incremental` differs.
 fn verify(layouter: &mut Layouter, doc: &Document, incremental: &DocumentLayout) {
     let full = layouter.layout_document(doc);
+    let ids = full.wordart.keys().chain(incremental.wordart.keys());
+    for id in ids {
+        if full.wordart.get(id) != incremental.wordart.get(id) {
+            panic!(
+                "PUBRS_LAYOUT_VERIFY: the incremental WordArt layout of frame {id} differs from a full layout"
+            );
+        }
+    }
     let ids = full.stories.keys().chain(incremental.stories.keys());
     for id in ids {
         if full.stories.get(id) != incremental.stories.get(id) {

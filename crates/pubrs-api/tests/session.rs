@@ -543,9 +543,9 @@ fn find_and_replace_all_across_stories() {
     // Across both stories, in reading order.
     let r = find(&mut s, "cat", false, false);
     assert_eq!(r.count, 4);
-    assert_eq!(r.matches[0].story_id, a.story_id.unwrap());
+    assert_eq!(r.matches[0].story_id, Some(a.story_id.unwrap()));
     assert_eq!(r.matches[0].frame_id, Some(a.frame_id));
-    assert_eq!(r.matches[3].story_id, b.story_id.unwrap());
+    assert_eq!(r.matches[3].story_id, Some(b.story_id.unwrap()));
     assert_eq!(r.matches[3].frame_id, Some(b.frame_id));
     assert!(r.matches[0].context.contains("cat"));
     assert_eq!(find(&mut s, "cat", true, false).count, 3);
@@ -841,4 +841,188 @@ fn list_restart_is_validated_up_front() {
     .unwrap();
     let err = s.text_apply_list(req).unwrap_err();
     assert!(err.to_string().contains("restart_at"), "{err}");
+}
+
+#[test]
+fn wordart_tools_find_replace_and_effects() {
+    use pubrs_api::core::{FrameContent, Warp};
+    use pubrs_api::tools::wordart::*;
+    let mut s = session();
+    let d = s.doc_new(DocNew::default()).unwrap();
+    let page = d.page_ids[0];
+    let w = s
+        .frame_add_wordart(FrameAddWordArt {
+            doc_id: None,
+            page_id: Some(page),
+            master_id: None,
+            text: "Sale on now".into(),
+            x: 20.0,
+            y: 20.0,
+            width: 300.0,
+            height: 100.0,
+            font: None,
+            size: None,
+            warp: Some(Warp::ArchUp),
+            fill: None,
+            outline: None,
+            outline_width: Some(2.0),
+            shadow: None,
+            name: Some("Banner".into()),
+        })
+        .unwrap();
+    let t = text_frame(&mut s, page, 20.0, 200.0, 300.0, 60.0, "The sale is on");
+    // Find reaches WordArt: story_id null, frame_id the WordArt.
+    let find = |s: &mut Session, q: &str| {
+        s.text_find(TextFind {
+            doc_id: None,
+            frame_id: None,
+            story_id: None,
+            query: q.into(),
+            case_sensitive: false,
+            whole_word: true,
+            start: None,
+            end: None,
+        })
+        .unwrap()
+    };
+    let r = find(&mut s, "sale");
+    assert_eq!(r.count, 2);
+    let m = r.matches.iter().find(|m| m.story_id.is_none()).unwrap();
+    assert_eq!(m.frame_id, Some(w.frame_id));
+    assert_eq!((m.start, m.end), (0, 4));
+    // Replace-all edits both in one step.
+    let rep = s
+        .text_replace_all(TextReplaceAll {
+            doc_id: None,
+            frame_id: None,
+            story_id: None,
+            query: "sale".into(),
+            replacement: "SALE!".into(),
+            case_sensitive: false,
+            whole_word: true,
+            start: None,
+            end: None,
+        })
+        .unwrap();
+    assert_eq!(rep.count, 2);
+    let doc = s.get(None).unwrap().doc().clone();
+    let art = doc.frame(w.frame_id).unwrap().as_wordart().unwrap().clone();
+    assert_eq!(art.text, "SALE! on now");
+    assert!(
+        art.outline.is_some(),
+        "outline_width alone gives a black outline"
+    );
+    let _ = t;
+    s.undo(Default::default()).unwrap();
+    let art = s
+        .get(None)
+        .unwrap()
+        .doc()
+        .frame(w.frame_id)
+        .unwrap()
+        .as_wordart()
+        .unwrap()
+        .clone();
+    assert_eq!(art.text, "Sale on now", "one undo step reverts both");
+    // wordart_set changes only what is given.
+    s.wordart_set(WordArtSet {
+        doc_id: None,
+        frame_id: w.frame_id,
+        text: None,
+        font: None,
+        size: Some(60.0),
+        warp: Some(Warp::Wave),
+        fill: None,
+        outline: None,
+        outline_width: None,
+        dash: None,
+        shadow: Some(serde_json::from_str(r#"{"blur": 6, "offset_x": 3}"#).unwrap()),
+    })
+    .unwrap();
+    let art = s
+        .get(None)
+        .unwrap()
+        .doc()
+        .frame(w.frame_id)
+        .unwrap()
+        .as_wordart()
+        .unwrap()
+        .clone();
+    assert_eq!((art.warp, art.size), (Warp::Wave, 60.0));
+    assert_eq!(
+        art.shadow
+            .as_ref()
+            .map(|s| (s.blur, s.offset_x, s.offset_y)),
+        Some((6.0, 3.0, 4.0))
+    );
+    assert_eq!(art.outline.as_ref().map(|o| o.width), Some(2.0));
+    // wordart_set on a text frame is refused with a hint.
+    let err = s
+        .wordart_set(WordArtSet {
+            doc_id: None,
+            frame_id: t.frame_id,
+            text: Some("x".into()),
+            font: None,
+            size: None,
+            warp: None,
+            fill: None,
+            outline: None,
+            outline_width: None,
+            dash: None,
+            shadow: None,
+        })
+        .unwrap_err();
+    assert!(err.hint.contains("frame_add_wordart"), "{err:?}");
+    // Style: shadow and border art, then "none" clears.
+    let style = |shadow: Option<&str>, border: Option<&str>| FrameSetStyle {
+        doc_id: None,
+        frame_id: t.frame_id,
+        fill: None,
+        stroke: None,
+        stroke_width: None,
+        dash: None,
+        opacity: None,
+        shadow: shadow.map(|j| serde_json::from_str(j).unwrap()),
+        border_art: border.map(|j| serde_json::from_str(j).unwrap()),
+        name: None,
+    };
+    s.frame_set_style(style(
+        Some(r#"{"blur": 3}"#),
+        Some(r#"{"pattern": "hearts"}"#),
+    ))
+    .unwrap();
+    let f = s
+        .get(None)
+        .unwrap()
+        .doc()
+        .frame(t.frame_id)
+        .unwrap()
+        .clone();
+    assert_eq!(f.style.shadow.as_ref().map(|s| s.blur), Some(3.0));
+    assert_eq!(f.style.border_art.as_ref().map(|b| b.width), Some(18.0));
+    assert!(
+        s.frame_set_style(style(None, Some(r#"{"pattern": "nope"}"#)))
+            .is_err()
+    );
+    s.frame_set_style(style(Some(r#""none""#), Some(r#""none""#)))
+        .unwrap();
+    let f = s
+        .get(None)
+        .unwrap()
+        .doc()
+        .frame(t.frame_id)
+        .unwrap()
+        .clone();
+    assert!(f.style.shadow.is_none() && f.style.border_art.is_none());
+    let list = s.border_art_list(BorderArtList {}).unwrap();
+    assert_eq!(list.patterns.len(), 12);
+    assert!(matches!(
+        s.get(None)
+            .unwrap()
+            .doc()
+            .frame(w.frame_id)
+            .unwrap()
+            .content,
+        FrameContent::WordArt(_)
+    ));
 }

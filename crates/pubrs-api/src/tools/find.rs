@@ -1,10 +1,13 @@
-//! Find and replace across stories.
+//! Find and replace across stories and WordArt frames.
 //!
 //! Every story in the document is searched, which covers text frames, and will
-//! cover table cells (M19) automatically because cells are stories.
-//! TODO(M25): WordArt text must be added to `scan` once it exists.
+//! cover table cells (M19) automatically because cells are stories. The text
+//! of WordArt frames is searched too: those matches have `story_id: null`
+//! and the WordArt's `frame_id`, and replacing edits them with
+//! `SetWordArt` in the same batch (ADR 0020).
 
 use pubrs_core::text::FindOptions;
+use pubrs_core::text::find_matches;
 use pubrs_core::{Command, DocumentId, FrameId, Owner, StoryId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -42,8 +45,10 @@ pub struct TextFind {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct FindMatch {
-    pub story_id: StoryId,
-    /// The frame showing the start of the match (null if it is not shown).
+    /// The story (null for a WordArt frame, whose text is not a story).
+    pub story_id: Option<StoryId>,
+    /// The frame showing the start of the match (null if it is not shown);
+    /// the WordArt frame for WordArt matches.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frame_id: Option<FrameId>,
     /// Character offsets, end exclusive.
@@ -92,9 +97,19 @@ pub struct TextReplaceAllOut {
 }
 
 struct Hit {
-    story: StoryId,
+    /// `None` for a WordArt frame.
+    story: Option<StoryId>,
+    /// The WordArt frame (only when `story` is `None`).
+    wordart: Option<FrameId>,
     start: usize,
     end: usize,
+}
+
+/// Where text is searched.
+#[derive(Clone, Copy)]
+enum Src {
+    Story(StoryId),
+    WordArt(FrameId),
 }
 
 impl Session {
@@ -121,13 +136,34 @@ impl Session {
             return Err(ApiError::invalid("query is empty", "give the text to find"));
         }
         let doc = self.get(doc_id)?.doc();
-        let mut stories: Vec<StoryId> = if single {
-            vec![self.resolve_story(doc_id, frame_id, story_id)?]
+        let wordart_only = story_id.is_none()
+            && frame_id
+                .and_then(|f| doc.frame(f))
+                .is_some_and(|f| f.as_wordart().is_some());
+        let mut sources: Vec<Src> = if wordart_only {
+            frame_id.map(Src::WordArt).into_iter().collect()
+        } else if single {
+            vec![Src::Story(self.resolve_story(doc_id, frame_id, story_id)?)]
         } else {
-            doc.stories.keys().copied().collect()
+            doc.stories
+                .keys()
+                .map(|s| Src::Story(*s))
+                .chain(
+                    doc.frames
+                        .values()
+                        .filter(|f| f.as_wordart().is_some())
+                        .map(|f| Src::WordArt(f.id)),
+                )
+                .collect()
         };
-        let order = |s: &StoryId| -> (usize, i64, i64, StoryId) {
-            let first = doc.story(*s).and_then(|st| st.frames.first().copied());
+        let order = |src: &Src| -> (usize, i64, i64, String) {
+            let (first, tie) = match src {
+                Src::Story(s) => (
+                    doc.story(*s).and_then(|st| st.frames.first().copied()),
+                    s.to_string(),
+                ),
+                Src::WordArt(f) => (Some(*f), f.to_string()),
+            };
             let page = first
                 .and_then(|f| match doc.owner_of(f) {
                     Some(Owner::Page(p)) => doc.pages.iter().position(|q| q.id == p),
@@ -137,20 +173,32 @@ impl Session {
             let (x, y) = first
                 .and_then(|f| doc.frame(f))
                 .map_or((0, 0), |f| (f.rect.x as i64, f.rect.y as i64));
-            (page, y, x, *s)
+            (page, y, x, tie)
         };
-        stories.sort_by_key(order);
+        sources.sort_by_cached_key(order);
         let mut out = Vec::new();
-        for s in stories {
-            let Some(story) = doc.story(s) else { continue };
+        for src in sources {
+            let (text, owner) = match src {
+                Src::Story(s) => {
+                    let Some(story) = doc.story(s) else { continue };
+                    (story.plain_text(), (Some(s), None))
+                }
+                Src::WordArt(f) => {
+                    let Some(w) = doc.frame(f).and_then(|f| f.as_wordart()) else {
+                        continue;
+                    };
+                    (w.text.clone(), (None, Some(f)))
+                }
+            };
             let limit = if single && (start.is_some() || end.is_some()) {
-                Some((start.unwrap_or(0), end.unwrap_or(story.char_len())))
+                Some((start.unwrap_or(0), end.unwrap_or(text.chars().count())))
             } else {
                 None
             };
-            for (a, b) in story.find(query, opts, limit) {
+            for (a, b) in find_matches(&text, query, opts, limit) {
                 out.push(Hit {
-                    story: s,
+                    story: owner.0,
+                    wordart: owner.1,
                     start: a,
                     end: b,
                 });
@@ -178,23 +226,40 @@ impl Session {
         let mut texts: std::collections::BTreeMap<StoryId, Vec<char>> = Default::default();
         let mut matches = Vec::with_capacity(hits.len());
         for h in hits {
-            let Some(story) = doc.story(h.story) else {
+            let Some(sid) = h.story else {
+                let Some(f) = h.wordart else { continue };
+                let Some(w) = doc.frame(f).and_then(|f| f.as_wordart()) else {
+                    continue;
+                };
+                let chars: Vec<char> = w.text.chars().collect();
+                let a = h.start.saturating_sub(20);
+                let b = (h.end + 20).min(chars.len());
+                matches.push(FindMatch {
+                    story_id: None,
+                    frame_id: Some(f),
+                    start: h.start,
+                    end: h.end,
+                    context: snippet(&chars[a..b]),
+                });
+                continue;
+            };
+            let Some(story) = doc.story(sid) else {
                 continue;
             };
             let chars = texts
-                .entry(h.story)
+                .entry(sid)
                 .or_insert_with(|| story.plain_text().chars().collect());
             let a = h.start.saturating_sub(20);
             let b = (h.end + 20).min(chars.len());
             let context = snippet(&chars[a..b]);
-            let sl = layout.stories.get(&h.story);
+            let sl = layout.stories.get(&sid);
             let shown = |f: &FrameId| {
                 sl.and_then(|s| s.frames.get(f))
                     .is_some_and(|ft| ft.chars.contains(&h.start))
             };
             let frame_id = story.frames.iter().copied().find(shown);
             matches.push(FindMatch {
-                story_id: h.story,
+                story_id: Some(sid),
                 frame_id,
                 start: h.start,
                 end: h.end,
@@ -235,16 +300,37 @@ impl Session {
         }
         let count = hits.len();
         // Back to front so earlier offsets stay valid.
-        let commands = hits
-            .into_iter()
-            .rev()
-            .map(|h| Command::ReplaceText {
-                story: h.story,
-                start: h.start,
-                end: h.end,
-                text: req.replacement.clone(),
-            })
-            .collect();
+        let mut commands = Vec::new();
+        let mut wordart: std::collections::BTreeMap<FrameId, Vec<(usize, usize)>> =
+            Default::default();
+        for h in hits.into_iter().rev() {
+            match (h.story, h.wordart) {
+                (Some(story), _) => commands.push(Command::ReplaceText {
+                    story,
+                    start: h.start,
+                    end: h.end,
+                    text: req.replacement.clone(),
+                }),
+                (None, Some(f)) => wordart.entry(f).or_default().push((h.start, h.end)),
+                (None, None) => {}
+            }
+        }
+        {
+            let doc = self.get(req.doc_id)?.doc();
+            for (f, ranges) in wordart {
+                let Some(art) = doc.frame(f).and_then(|f| f.as_wordart()) else {
+                    continue;
+                };
+                // `ranges` run back to front, so earlier offsets stay valid.
+                let mut chars: Vec<char> = art.text.chars().collect();
+                for (a, b) in ranges {
+                    chars.splice(a..b, req.replacement.chars());
+                }
+                let mut art = art.clone();
+                art.text = chars.into_iter().collect();
+                commands.push(Command::SetWordArt { frame: f, art });
+            }
+        }
         let change = self.exec(
             req.doc_id,
             Command::Batch {

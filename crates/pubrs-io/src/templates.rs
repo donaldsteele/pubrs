@@ -147,6 +147,7 @@ impl T {
                     fill: Some(fill.into()),
                     stroke: None,
                     opacity: 1.0,
+                    ..Default::default()
                 },
             )
             .expect("style");
@@ -356,6 +357,7 @@ fn flyer() -> Document {
             fill: Some(ORANGE),
             stroke: None,
             opacity: 1.0,
+            ..Default::default()
         },
     )
     .expect("cta");

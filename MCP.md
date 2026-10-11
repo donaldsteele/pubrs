@@ -186,9 +186,9 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000002d",
+  "doc_id": "00000000-0000-87ea-8000-00000000002e",
   "page_ids": [
-    "00000000-0000-87ea-8000-000000000025"
+    "00000000-0000-87ea-8000-000000000026"
   ],
   "revision": 1
 }
@@ -221,7 +221,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000023",
+  "doc_id": "00000000-0000-87ea-8000-000000000024",
   "page_ids": [
     "00000000-0000-87ea-8000-000000000002",
     "00000000-0000-87ea-8000-00000000000b"
@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 159330,
+  "bytes": 162984,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 159330,
+  "bytes": 162984,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -339,7 +339,7 @@ _destructive (needs `confirm: true`)_
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-000000000022"
+    "doc_id": "00000000-0000-87ea-8000-000000000023"
   },
   "name": "doc_close"
 }
@@ -351,7 +351,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": false,
-  "doc_id": "00000000-0000-87ea-8000-000000000022"
+  "doc_id": "00000000-0000-87ea-8000-000000000023"
 }
 ```
 
@@ -361,7 +361,7 @@ Result:
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-00000000002d"
+    "doc_id": "00000000-0000-87ea-8000-00000000002e"
   },
   "name": "doc_close"
 }
@@ -373,7 +373,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": true,
-  "doc_id": "00000000-0000-87ea-8000-00000000002d"
+  "doc_id": "00000000-0000-87ea-8000-00000000002e"
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 72
+  "revision": 76
 }
 ```
 
@@ -920,7 +920,7 @@ Result:
       },
       "…": "5 more keys"
     },
-    "… 2 more"
+    "… 3 more"
   ],
   "guides": [],
   "index": 0,
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 73
+  "revision": 77
 }
 ```
 
@@ -1872,18 +1872,20 @@ Result:
 
 ### `frame_set_style`
 
-Set a frame's fill colour, outline (stroke colour, width in points, dash solid/dashed/dotted), opacity (0-1) and display name. Use "none" to remove fill or outline.
+Set a frame's fill colour, outline (stroke colour, width in points, dash solid/dashed/dotted), opacity (0-1), drop shadow ({offset_x, offset_y, blur, color, opacity}), BorderArt border ({pattern, width}) and display name. Use "none" to remove fill, outline, shadow or border art.
 
 **Arguments**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `border_art` | "none" \| object |  | A BorderArt border: {pattern, width} (patterns from border_art_list), or "none". Omit to keep. |
 | `dash` | "solid" \| "dashed" \| "dotted" \| null |  | Dash pattern of a stroke. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `fill` | string \| string \| object \| object |  | Background fill, or "none". |
 | `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
 | `name` | string |  | Display name (empty string clears). Display name shown in frame lists. |
 | `opacity` | number |  | 0 (invisible) to 1 (opaque). |
+| `shadow` | "none" \| object |  | Drop shadow of the frame (shapes, pictures, text frames, WordArt): {offset_x, offset_y, blur, color, opacity}, or "none". Omit to keep. |
 | `stroke` | string \| string \| object \| object |  | Outline colour, or "none". |
 | `stroke_width` | number |  | Outline width in points. |
 
@@ -1942,6 +1944,205 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "revision": 57
+}
+```
+
+### `frame_add_wordart`
+
+Add WordArt: one line of decorative text warped as a whole (warp: none, arch_up, arch_down, circle, wave, slant_up, slant_down, inflate) with a fill (colour, swatch or gradient), optional outline and shadow. The text is scaled down, never up, to fit the box; size is its nominal size (default 120, so it fills the box). Edit it with wordart_set.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `fill` | string \| object \| object |  | Letter fill: a colour, swatch or gradient (default #1E3A8A). |
+| `font` | string |  | Font family (default: the document's default font). |
+| `height` | number | yes | Height in points. |
+| `master_id` | string |  | Identifies a master page. |
+| `name` | string |  | Display name shown in frame lists. |
+| `outline` | string \| string \| object \| object |  | Outline colour or swatch, or "none" (default none). |
+| `outline_width` | number |  | Outline width in points (default 1.5 when there is an outline). |
+| `page_id` | string |  | Identifies a page. |
+| `shadow` | object |  | Shadow under the letters. |
+| `size` | number |  | Nominal font size in points (default 120). The warped text is scaled down to fit the frame, never up, so a large size fills the frame. |
+| `text` | string | yes | The words (one line, up to 200 characters). |
+| `warp` | "none" \| "arch_up" \| "arch_down" \| "circle" \| "wave" \| "slant_up" \| "slant_down" \| "inflate" |  | none (default), arch_up, arch_down, circle, wave, slant_up, slant_down or inflate. |
+| `width` | number | yes | Width in points. |
+| `x` | number | yes | Left edge in points from the page's left edge. |
+| `y` | number | yes | Top edge in points from the page's top edge (y grows down). |
+
+**Result fields:** `affected_ids`, `asset_id`, `doc_id`, `frame_id`, `revision`, `story_id`
+
+**Example** — WordArt is one line of decorative text warped as a whole. The result is scaled down (never up) to fit the box; size is its nominal size and defaults to 120, so the text fills the box.
+
+```json
+{
+  "arguments": {
+    "fill": {
+      "angle": 90,
+      "gradient": "linear",
+      "stops": [
+        {
+          "color": "#FACC15",
+          "offset": 0
+        },
+        {
+          "color": "#DC2626",
+          "offset": 1
+        }
+      ]
+    },
+    "height": 110,
+    "name": "Banner",
+    "outline": "#1E3A5F",
+    "outline_width": 1.5,
+    "shadow": {
+      "blur": 4,
+      "offset_x": 3,
+      "offset_y": 3,
+      "opacity": 0.5
+    },
+    "text": "Spring Fair",
+    "warp": "arch_up",
+    "width": 360,
+    "x": 36,
+    "y": 300
+  },
+  "name": "frame_add_wordart"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000002",
+    "00000000-0000-87ea-8000-000000000021"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "frame_id": "00000000-0000-87ea-8000-000000000021",
+  "revision": 70
+}
+```
+
+### `wordart_set`
+
+Change a WordArt frame: text, font, size, warp, fill, outline (colour or "none", width, dash) and shadow ({offset_x, offset_y, blur, color, opacity} or "none"). Only the fields given change. text_find and text_replace_all also reach WordArt text.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dash` | "solid" \| "dashed" \| "dotted" \| null |  | Dash pattern of a stroke. |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `fill` | string \| object \| object |  | Letter fill: a colour, swatch or gradient. |
+| `font` | string |  |  |
+| `frame_id` | uuid | yes | A WordArt frame. |
+| `outline` | string \| string \| object \| object |  | Outline colour or swatch, or "none". |
+| `outline_width` | number |  | Outline width in points. |
+| `shadow` | "none" \| object |  | A shadow under the letters, or "none". |
+| `size` | number |  | Nominal font size in points. |
+| `text` | string |  |  |
+| `warp` | "none" \| "arch_up" \| "arch_down" \| "circle" \| "wave" \| "slant_up" \| "slant_down" \| "inflate" |  | none, arch_up, arch_down, circle, wave, slant_up, slant_down or inflate. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — Only the fields given change; "none" removes the shadow.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000021",
+    "shadow": "none",
+    "text": "Spring Fair 2027",
+    "warp": "wave"
+  },
+  "name": "wordart_set"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000021"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 71
+}
+```
+
+**Example** — Text frames are changed with text_set.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000017",
+    "text": "x"
+  },
+  "name": "wordart_set"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "create one with frame_add_wordart; use text_set for text frames",
+  "message": "frame 00000000-0000-87ea-8000-000000000017 is not WordArt"
+}
+```
+
+### `border_art_list`
+
+List the twelve BorderArt patterns and the allowed width range. Apply one with frame_set_style border_art {pattern, width}; the tiles are scaled so a whole number fits each edge and the corners get their own piece.
+
+_read-only_
+
+**Arguments**
+
+_No arguments._
+
+**Result fields:** `max_width`, `min_width`, `patterns`
+
+**Example**
+
+```json
+{
+  "arguments": {},
+  "name": "border_art_list"
+}
+```
+
+Result:
+
+```json
+{
+  "max_width": 72.0,
+  "min_width": 4.0,
+  "patterns": [
+    {
+      "description": "Gold five-point stars, red starburst corners.",
+      "name": "stars"
+    },
+    {
+      "description": "Red hearts, dark-red corner hearts.",
+      "name": "hearts"
+    },
+    {
+      "description": "Blue dots with small light dots between.",
+      "name": "dots"
+    },
+    {
+      "description": "Two teal wavy lines, ring corners.",
+      "name": "waves"
+    },
+    "… 8 more"
+  ]
 }
 ```
 
@@ -2034,7 +2235,7 @@ _read-only_
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `doc_id` | string |  | Document id (default: the most recently used document). |
-| `kind` | "text" \| "image" \| "shape" \| "group" \| null |  | Only frames of this kind: text, image, shape or group. |
+| `kind` | "text" \| "image" \| "shape" \| "group" \| "word_art" \| null |  | Only frames of this kind: text, image, shape, group or word_art. |
 | `master_id` | string |  | Only frames on this master page. |
 | `page_id` | string |  | Only frames on this page. |
 
@@ -2087,7 +2288,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 69
+  "revision": 73
 }
 ```
 
@@ -2152,7 +2353,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 69,
+  "revision": 73,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2912,6 +3113,42 @@ Result:
 }
 ```
 
+**Example** — WordArt text is found too: such matches have story_id null and the WordArt's frame_id.
+
+```json
+{
+  "arguments": {
+    "query": "fair",
+    "whole_word": true
+  },
+  "name": "text_find"
+}
+```
+
+Result:
+
+```json
+{
+  "count": 2,
+  "matches": [
+    {
+      "context": "Spring Fair Saturday 12 May · V",
+      "end": 11,
+      "frame_id": "00000000-0000-87ea-8000-00000000000f",
+      "start": 7,
+      "…": "1 more keys"
+    },
+    {
+      "context": "Spring Fair 2027",
+      "end": 11,
+      "frame_id": "00000000-0000-87ea-8000-000000000021",
+      "start": 7,
+      "…": "1 more keys"
+    }
+  ]
+}
+```
+
 ### `text_replace_all`
 
 Replace every match of query with replacement across the document or one story (same options as text_find). One undo step. Returns the count; zero matches changes nothing. An empty query is an error.
@@ -3138,7 +3375,7 @@ _read-only_
 ```json
 {
   "arguments": {
-    "frame_id": "00000000-0000-87ea-8000-000000000038"
+    "frame_id": "00000000-0000-87ea-8000-000000000039"
   },
   "name": "spell_check"
 }
@@ -3155,21 +3392,21 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "frame_id": "00000000-0000-87ea-8000-000000000039",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "frame_id": "00000000-0000-87ea-8000-000000000039",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
     },
     {
       "end": 57,
-      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "frame_id": "00000000-0000-87ea-8000-000000000039",
       "language": "en-US",
       "start": 52,
       "…": "2 more keys"
@@ -3201,14 +3438,14 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "frame_id": "00000000-0000-87ea-8000-000000000039",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000038",
+      "frame_id": "00000000-0000-87ea-8000-000000000039",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
@@ -4227,7 +4464,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000022",
+  "doc_id": "00000000-0000-87ea-8000-000000000023",
   "named_frames": {},
   "page_ids": [
     "00000000-0000-8065-8000-000000000002"
@@ -4401,7 +4638,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002d",
+  "doc_id": "00000000-0000-87ea-8000-00000000002e",
   "revision": 2
 }
 ```
@@ -4456,7 +4693,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002d",
+  "doc_id": "00000000-0000-87ea-8000-00000000002e",
   "revision": 5
 }
 ```
@@ -4502,11 +4739,11 @@ Result:
 
 ```json
 {
-  "bytes": 94850,
+  "bytes": 128201,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -4527,11 +4764,11 @@ Result:
 
 ```json
 {
-  "bytes": 514441,
+  "bytes": 547792,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -4569,7 +4806,7 @@ Result:
 
 ```json
 {
-  "bytes": 668662,
+  "bytes": 702122,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4577,7 +4814,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -4617,12 +4854,12 @@ Result:
 
 ```json
 {
-  "bytes": 23361,
+  "bytes": 37272,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 71,
+  "revision": 75,
   "width": 596
 }
 ```
@@ -4663,8 +4900,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAf3ElEQVR4nO2d… (10952 characters)",
-  "revision": 71,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAA2dElEQVR4nO2d… (18664 characters)",
+  "revision": 75,
   "width": 249
 }
 ```
@@ -4697,15 +4934,14 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-000000000020"
+    "00000000-0000-87ea-8000-000000000017"
   ],
   "can_redo": true,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
-  "label": "delete frame",
-  "revision": 70
+  "label": "frame style",
+  "revision": 74
 }
 ```
 
@@ -4735,15 +4971,14 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-000000000020"
+    "00000000-0000-87ea-8000-000000000017"
   ],
   "can_redo": false,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
-  "label": "delete frame",
-  "revision": 71
+  "label": "frame style",
+  "revision": 75
 }
 ```
 
@@ -4796,9 +5031,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 64 more"
+    "… 68 more"
   ],
-  "revision": 69
+  "revision": 73
 }
 ```
 
@@ -4938,7 +5173,7 @@ Result:
         },
         "…": "3 more keys"
       },
-      "…": "3 more keys"
+      "…": "4 more keys"
     },
     "grid": {
       "show_grid": false,
@@ -4967,7 +5202,7 @@ Result:
         "frames": [
           "00000000-0000-87ea-8000-00000000000f",
           "00000000-0000-87ea-8000-000000000011",
-          "… 4 more"
+          "… 5 more"
         ],
         "guides": [],
         "id": "00000000-0000-87ea-8000-000000000002",
@@ -4980,7 +5215,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 8,
+    "schema_version": 9,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -5143,7 +5378,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 71
+  "revision": 75
 }
 ```
 
@@ -5176,7 +5411,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 71,
+  "revision": 75,
   "warnings": [
     {
       "code": "overflow",

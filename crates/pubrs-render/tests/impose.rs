@@ -20,6 +20,7 @@ fn label(tag: f64, w: f64, h: f64) -> PageScene {
             frame: FrameId::new(&mut ids),
             transform: Affine::translate(3.0, 4.0),
             opacity: 1.0,
+            shadow: None,
             prims: vec![Prim::Rect {
                 rect: Rect::new(0.0, 0.0, tag, 1.0),
                 color: Color::BLACK.into(),

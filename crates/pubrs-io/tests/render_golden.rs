@@ -42,6 +42,7 @@ fn style(fill: Option<Color>, stroke: Option<(Color, f64, Dash)>, opacity: f64) 
             dash,
         }),
         opacity,
+        ..Default::default()
     }
 }
 
@@ -817,4 +818,197 @@ fn character_formats() {
         },
     );
     assert_png_golden("character_formats", &render(&b.finish(), 0, &opts()));
+}
+
+// ---- M25: WordArt, shadows and BorderArt (ADR 0020) ----
+
+fn wordart(text: &str, warp: Warp, fill: Paint) -> WordArtFrame {
+    WordArtFrame {
+        text: text.into(),
+        font: "Liberation Sans".into(),
+        size: 44.0,
+        warp,
+        fill,
+        outline: Some(Stroke {
+            color: Color::rgb(20, 24, 60).into(),
+            width: 1.2,
+            dash: Dash::Solid,
+        }),
+        shadow: None,
+    }
+}
+
+fn gradient(a: Color, b: Color, angle: f64) -> Paint {
+    Paint::Gradient {
+        gradient: GradientKind::Linear,
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: a.into(),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: b.into(),
+            },
+        ],
+        angle,
+    }
+}
+
+/// All eight warps on one page, with solid and gradient fills.
+#[test]
+fn wordart_warps() {
+    let setup = PageSetup {
+        size: Size::new(420.0, 520.0),
+        margins: Margins::uniform(18.0),
+        bleed: 0.0,
+        ..PageSetup::default()
+    };
+    let mut b = DocBuilder::new(SeqIds::new(21), setup);
+    let p = b.page(0);
+    let fills = [
+        Color::rgb(30, 100, 200).into(),
+        gradient(Color::rgb(250, 204, 21), Color::rgb(220, 38, 38), 90.0),
+        gradient(Color::rgb(56, 189, 248), Color::rgb(30, 58, 138), 90.0),
+        Color::rgb(0, 130, 90).into(),
+        gradient(Color::rgb(244, 114, 182), Color::rgb(124, 58, 237), 0.0),
+        Color::rgb(200, 60, 20).into(),
+        gradient(Color::rgb(163, 230, 53), Color::rgb(21, 128, 61), 90.0),
+        Color::rgb(120, 40, 160).into(),
+    ];
+    for (i, warp) in Warp::ALL.into_iter().enumerate() {
+        let (col, row) = ((i % 2) as f64, (i / 2) as f64);
+        let rect = Rect::new(14.0 + col * 200.0, 14.0 + row * 126.0, 192.0, 118.0);
+        let text = if warp == Warp::Circle {
+            "Round and round"
+        } else {
+            "WordArt"
+        };
+        let f = b
+            .wordart(p, rect, wordart(text, warp, fills[i].clone()))
+            .unwrap();
+        b.exec(Command::SetFrameStyle {
+            frame: f,
+            style: FrameStyle {
+                stroke: Some(Stroke {
+                    color: Color::rgb(200, 205, 215).into(),
+                    width: 0.5,
+                    dash: Dash::Dotted,
+                }),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+    assert_png_golden(
+        "wordart_warps",
+        &render(
+            &b.finish(),
+            0,
+            &RasterOptions {
+                dpi: 120.0,
+                ..opts()
+            },
+        ),
+    );
+}
+
+fn drop_shadow(dx: f64, dy: f64, blur: f64, opacity: f64) -> Shadow {
+    Shadow {
+        offset_x: dx,
+        offset_y: dy,
+        blur,
+        color: Color::rgb(0, 0, 0).into(),
+        opacity,
+    }
+}
+
+/// Soft shadows under a shape, a translucent rotated frame, text and WordArt.
+#[test]
+fn shadows() {
+    let mut b = DocBuilder::new(SeqIds::new(22), small_page());
+    let p = b.page(0);
+    let e = b
+        .shape(p, Rect::new(24.0, 24.0, 110.0, 70.0), Shape::Ellipse)
+        .unwrap();
+    let mut st = style(Some(Color::rgb(30, 120, 220)), None, 1.0);
+    st.shadow = Some(drop_shadow(6.0, 7.0, 5.0, 0.55));
+    b.style(e, st).unwrap();
+    let r = b
+        .shape(
+            p,
+            Rect::new(190.0, 30.0, 80.0, 60.0),
+            Shape::Rectangle { corner_radius: 8.0 },
+        )
+        .unwrap();
+    let mut st = style(Some(Color::rgb(250, 204, 21)), None, 0.8);
+    st.shadow = Some(drop_shadow(7.0, 7.0, 9.0, 0.8));
+    b.style(r, st).unwrap();
+    b.exec(Command::SetRotation {
+        frame: r,
+        degrees: 15.0,
+    })
+    .unwrap();
+    let t = b
+        .text(
+            p,
+            Rect::new(150.0, 115.0, 130.0, 60.0),
+            "Hard shadow on text",
+        )
+        .unwrap();
+    let mut st = style(None, None, 1.0);
+    st.shadow = Some(drop_shadow(2.0, 2.0, 0.0, 1.0));
+    b.style(t, st).unwrap();
+    let mut art = wordart("Soft", Warp::SlantUp, Color::rgb(220, 38, 38).into());
+    art.shadow = Some(drop_shadow(-4.0, 6.0, 6.0, 0.5));
+    b.wordart(p, Rect::new(18.0, 105.0, 120.0, 80.0), art)
+        .unwrap();
+    assert_png_golden("shadows", &render(&b.finish(), 0, &opts()));
+}
+
+fn bordered(pattern: &str, width: f64, fill: Color, text: &str, seed: u64) -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(seed), small_page());
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(40.0, 30.0, 220.0, 140.0), text)
+        .unwrap();
+    let mut st = style(Some(fill), None, 1.0);
+    st.border_art = Some(BorderArt {
+        pattern: pattern.into(),
+        width,
+    });
+    b.style(f, st).unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            insets: Some(Margins::uniform(6.0)),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.finish()
+}
+
+#[test]
+fn borderart_stars() {
+    let doc = bordered(
+        "stars",
+        22.0,
+        Color::rgb(254, 249, 195),
+        "Grand opening! Join us on Saturday.",
+        23,
+    );
+    assert_png_golden("borderart_stars", &render(&doc, 0, &opts()));
+}
+
+#[test]
+fn borderart_ropes() {
+    let doc = bordered(
+        "ropes",
+        16.0,
+        Color::rgb(240, 249, 255),
+        "Harbour festival: boats, music and food.",
+        24,
+    );
+    assert_png_golden("borderart_ropes", &render(&doc, 0, &opts()));
 }

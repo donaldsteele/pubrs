@@ -101,6 +101,17 @@ impl<I: IdSource> DocBuilder<I> {
         self.frame(Parent::Page(page), frame, None)
     }
 
+    pub fn wordart(
+        &mut self,
+        page: PageId,
+        rect: Rect,
+        art: crate::model::WordArtFrame,
+    ) -> CmdResult<FrameId> {
+        let fid = FrameId::new(&mut self.ids);
+        let frame = Frame::new(fid, rect, FrameContent::WordArt(Box::new(art)));
+        self.frame(Parent::Page(page), frame, None)
+    }
+
     pub fn image(
         &mut self,
         page: PageId,

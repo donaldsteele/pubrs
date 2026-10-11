@@ -407,26 +407,36 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
     assert_eq!(again, doc);
 }
 
+/// Create the missing fixture of the current schema version, once per test
+/// process (tests run in parallel and both read it).
+fn ensure_current_fixture() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let fixtures: [(u32, Document); 8] = [
+            (2, sheet_document()),
+            (3, hyphenation_document()),
+            (4, common::colour_document()),
+            (5, rich_document()),
+            (6, paragraph_controls_document()),
+            (7, tabs_lists_document()),
+            (8, char_format_document()),
+            (9, effects_document()),
+        ];
+        for (v, doc) in &fixtures {
+            let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
+            if !path.exists() && *v == SCHEMA_VERSION {
+                pubrs_io::save(doc, &path, None).unwrap();
+            }
+        }
+    });
+}
+
 #[test]
 fn every_schema_fixture_opens_and_round_trips() {
     // A fixture is created only when it is missing and only for the current
     // schema version; an existing fixture is never rewritten, even when
     // blessing, so files written by earlier versions stay frozen.
-    let fixtures: [(u32, Document); 7] = [
-        (2, sheet_document()),
-        (3, hyphenation_document()),
-        (4, common::colour_document()),
-        (5, rich_document()),
-        (6, paragraph_controls_document()),
-        (7, tabs_lists_document()),
-        (8, char_format_document()),
-    ];
-    for (v, doc) in &fixtures {
-        let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
-        if !path.exists() && *v == SCHEMA_VERSION {
-            pubrs_io::save(doc, &path, None).unwrap();
-        }
-    }
+    ensure_current_fixture();
     let mut n = 0;
     for entry in std::fs::read_dir(fixtures_dir()).unwrap() {
         let path = entry.unwrap().path();
@@ -450,7 +460,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 8, "expected the schema_v1 to v8 fixtures");
+    assert!(n >= 9, "expected the schema_v1 to v9 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -559,6 +569,132 @@ fn every_schema_fixture_opens_and_round_trips() {
     assert!(runs.iter().any(|r| r.props.strikethrough == Some(true)));
     assert!(runs.iter().any(|r| r.props.ligatures == Some(false)));
     assert!(runs.iter().any(|r| r.props.kerning == Some(false)));
+}
+
+/// The schema 9 fixture: WordArt with a gradient, an outline and a shadow,
+/// a swatch-coloured drop shadow, and BorderArt.
+#[test]
+fn schema_9_fixture_keeps_wordart_shadows_and_border_art() {
+    ensure_current_fixture();
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v9.pubrs")).unwrap();
+    let art: Vec<_> = doc.frames.values().filter_map(|f| f.as_wordart()).collect();
+    assert_eq!(art.len(), 1);
+    let w = art[0];
+    assert_eq!((w.text.as_str(), w.warp), ("Grand Opening", Warp::ArchUp));
+    assert!(w.fill.is_gradient());
+    assert_eq!(w.outline.as_ref().map(|o| o.width), Some(1.5));
+    assert_eq!(
+        w.shadow.as_ref().map(|s| (s.offset_x, s.blur)),
+        Some((3.0, 4.0))
+    );
+    let styled: Vec<_> = doc
+        .frames
+        .values()
+        .filter(|f| f.style.shadow.is_some() || f.style.border_art.is_some())
+        .collect();
+    assert_eq!(styled.len(), 2);
+    assert!(styled.iter().any(|f| matches!(
+        f.style.shadow.as_ref().map(|s| &s.color),
+        Some(Paint::Swatch { .. })
+    )));
+    assert!(styled.iter().any(|f| {
+        f.style
+            .border_art
+            .as_ref()
+            .is_some_and(|b| b.pattern == "scallops" && b.width == 14.0)
+    }));
+    // Older files never mention the new fields.
+    let json = serde_json::to_string(&paragraph_controls_document()).unwrap();
+    assert!(!json.contains("shadow") && !json.contains("border_art") && !json.contains("word_art"));
+}
+
+/// The document `tests/fixtures/schema_v8.pubrs` is written from.
+fn effects_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(1702), PageSetup::default());
+    let p = b.page(0);
+    let ink = SwatchId::new(&mut b.ids);
+    b.exec(Command::AddSwatch {
+        swatch: Swatch {
+            id: ink,
+            name: "Shadow Brown".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(30.0, 60.0, 80.0, 40.0)),
+        },
+    })
+    .unwrap();
+    b.wordart(
+        p,
+        Rect::new(36.0, 36.0, 400.0, 140.0),
+        WordArtFrame {
+            text: "Grand Opening".into(),
+            font: "Liberation Sans".into(),
+            size: 72.0,
+            warp: Warp::ArchUp,
+            fill: Paint::Gradient {
+                gradient: GradientKind::Linear,
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: Color::rgb(250, 204, 21).into(),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Color::rgb(220, 38, 38).into(),
+                    },
+                ],
+                angle: 90.0,
+            },
+            outline: Some(Stroke {
+                color: Color::rgb(30, 20, 60).into(),
+                width: 1.5,
+                dash: Dash::Solid,
+            }),
+            shadow: Some(Shadow {
+                offset_x: 3.0,
+                offset_y: 3.0,
+                blur: 4.0,
+                color: Color::BLACK.into(),
+                opacity: 0.5,
+            }),
+        },
+    )
+    .unwrap();
+    let r = b
+        .shape(
+            p,
+            Rect::new(36.0, 220.0, 200.0, 100.0),
+            Shape::Rectangle { corner_radius: 8.0 },
+        )
+        .unwrap();
+    b.style(
+        r,
+        FrameStyle {
+            fill: Some(Color::rgb(30, 120, 220).into()),
+            shadow: Some(Shadow {
+                offset_x: 5.0,
+                offset_y: 6.0,
+                blur: 6.0,
+                color: Paint::swatch(ink),
+                opacity: 0.6,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let t = b
+        .text(p, Rect::new(260.0, 220.0, 220.0, 100.0), "Bordered text")
+        .unwrap();
+    b.style(
+        t,
+        FrameStyle {
+            border_art: Some(BorderArt {
+                pattern: "scallops".into(),
+                width: 14.0,
+            }),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    b.finish()
 }
 
 /// The document `tests/fixtures/schema_v6.pubrs` is written from: a

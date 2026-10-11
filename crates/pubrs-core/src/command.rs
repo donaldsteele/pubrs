@@ -14,9 +14,10 @@ use crate::bytes::Bytes;
 use crate::geom::{Margins, PT_PER_INCH, Point, Rect, Size};
 use crate::id::{AssetId, FrameId, GuideId, MasterId, PageId, StoryId, StyleId, SwatchId};
 use crate::model::{
-    Asset, Crop, Document, Frame, FrameContent, FrameStyle, GridSettings, Guide, ImageFit,
-    MasterPage, Page, Paragraph, Parent, Placeholder, PlaceholderKind, Shape, SheetLayout, Story,
-    TextWrap, VerticalAlign,
+    Asset, BORDER_ART_PATTERNS, BORDER_ART_WIDTH, Crop, Document, Frame, FrameContent, FrameStyle,
+    GridSettings, Guide, ImageFit, MasterPage, Page, Paragraph, Parent, Placeholder,
+    PlaceholderKind, SHADOW_MAX_BLUR, SHADOW_MAX_OFFSET, Shadow, Shape, SheetLayout, Story,
+    TextWrap, VerticalAlign, WordArtFrame,
 };
 use crate::patch::Patch;
 use crate::style::{CharProps, ParaProps, Style, StyleKind};
@@ -242,6 +243,11 @@ pub enum Command {
         frame: FrameId,
         shape: Shape,
     },
+    /// Replace the content of a WordArt frame.
+    SetWordArt {
+        frame: FrameId,
+        art: WordArtFrame,
+    },
     // ---- text ----
     SetStory {
         story: StoryId,
@@ -390,6 +396,7 @@ impl Command {
             Self::SetPlaceholder { .. } => "set_placeholder",
             Self::SetTextFrame { .. } => "set_text_frame",
             Self::SetShape { .. } => "set_shape",
+            Self::SetWordArt { .. } => "set_wordart",
             Self::SetStory { .. } => "set_story",
             Self::InsertText { .. } => "insert_text",
             Self::DeleteText { .. } => "delete_text",
@@ -844,6 +851,16 @@ impl Command {
                     _ => Err(CommandError::invalid("frame is not a shape")),
                 }
             }
+            Self::SetWordArt { frame, art } => {
+                check_wordart(doc, art)?;
+                match &mut frame_mut(doc, *frame)?.content {
+                    FrameContent::WordArt(w) => {
+                        **w = art.clone();
+                        Ok(())
+                    }
+                    _ => Err(CommandError::invalid("frame is not WordArt")),
+                }
+            }
             Self::SetStory { story, paragraphs } => {
                 for p in paragraphs {
                     check_paragraph(doc, p)?;
@@ -1206,6 +1223,64 @@ fn check_frame_style(doc: &Document, style: &FrameStyle) -> CmdResult {
     if let Some(s) = &style.stroke {
         s.color.check(doc, false).map_err(CommandError::invalid)?;
     }
+    if let Some(s) = &style.shadow {
+        check_shadow(doc, s)?;
+    }
+    if let Some(b) = &style.border_art {
+        if !BORDER_ART_PATTERNS.contains(&b.pattern.as_str()) {
+            return Err(CommandError::invalid(format!(
+                "unknown border art pattern {:?}; list them with border_art_list",
+                b.pattern
+            )));
+        }
+        if !(b.width.is_finite() && BORDER_ART_WIDTH.contains(&b.width)) {
+            return Err(CommandError::invalid("border art width must be 4..=72pt"));
+        }
+    }
+    Ok(())
+}
+
+fn check_shadow(doc: &Document, s: &Shadow) -> CmdResult {
+    let off = |v: f64| v.is_finite() && v.abs() <= SHADOW_MAX_OFFSET;
+    if !(off(s.offset_x) && off(s.offset_y)) {
+        return Err(CommandError::invalid("shadow offsets must be within 200pt"));
+    }
+    if !(s.blur.is_finite() && (0.0..=SHADOW_MAX_BLUR).contains(&s.blur)) {
+        return Err(CommandError::invalid("shadow blur must be 0..=50pt"));
+    }
+    if !(s.opacity.is_finite() && (0.0..=1.0).contains(&s.opacity)) {
+        return Err(CommandError::invalid(
+            "shadow opacity must be between 0 and 1",
+        ));
+    }
+    s.color.check(doc, false).map_err(CommandError::invalid)
+}
+
+/// Longest WordArt text, in characters.
+pub const WORDART_MAX_CHARS: usize = 200;
+
+fn check_wordart(doc: &Document, w: &WordArtFrame) -> CmdResult {
+    if w.text.chars().count() > WORDART_MAX_CHARS {
+        return Err(CommandError::invalid(
+            "WordArt text is limited to 200 characters",
+        ));
+    }
+    if w.font.trim().is_empty() || w.font.len() > 100 {
+        return Err(CommandError::invalid("WordArt needs a font family name"));
+    }
+    if !(w.size.is_finite() && (1.0..=1000.0).contains(&w.size)) {
+        return Err(CommandError::invalid("WordArt size must be 1..=1000pt"));
+    }
+    w.fill.check(doc, true).map_err(CommandError::invalid)?;
+    if let Some(o) = &w.outline {
+        if !(o.width.is_finite() && (0.0..=288.0).contains(&o.width)) {
+            return Err(CommandError::invalid("outline width must be 0..=288pt"));
+        }
+        o.color.check(doc, false).map_err(CommandError::invalid)?;
+    }
+    if let Some(s) = &w.shadow {
+        check_shadow(doc, s)?;
+    }
     Ok(())
 }
 
@@ -1380,6 +1455,7 @@ fn add_frame(
             }
         }
         FrameContent::Shape(_) => {}
+        FrameContent::WordArt(w) => check_wordart(doc, w)?,
     }
     if story.is_some() && !matches!(frame.content, FrameContent::Text(_)) {
         return Err(CommandError::invalid("only text frames take a story"));

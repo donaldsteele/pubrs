@@ -2,9 +2,10 @@
 
 use eframe::egui::{self, Color32, RichText};
 use pubrs_api::core::{
-    Align, CharProps, Color, Command, Crop, Dash, Document, FrameContent, FrameId, FrameKind,
-    GradientKind, GradientStop, ImageFit, Margins, PageSizePreset, Paint, ParaProps, Rect, Shape,
-    Size, SolidPaint, Stroke, SwatchValue, TextFrameProps, VerticalAlign, WrapMode,
+    Align, BORDER_ART_PATTERNS, BORDER_ART_WIDTH, BorderArt, CharProps, Color, Command, Crop, Dash,
+    Document, FrameContent, FrameId, FrameKind, GradientKind, GradientStop, ImageFit, Margins,
+    PageSizePreset, Paint, ParaProps, Rect, Shadow, Shape, Size, SolidPaint, Stroke, SwatchValue,
+    TextFrameProps, VerticalAlign, Warp, WordArtFrame, WrapMode,
 };
 
 use crate::app::{PubrsApp, Tool, Units};
@@ -804,6 +805,7 @@ fn frame_props(
         FrameKind::Image => "Picture",
         FrameKind::Shape => "Shape",
         FrameKind::Group => "Group",
+        FrameKind::WordArt => "WordArt",
     };
     ui.label(RichText::new(kind).strong());
     if let Some(p) = &f.placeholder {
@@ -995,6 +997,8 @@ fn frame_props(
             );
         }
     });
+    shadow_props(app, ui, doc, id, &f.style);
+    border_art_props(app, ui, id, &f.style);
     if f.kind() != FrameKind::Text {
         let mut mode = f.wrap.mode;
         ui.horizontal(|ui| {
@@ -1147,6 +1151,7 @@ fn frame_props(
                 });
             }
         }
+        FrameContent::WordArt(w) => wordart_props(app, ui, doc, id, w),
         FrameContent::Group(g) => {
             ui.label(format!("{} items", g.children.len()));
             let ctx = ui.ctx().clone();
@@ -1154,6 +1159,365 @@ fn frame_props(
                 app.run_action(&ctx, Action::Ungroup);
             }
         }
+    }
+}
+
+/// The shadow controls of a frame's style: on/off, offset, blur, opacity and
+/// colour. Every edit merges with the previous one of the same control.
+fn shadow_props(
+    app: &mut PubrsApp,
+    ui: &mut egui::Ui,
+    doc: &Document,
+    id: FrameId,
+    style: &pubrs_api::core::FrameStyle,
+) {
+    let key = |k: &str| format!("prop-{k}-{id}");
+    let mut on = style.shadow.is_some();
+    let r = ui.checkbox(&mut on, "Shadow");
+    crate::dialogs::mark(ui, "shadow-on", &r);
+    let r = r.on_hover_text("A soft drop shadow under the frame (Format ▸ Shadow)");
+    if r.changed() {
+        let mut s = style.clone();
+        s.shadow = on.then_some(Shadow {
+            offset_x: 4.0,
+            offset_y: 4.0,
+            blur: 4.0,
+            color: Paint::Color(Color::BLACK),
+            opacity: 0.5,
+        });
+        app.exec(Command::SetFrameStyle {
+            frame: id,
+            style: s,
+        });
+    }
+    let Some(sh) = style.shadow.clone() else {
+        return;
+    };
+    if let Some(new) = shadow_edit(ui, doc, &format!("shadow-{id}"), &sh) {
+        let mut s = style.clone();
+        s.shadow = Some(new);
+        app.exec_merge(
+            Command::SetFrameStyle {
+                frame: id,
+                style: s,
+            },
+            &key("shadow"),
+        );
+    }
+}
+
+/// Offset, blur, opacity and colour of a shadow; `Some` when one changed.
+fn shadow_edit(ui: &mut egui::Ui, doc: &Document, salt: &str, sh: &Shadow) -> Option<Shadow> {
+    let mut new = sh.clone();
+    let mut changed = false;
+    egui::Grid::new(("shadow-grid", salt))
+        .num_columns(2)
+        .show(ui, |ui| {
+            let mut drag = |ui: &mut egui::Ui, label: &str, v: &mut f64, range, unit: &str| {
+                ui.label(label);
+                let r = ui.add(
+                    egui::DragValue::new(v)
+                        .speed(0.25)
+                        .range(range)
+                        .suffix(unit),
+                );
+                crate::dialogs::mark(ui, &format!("shadow-{}", label.to_lowercase()), &r);
+                changed |= r.changed();
+                ui.end_row();
+            };
+            let m = pubrs_api::core::SHADOW_MAX_OFFSET;
+            drag(ui, "Across", &mut new.offset_x, -m..=m, " pt");
+            drag(ui, "Down", &mut new.offset_y, -m..=m, " pt");
+            drag(
+                ui,
+                "Blur",
+                &mut new.blur,
+                0.0..=pubrs_api::core::SHADOW_MAX_BLUR,
+                " pt",
+            );
+            let mut pct = new.opacity * 100.0;
+            drag(ui, "Strength", &mut pct, 0.0..=100.0, "%");
+            new.opacity = pct / 100.0;
+        });
+    ui.horizontal(|ui| {
+        ui.label("Shadow colour");
+        if let Some(Some(c)) = paint_edit(
+            ui,
+            doc,
+            &format!("{salt}-colour"),
+            Some(&sh.color),
+            PaintOpts {
+                none_ok: false,
+                gradient_ok: false,
+            },
+        ) {
+            new.color = c;
+            changed = true;
+        }
+    });
+    changed.then_some(new)
+}
+
+/// The Border Art picker of a frame's style: a pattern and its width.
+fn border_art_props(
+    app: &mut PubrsApp,
+    ui: &mut egui::Ui,
+    id: FrameId,
+    style: &pubrs_api::core::FrameStyle,
+) {
+    let key = |k: &str| format!("prop-{k}-{id}");
+    let cur = style.border_art.clone();
+    ui.horizontal(|ui| {
+        ui.label("Border art");
+        let combo = egui::ComboBox::from_id_salt(("border-art", id))
+            .selected_text(cur.as_ref().map_or("None", |b| b.pattern.as_str()))
+            .show_ui(ui, |ui| {
+                let r = ui.selectable_label(cur.is_none(), "None");
+                crate::dialogs::mark(ui, "border:none", &r);
+                if r.clicked() {
+                    let mut s = style.clone();
+                    s.border_art = None;
+                    app.exec(Command::SetFrameStyle {
+                        frame: id,
+                        style: s,
+                    });
+                }
+                for name in BORDER_ART_PATTERNS {
+                    let is = cur.as_ref().is_some_and(|b| b.pattern == name);
+                    let r = ui.selectable_label(is, name);
+                    crate::dialogs::mark(ui, &format!("border:{name}"), &r);
+                    if r.clicked() && !is {
+                        let mut s = style.clone();
+                        s.border_art = Some(BorderArt {
+                            pattern: name.to_string(),
+                            width: cur.as_ref().map_or(18.0, |b| b.width),
+                        });
+                        app.exec(Command::SetFrameStyle {
+                            frame: id,
+                            style: s,
+                        });
+                    }
+                }
+            });
+        crate::dialogs::mark(ui, "border-art-combo", &combo.response);
+    });
+    if let Some(b) = cur {
+        let mut w = b.width;
+        ui.horizontal(|ui| {
+            ui.label("Border width");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut w)
+                        .speed(0.5)
+                        .range(BORDER_ART_WIDTH)
+                        .suffix(" pt"),
+                )
+                .changed()
+            {
+                let mut s = style.clone();
+                s.border_art = Some(BorderArt {
+                    width: w,
+                    ..b.clone()
+                });
+                app.exec_merge(
+                    Command::SetFrameStyle {
+                        frame: id,
+                        style: s,
+                    },
+                    &key("border-width"),
+                );
+            }
+        });
+    }
+}
+
+/// The WordArt panel: text, font, size, warp, fill, outline and shadow.
+fn wordart_props(
+    app: &mut PubrsApp,
+    ui: &mut egui::Ui,
+    doc: &Document,
+    id: FrameId,
+    w: &WordArtFrame,
+) {
+    let key = |k: &str| format!("prop-wordart-{k}-{id}");
+    let set = |app: &mut PubrsApp, art: WordArtFrame, k: &str| {
+        app.exec_merge(Command::SetWordArt { frame: id, art }, &key(k));
+    };
+    ui.label(RichText::new("WordArt").strong());
+    let mut text = w.text.clone();
+    let r = ui.add(
+        egui::TextEdit::singleline(&mut text)
+            .id_salt(("wordart-text", id))
+            .desired_width(f32::INFINITY)
+            .char_limit(pubrs_api::core::command::WORDART_MAX_CHARS)
+            .hint_text("Your text"),
+    );
+    crate::dialogs::mark(ui, "wordart-text", &r);
+    if r.changed() {
+        set(app, WordArtFrame { text, ..w.clone() }, "text");
+    }
+    let fonts = app.fonts.clone();
+    egui::ComboBox::from_label("Font")
+        .selected_text(w.font.clone())
+        .height(300.0)
+        .show_ui(ui, |ui| {
+            for fam in &fonts {
+                if ui.selectable_label(*fam == w.font, fam).clicked() {
+                    set(
+                        app,
+                        WordArtFrame {
+                            font: fam.clone(),
+                            ..w.clone()
+                        },
+                        "font",
+                    );
+                }
+            }
+        });
+    let mut size = w.size;
+    ui.horizontal(|ui| {
+        ui.label("Size");
+        let r = ui.add(
+            egui::DragValue::new(&mut size)
+                .speed(1.0)
+                .range(1.0..=1000.0)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "wordart-size", &r);
+        let r = r.on_hover_text("Nominal size; the text shrinks to fit the frame");
+        if r.changed() {
+            set(app, WordArtFrame { size, ..w.clone() }, "size");
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label("Shape");
+        let combo = egui::ComboBox::from_id_salt(("wordart-warp", id))
+            .selected_text(warp_label(w.warp))
+            .show_ui(ui, |ui| {
+                for warp in Warp::ALL {
+                    let r = ui.selectable_label(w.warp == warp, warp_label(warp));
+                    crate::dialogs::mark(ui, &format!("warp:{}", warp.name()), &r);
+                    if r.clicked() && w.warp != warp {
+                        app.exec(Command::SetWordArt {
+                            frame: id,
+                            art: WordArtFrame { warp, ..w.clone() },
+                        });
+                    }
+                }
+            });
+        crate::dialogs::mark(ui, "wordart-warp", &combo.response);
+    });
+    ui.label("Letter fill");
+    if let Some(Some(c)) = paint_edit(
+        ui,
+        doc,
+        &format!("wordart-fill-{id}"),
+        Some(&w.fill),
+        PaintOpts {
+            none_ok: false,
+            gradient_ok: true,
+        },
+    ) {
+        set(
+            app,
+            WordArtFrame {
+                fill: c,
+                ..w.clone()
+            },
+            "fill",
+        );
+    }
+    ui.label("Letter outline");
+    if let Some(c) = paint_edit(
+        ui,
+        doc,
+        &format!("wordart-outline-{id}"),
+        w.outline.as_ref().map(|o| &o.color),
+        PaintOpts {
+            none_ok: true,
+            gradient_ok: false,
+        },
+    ) {
+        let outline = c.map(|color| Stroke {
+            color,
+            width: w.outline.as_ref().map_or(1.5, |o| o.width),
+            dash: w.outline.as_ref().map(|o| o.dash).unwrap_or_default(),
+        });
+        set(
+            app,
+            WordArtFrame {
+                outline,
+                ..w.clone()
+            },
+            "outline",
+        );
+    }
+    if let Some(o) = w.outline.clone() {
+        let mut width = o.width;
+        ui.horizontal(|ui| {
+            ui.label("Outline weight");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut width)
+                        .speed(0.25)
+                        .range(0.0..=72.0)
+                        .suffix(" pt"),
+                )
+                .changed()
+            {
+                set(
+                    app,
+                    WordArtFrame {
+                        outline: Some(Stroke { width, ..o.clone() }),
+                        ..w.clone()
+                    },
+                    "outline-width",
+                );
+            }
+        });
+    }
+    let mut on = w.shadow.is_some();
+    let r = ui.checkbox(&mut on, "Letter shadow");
+    crate::dialogs::mark(ui, "wordart-shadow-on", &r);
+    if r.changed() {
+        app.exec(Command::SetWordArt {
+            frame: id,
+            art: WordArtFrame {
+                shadow: on.then_some(Shadow {
+                    offset_x: 3.0,
+                    offset_y: 3.0,
+                    blur: 3.0,
+                    color: Paint::Color(Color::BLACK),
+                    opacity: 0.5,
+                }),
+                ..w.clone()
+            },
+        });
+    }
+    if let Some(sh) = &w.shadow
+        && let Some(new) = shadow_edit(ui, doc, &format!("wordart-shadow-{id}"), sh)
+    {
+        set(
+            app,
+            WordArtFrame {
+                shadow: Some(new),
+                ..w.clone()
+            },
+            "shadow",
+        );
+    }
+}
+
+fn warp_label(w: Warp) -> &'static str {
+    match w {
+        Warp::None => "Straight",
+        Warp::ArchUp => "Arch up",
+        Warp::ArchDown => "Arch down",
+        Warp::Circle => "Circle",
+        Warp::Wave => "Wave",
+        Warp::SlantUp => "Slant up",
+        Warp::SlantDown => "Slant down",
+        Warp::Inflate => "Inflate",
     }
 }
 

@@ -527,6 +527,42 @@ impl Document {
     }
 }
 
+/// Paints of a frame beyond its fill and outline: shadows, WordArt letters.
+/// Each is labelled for messages; the flag is true where a gradient is not allowed.
+fn extra_paints(f: &crate::model::Frame) -> Vec<(&'static str, &Paint, bool)> {
+    let mut v = Vec::new();
+    if let Some(s) = &f.style.shadow {
+        v.push(("shadow", &s.color, true));
+    }
+    if let crate::model::FrameContent::WordArt(w) = &f.content {
+        v.push(("WordArt fill", &w.fill, false));
+        if let Some(o) = &w.outline {
+            v.push(("WordArt outline", &o.color, true));
+        }
+        if let Some(s) = &w.shadow {
+            v.push(("WordArt shadow", &s.color, true));
+        }
+    }
+    v
+}
+
+fn extra_paints_mut(f: &mut crate::model::Frame) -> Vec<&mut Paint> {
+    let mut v = Vec::new();
+    if let Some(s) = &mut f.style.shadow {
+        v.push(&mut s.color);
+    }
+    if let crate::model::FrameContent::WordArt(w) = &mut f.content {
+        v.push(&mut w.fill);
+        if let Some(o) = &mut w.outline {
+            v.push(&mut o.color);
+        }
+        if let Some(s) = &mut w.shadow {
+            v.push(&mut s.color);
+        }
+    }
+    v
+}
+
 impl Document {
     /// Where a swatch is used, for refusal messages.
     pub fn swatch_uses(&self, id: SwatchId) -> Vec<String> {
@@ -539,6 +575,11 @@ impl Document {
             }
             if f.style.stroke.as_ref().is_some_and(|s| refs(&s.color)) {
                 out.push(format!("{label} outline"));
+            }
+            for (what, p, _) in extra_paints(f) {
+                if refs(p) {
+                    out.push(format!("{label} {what}"));
+                }
             }
         }
         for s in self.stories.values() {
@@ -571,7 +612,10 @@ impl Document {
         let refs = |p: &Paint| p.swatch_ids().contains(&from);
         let flat = !to.is_gradient();
         let needs_flat = self.frames.values().any(|f| {
-            f.style.stroke.as_ref().is_some_and(|s| refs(&s.color))
+            extra_paints(f)
+                .into_iter()
+                .any(|(_, p, flat)| refs(p) && (flat || p.is_gradient()))
+                || f.style.stroke.as_ref().is_some_and(|s| refs(&s.color))
                 || f.style
                     .fill
                     .as_ref()
@@ -593,9 +637,13 @@ impl Document {
         }
         for f in self.frames.values_mut() {
             let hit = f.style.fill.as_ref().is_some_and(refs)
-                || f.style.stroke.as_ref().is_some_and(|s| refs(&s.color));
+                || f.style.stroke.as_ref().is_some_and(|s| refs(&s.color))
+                || extra_paints(f).into_iter().any(|(_, p, _)| refs(p));
             if hit {
                 let f = Arc::make_mut(f);
+                for p in extra_paints_mut(f) {
+                    p.replace_swatch(from, to);
+                }
                 if let Some(p) = &mut f.style.fill {
                     p.replace_swatch(from, to);
                 }

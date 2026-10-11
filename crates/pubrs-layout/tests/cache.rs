@@ -663,3 +663,99 @@ fn character_attributes_recompose_only_their_story() {
     }
     assert_eq!(check(&mut cache, &mut lay, t.ed.doc()), start);
 }
+
+/// WordArt is shaped once per frame and reshaped only when its text, family
+/// or size changes: warp, fill, outline and shadow are applied at render
+/// time, so they cost no shaping (ADR 0020).
+#[test]
+fn wordart_is_reshaped_only_when_its_shaping_inputs_change() {
+    let mut b = DocBuilder::new(SeqIds::new(11), PageSetup::default());
+    let p = b.page(0);
+    let art = WordArtFrame {
+        text: "Grand Opening".into(),
+        font: "Liberation Sans".into(),
+        size: 48.0,
+        warp: Warp::ArchUp,
+        fill: Color::rgb(200, 30, 30).into(),
+        outline: None,
+        shadow: None,
+    };
+    let w = b
+        .wordart(p, Rect::new(36.0, 36.0, 300.0, 120.0), art.clone())
+        .unwrap();
+    let t = b
+        .text(p, Rect::new(36.0, 200.0, 250.0, 100.0), LOREM)
+        .unwrap();
+    let mut ed = Editor::new(b.finish());
+    let (mut cache, mut lay) = (StoryLayoutCache::new(), layouter());
+    let first = cache.layout(&mut lay, ed.doc());
+    assert_eq!(cache.stats().recomposed, 2, "the story and the WordArt");
+    let width = first.wordart(w).unwrap().width;
+    assert!(width > 100.0, "shaped: {width}");
+    // Nothing changed: nothing is shaped.
+    cache.layout(&mut lay, ed.doc());
+    assert_eq!(cache.stats().recomposed, 0);
+    // Warp, fill, outline and shadow are not shaping inputs.
+    for change in [
+        WordArtFrame {
+            warp: Warp::Wave,
+            ..art.clone()
+        },
+        WordArtFrame {
+            fill: Color::rgb(0, 0, 255).into(),
+            outline: Some(Stroke {
+                color: Color::BLACK.into(),
+                width: 2.0,
+                dash: Dash::Solid,
+            }),
+            shadow: Some(Shadow {
+                offset_x: 2.0,
+                offset_y: 2.0,
+                blur: 3.0,
+                color: Color::BLACK.into(),
+                opacity: 0.5,
+            }),
+            ..art.clone()
+        },
+    ] {
+        ed.execute(Command::SetWordArt {
+            frame: w,
+            art: change,
+        })
+        .unwrap();
+        let l = cache.layout(&mut lay, ed.doc());
+        assert_eq!(cache.stats().recomposed, 0);
+        assert_eq!(l.wordart(w).unwrap().width, width);
+    }
+    // Text, family and size are.
+    for change in [
+        WordArtFrame {
+            text: "Grand Opening Sale".into(),
+            ..art.clone()
+        },
+        WordArtFrame {
+            font: "Liberation Serif".into(),
+            ..art.clone()
+        },
+        WordArtFrame {
+            size: 24.0,
+            ..art.clone()
+        },
+    ] {
+        ed.execute(Command::SetWordArt {
+            frame: w,
+            art: change,
+        })
+        .unwrap();
+        let l = cache.layout(&mut lay, ed.doc());
+        assert_eq!(cache.stats().recomposed, 1);
+        assert_ne!(l.wordart(w).unwrap().width, width);
+        assert_eq!(l, lay.layout_document(ed.doc()));
+    }
+    // Deleting the frame drops its layout; undo brings it back.
+    ed.execute(Command::DeleteFrame { frame: w }).unwrap();
+    assert!(cache.layout(&mut lay, ed.doc()).wordart(w).is_none());
+    ed.undo();
+    assert!(cache.layout(&mut lay, ed.doc()).wordart(w).is_some());
+    let _ = t;
+}

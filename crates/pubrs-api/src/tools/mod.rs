@@ -22,6 +22,7 @@ pub mod spell;
 pub mod styles;
 pub mod templates;
 pub mod text;
+pub mod wordart;
 
 use std::borrow::Cow;
 

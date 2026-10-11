@@ -419,6 +419,7 @@ pub fn build(spec: &PerfSpec) -> ApiResult<(Document, Vec<StoryId>)> {
                 fill: Some(Color::rgb(120, 40, 110).into()),
                 stroke: None,
                 opacity: 1.0,
+                ..Default::default()
             },
         )?;
         for k in 0..FRAMES_PER_PAGE {

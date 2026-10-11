@@ -964,8 +964,50 @@ impl PubrsApp {
             Action::Tabs | Action::BulletsNumbering if !editing && !text_selected => {
                 Some(NO_PARAGRAPH)
             }
+            Action::ToggleShadow | Action::BorderArt if self.selection().is_empty() => {
+                Some("Select a frame first")
+            }
+            Action::InsertWordArt if self.doc().is_none() => {
+                Some("Open or create a publication first")
+            }
             _ => None,
         }
+    }
+
+    /// Format → Shadow: give every selected frame a default drop shadow, or
+    /// take it away when they all have one. One undo step.
+    pub fn toggle_shadow(&mut self) {
+        use pubrs_api::core::{Color, Paint, Shadow};
+        let Some(doc) = self.doc() else { return };
+        let frames: Vec<_> = self
+            .selection()
+            .into_iter()
+            .filter_map(|id| doc.frame(id))
+            .filter(|f| f.kind() != FrameKind::Group)
+            .collect();
+        if frames.is_empty() {
+            self.notify("Select a frame first");
+            return;
+        }
+        let all = frames.iter().all(|f| f.style.shadow.is_some());
+        let commands: Vec<Command> = frames
+            .iter()
+            .map(|f| {
+                let mut style = f.style.clone();
+                style.shadow = (!all).then_some(Shadow {
+                    offset_x: 4.0,
+                    offset_y: 4.0,
+                    blur: 4.0,
+                    color: Paint::Color(Color::BLACK),
+                    opacity: 0.5,
+                });
+                Command::SetFrameStyle { frame: f.id, style }
+            })
+            .collect();
+        self.exec(Command::Batch {
+            label: "shadow".into(),
+            commands,
+        });
     }
 
     /// Insert a column, frame or page break at the caret (replacing any
@@ -1140,6 +1182,18 @@ impl PubrsApp {
             InsertPicture => self.tool = crate::app::Tool::Picture,
             InsertRectangle => self.tool = crate::app::Tool::Rectangle,
             InsertEllipse => self.tool = crate::app::Tool::Ellipse,
+            InsertWordArt => {
+                if self.doc().is_some() {
+                    self.dialog = Some(Dialog::WordArt(Box::new(
+                        crate::dialogs::WordArtState::new(),
+                    )));
+                }
+            }
+            ToggleShadow => self.toggle_shadow(),
+            BorderArt => match crate::dialogs::BorderArtState::for_selection(self, ctx) {
+                Some(state) => self.dialog = Some(Dialog::BorderArt(Box::new(state))),
+                None => self.notify("Select a frame first"),
+            },
             InsertLine => self.tool = crate::app::Tool::Line,
             InsertPage => {
                 let index = self.view().map(|v| v.page + 1);

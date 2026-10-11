@@ -10,7 +10,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
     color, doc, export, find, frames, history, images, pages, query, sheets, spell, styles,
-    templates, text,
+    templates, text, wordart,
 };
 
 /// One tool.
@@ -173,7 +173,13 @@ pub static TOOLS: &[ToolDef] = &[
     tool!("frame_distribute", "Frames", frame_distribute, frames::FrameDistribute => Changed, ro = false, destructive = false, image = None,
         "Space frames evenly horizontally or vertically, within their own span (default), the page or the margins."),
     tool!("frame_set_style", "Frames", frame_set_style, frames::FrameSetStyle => Changed, ro = false, destructive = false, image = None,
-        "Set a frame's fill colour, outline (stroke colour, width in points, dash solid/dashed/dotted), opacity (0-1) and display name. Use \"none\" to remove fill or outline."),
+        "Set a frame's fill colour, outline (stroke colour, width in points, dash solid/dashed/dotted), opacity (0-1), drop shadow ({offset_x, offset_y, blur, color, opacity}), BorderArt border ({pattern, width}) and display name. Use \"none\" to remove fill, outline, shadow or border art."),
+    tool!("frame_add_wordart", "Frames", frame_add_wordart, wordart::FrameAddWordArt => frames::FrameAddOut, ro = false, destructive = false, image = None,
+        "Add WordArt: one line of decorative text warped as a whole (warp: none, arch_up, arch_down, circle, wave, slant_up, slant_down, inflate) with a fill (colour, swatch or gradient), optional outline and shadow. The text is scaled down, never up, to fit the box; size is its nominal size (default 120, so it fills the box). Edit it with wordart_set."),
+    tool!("wordart_set", "Frames", wordart_set, wordart::WordArtSet => Changed, ro = false, destructive = false, image = None,
+        "Change a WordArt frame: text, font, size, warp, fill, outline (colour or \"none\", width, dash) and shadow ({offset_x, offset_y, blur, color, opacity} or \"none\"). Only the fields given change. text_find and text_replace_all also reach WordArt text."),
+    tool!("border_art_list", "Frames", border_art_list, wordart::BorderArtList => wordart::BorderArtListOut, ro = true, destructive = false, image = None,
+        "List the twelve BorderArt patterns and the allowed width range. Apply one with frame_set_style border_art {pattern, width}; the tiles are scaled so a whole number fits each edge and the corners get their own piece."),
     tool!("frame_set_wrap", "Frames", frame_set_wrap, frames::FrameSetWrap => Changed, ro = false, destructive = false, image = None,
         "Set how text in frames below this one wraps around it: none, square (text flows beside it) or top_bottom, with a margin in points. Pictures default to square."),
     tool!("frame_set_placeholder", "Frames", frame_set_placeholder, frames::FrameSetPlaceholder => Changed, ro = false, destructive = false, image = None,

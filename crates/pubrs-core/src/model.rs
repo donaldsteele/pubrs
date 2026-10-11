@@ -17,7 +17,7 @@ use crate::style::{CharProps, ParaProps, StyleSheet};
 use crate::swatch::{Paint, SchemeId, Swatch};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -397,6 +397,14 @@ impl Frame {
             FrameContent::Image(_) => FrameKind::Image,
             FrameContent::Shape(_) => FrameKind::Shape,
             FrameContent::Group(_) => FrameKind::Group,
+            FrameContent::WordArt(_) => FrameKind::WordArt,
+        }
+    }
+
+    pub fn as_wordart(&self) -> Option<&WordArtFrame> {
+        match &self.content {
+            FrameContent::WordArt(w) => Some(&**w),
+            _ => None,
         }
     }
 
@@ -450,6 +458,7 @@ pub enum FrameKind {
     Image,
     Shape,
     Group,
+    WordArt,
 }
 
 /// What a frame contains.
@@ -461,7 +470,135 @@ pub enum FrameContent {
     Image(ImageFrame),
     Shape(ShapeFrame),
     Group(GroupFrame),
+    WordArt(Box<WordArtFrame>),
 }
+
+/// One paragraph of decorative text, warped as a whole (ADR 0020).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct WordArtFrame {
+    /// The text (one line; line breaks are not kept).
+    pub text: String,
+    /// Font family.
+    pub font: String,
+    /// Font size in points the text is shaped at; the warped result is
+    /// then fitted to the frame rectangle.
+    pub size: f64,
+    #[serde(default)]
+    pub warp: Warp,
+    /// Fill of the letters: a colour, a swatch or a gradient.
+    pub fill: Paint,
+    /// Outline of the letters; none = no outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Stroke>,
+    /// Shadow of the letters; none = no shadow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<Shadow>,
+}
+
+/// How WordArt text is bent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Warp {
+    /// Straight text, scaled to fill the frame.
+    #[default]
+    None,
+    /// Baseline bows upward in the middle.
+    ArchUp,
+    /// Baseline bows downward in the middle.
+    ArchDown,
+    /// Text runs round a full circle, starting at the top.
+    Circle,
+    /// Baseline is a sine wave.
+    Wave,
+    /// Text climbs from left to right.
+    SlantUp,
+    /// Text falls from left to right.
+    SlantDown,
+    /// Letters grow towards the middle.
+    Inflate,
+}
+
+impl Warp {
+    pub const ALL: [Warp; 8] = [
+        Warp::None,
+        Warp::ArchUp,
+        Warp::ArchDown,
+        Warp::Circle,
+        Warp::Wave,
+        Warp::SlantUp,
+        Warp::SlantDown,
+        Warp::Inflate,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Warp::None => "none",
+            Warp::ArchUp => "arch_up",
+            Warp::ArchDown => "arch_down",
+            Warp::Circle => "circle",
+            Warp::Wave => "wave",
+            Warp::SlantUp => "slant_up",
+            Warp::SlantDown => "slant_down",
+            Warp::Inflate => "inflate",
+        }
+    }
+}
+
+/// A drop shadow: the frame's silhouette offset, blurred and tinted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Shadow {
+    /// Offset right, in points.
+    #[serde(default)]
+    pub offset_x: f64,
+    /// Offset down, in points.
+    #[serde(default)]
+    pub offset_y: f64,
+    /// Blur radius in points (0 = hard edge).
+    #[serde(default)]
+    pub blur: f64,
+    /// A colour or a swatch (no gradients).
+    pub color: Paint,
+    /// 0 (invisible) to 1 (solid).
+    #[serde(default = "full")]
+    pub opacity: f64,
+}
+
+/// Limits for [`Shadow`] fields, in points.
+pub const SHADOW_MAX_OFFSET: f64 = 200.0;
+pub const SHADOW_MAX_BLUR: f64 = 50.0;
+
+/// A decorative border tiled along the inside of a frame's edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BorderArt {
+    /// One of [`BORDER_ART_PATTERNS`].
+    pub pattern: String,
+    /// Width of the border band in points.
+    pub width: f64,
+}
+
+/// The bundled BorderArt patterns (`assets/borderart/<name>-tile.svg` and
+/// `<name>-corner.svg`).
+pub const BORDER_ART_PATTERNS: [&str; 12] = [
+    "stars",
+    "hearts",
+    "dots",
+    "waves",
+    "zigzag",
+    "diamonds",
+    "leaves",
+    "ropes",
+    "checks",
+    "scallops",
+    "arrows",
+    "snowflakes",
+];
+
+/// Smallest and largest BorderArt width, in points.
+pub const BORDER_ART_WIDTH: std::ops::RangeInclusive<f64> = 4.0..=72.0;
 
 /// A text box showing (part of) a story.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -644,6 +781,12 @@ pub struct FrameStyle {
     /// Opacity of the whole frame, 0 (invisible) to 1 (opaque).
     #[serde(default = "full")]
     pub opacity: f64,
+    /// Drop shadow; none = no shadow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow: Option<Shadow>,
+    /// Decorative border; none = no border art.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_art: Option<BorderArt>,
 }
 
 fn full() -> f64 {
@@ -656,6 +799,8 @@ impl Default for FrameStyle {
             fill: None,
             stroke: None,
             opacity: 1.0,
+            shadow: None,
+            border_art: None,
         }
     }
 }

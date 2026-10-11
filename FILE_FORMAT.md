@@ -119,6 +119,7 @@ version.
 | 6 | Paragraph fields `keep_with_next`, `keep_together`, `widow_orphan` and `drop_cap` (on paragraphs and paragraph styles), and the break characters U+000E (column), U+001D (frame) and U+000C (page) in run text. All fields are optional and older files hold no break characters, so older files are valid version 6 files; migration only stamps the version. |
 | 7 | Paragraph fields `tab_stops` and `list` (on paragraphs and paragraph styles); tab characters in run text now move to tab stops. Both fields are optional, so older files are valid version 7 files; migration only stamps the version. |
 | 8 | Character fields `baseline`, `caps`, `strikethrough`, `ligatures` and `kerning` (on runs and character styles). All are optional, so older files are valid version 8 files; migration only stamps the version. |
+| 9 | `type: "word_art"` frame content, and the frame style fields `shadow` and `border_art`. All are optional and omitted when unset, so older files are valid version 9 files; migration only stamps the version (ADR 0020). |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -191,6 +192,35 @@ need more is left short. `{}` means both defaults. `"unbounded": true` (inside
 `justify_limits`) means no limits and overrides limits inherited from a
 paragraph style. The last line of a
 paragraph is never stretched.
+
+### WordArt, shadows and BorderArt (version 9)
+
+A frame whose content is `{"type": "word_art", ...}` holds one line of
+decorative text, warped as a whole:
+
+| Field | Meaning |
+| --- | --- |
+| `text` | The words (up to 200 characters; control characters draw as spaces). |
+| `font` | Font family name. |
+| `size` | Nominal font size in points. The warped text is scaled down, never up, to fit the frame, so a large size fills it. |
+| `warp` | `none` (default), `arch_up`, `arch_down`, `circle`, `wave`, `slant_up`, `slant_down` or `inflate`. |
+| `fill` | A paint: hex string, `{"swatch", "tint"}` or a gradient (which spans the letters' box). |
+| `outline` | Optional stroke `{"color", "width", "dash"}`; the colour is a hex string or swatch. |
+| `shadow` | Optional shadow of the letters (below). |
+
+A frame's `style` may also hold:
+
+- `shadow`: `{"offset_x", "offset_y", "blur", "color", "opacity"}`, points
+  (offsets within 200, blur 0 to 50), a hex or swatch colour and an opacity
+  from 0 to 1. It is cast by everything the frame draws. A WordArt frame with
+  both uses its style's shadow.
+- `border_art`: `{"pattern", "width"}`: one of `stars`, `hearts`, `dots`,
+  `waves`, `zigzag`, `diamonds`, `leaves`, `ropes`, `checks`, `scallops`,
+  `arrows` or `snowflakes`, and a width of 4 to 72 points. The border runs along
+  the inside of the frame's edge; text in a text frame is inset by its width.
+
+All three are absent in every older file, and absent means the version 8
+rendering, unchanged. `tests/fixtures/schema_v9.pubrs` holds each of them.
 
 ### Keeps, drop caps and breaks (version 6)
 

@@ -33,6 +33,12 @@ pub enum Action {
     InsertRectangle,
     InsertEllipse,
     InsertLine,
+    /// Insert → WordArt…
+    InsertWordArt,
+    /// Format → Shadow: toggle a default drop shadow on the selection.
+    ToggleShadow,
+    /// Format → Border Art…
+    BorderArt,
     InsertPage,
     InsertColumnBreak,
     InsertFrameBreak,
@@ -219,6 +225,7 @@ pub const MENUS: &[MenuSpec] = &[
             A("Rectangle", Action::InsertRectangle),
             A("Ellipse", Action::InsertEllipse),
             A("Line", Action::InsertLine),
+            A("WordArt…", Action::InsertWordArt),
             Sub(
                 "Break",
                 &[
@@ -282,6 +289,13 @@ pub const MENUS: &[MenuSpec] = &[
             A("Drop Cap…", Action::DropCap),
             A("Tabs…", Action::Tabs),
             A("Bullets and Numbering…", Action::BulletsNumbering),
+        ],
+    },
+    MenuSpec {
+        title: "Format",
+        items: &[
+            A("Shadow", Action::ToggleShadow),
+            A("Border Art…", Action::BorderArt),
         ],
     },
     MenuSpec {

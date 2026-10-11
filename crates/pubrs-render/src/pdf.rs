@@ -510,6 +510,13 @@ fn draw_tagged(
     };
     let tag = match prim {
         Prim::Glyphs(..) => ContentTag::Span(SpanTag::empty()),
+        // WordArt letters are outlines: tagged as text that spells the
+        // WordArt's string, so readers and copy-paste still see it.
+        Prim::Path {
+            text: Some(text), ..
+        } if !text.trim().is_empty() => {
+            ContentTag::Span(SpanTag::empty().with_actual_text(Some(text)))
+        }
         Prim::Image { .. } => ContentTag::Other,
         _ => ContentTag::Artifact(Artifact::with_kind(ArtifactType::Layout)),
     };
@@ -622,12 +629,21 @@ pub fn render_pdf(
                 }
                 open_clip = node.clip;
             }
-            surface.push_transform(&kt(node.transform.then(base)));
             let layered = node.opacity < 1.0;
-            if layered {
-                surface.push_opacity(
-                    NormalizedF32::new(node.opacity as f32).unwrap_or(NormalizedF32::ONE),
-                );
+            let opacity = NormalizedF32::new(node.opacity as f32).unwrap_or(NormalizedF32::ONE);
+            if node.shadow.is_some() {
+                // The shadow is a bitmap in page space, drawn under the
+                // node inside its opacity group (ADR 0020).
+                if layered {
+                    surface.push_opacity(opacity);
+                }
+                draw_shadow(&mut surface, node, images, s as f32, &mut tagger);
+                surface.push_transform(&kt(node.transform.then(base)));
+            } else {
+                surface.push_transform(&kt(node.transform.then(base)));
+                if layered {
+                    surface.push_opacity(opacity);
+                }
             }
             let mut state = DrawState {
                 images,
@@ -647,10 +663,17 @@ pub fn render_pdf(
             if let Some(t) = &mut tagger {
                 t.end_frame();
             }
-            if layered {
+            if node.shadow.is_some() {
+                surface.pop();
+                if layered {
+                    surface.pop();
+                }
+            } else {
+                if layered {
+                    surface.pop();
+                }
                 surface.pop();
             }
-            surface.pop();
         }
         if open_clip.is_some() {
             surface.pop();
@@ -683,6 +706,55 @@ pub fn render_pdf(
     } else {
         Err(PdfError::NotPdfX4(issues))
     }
+}
+
+/// Resolution of a shadow bitmap in the PDF.
+const SHADOW_DPI: f64 = 150.0;
+
+/// Draw a node's drop shadow as an RGBA image (its alpha is a soft mask) at
+/// [`SHADOW_DPI`], under the node, at page offset `s` (the bleed). It is an
+/// artifact in a tagged PDF.
+fn draw_shadow(
+    surface: &mut Surface<'_>,
+    node: &crate::scene::Node,
+    images: &dyn ImageResolver,
+    s: f32,
+    tagger: &mut Option<Tagger>,
+) {
+    let Some(bm) = crate::raster::RasterRenderer::new().shadow_bitmap(node, images, SHADOW_DPI)
+    else {
+        return;
+    };
+    let image = krilla::image::Image::from_rgba8(bm.rgba, bm.px_width, bm.px_height);
+    let Some(size) = Size::from_wh(bm.width as f32, bm.height as f32) else {
+        return;
+    };
+    if tagger.is_some() {
+        surface.start_tagged(krilla::tagging::ContentTag::Artifact(
+            krilla::tagging::Artifact::with_kind(krilla::tagging::ArtifactType::Layout),
+        ));
+    }
+    surface.push_transform(&Transform::from_translate(bm.x as f32 + s, bm.y as f32 + s));
+    surface.draw_image(image, size);
+    surface.pop();
+    if tagger.is_some() {
+        surface.end_tagged();
+    }
+}
+
+fn krilla_path(p: &crate::scene::PathData) -> Option<Path> {
+    use crate::scene::PathSeg;
+    let mut pb = PathBuilder::new();
+    for s in &p.segs {
+        match *s {
+            PathSeg::Move(x, y) => pb.move_to(x, y),
+            PathSeg::Line(x, y) => pb.line_to(x, y),
+            PathSeg::Quad(a, b, x, y) => pb.quad_to(a, b, x, y),
+            PathSeg::Cubic(a, b, c, d, x, y) => pb.cubic_to(a, b, c, d, x, y),
+            PathSeg::Close => pb.close(),
+        }
+    }
+    pb.finish()
 }
 
 fn draw_prim(
@@ -766,6 +838,68 @@ fn draw_prim(
             surface.pop();
         }
         Prim::Glyphs(run, ink) => draw_run(surface, run, ink, opts, fonts),
+        Prim::Path {
+            path,
+            fill,
+            stroke,
+            origin,
+            size,
+            ..
+        } => {
+            let Some(p) = krilla_path(path) else {
+                return;
+            };
+            surface.push_transform(&Transform::from_translate(origin.0 as f32, origin.1 as f32));
+            surface.set_stroke(None);
+            surface.set_fill(fill.as_ref().map(|f| {
+                fill_of_paint(
+                    f,
+                    &Geom::Rect {
+                        w: size.0,
+                        h: size.1,
+                        radius: 0.0,
+                    },
+                )
+            }));
+            if fill.is_some() {
+                surface.draw_path(&p);
+            }
+            if let Some(st) = stroke {
+                surface.set_fill(None);
+                surface.set_stroke(Some(Stroke {
+                    paint: color_of(&st.color).into(),
+                    width: st.width as f32,
+                    opacity: alpha_of(st.color.rgba),
+                    line_join: LineJoin::Round,
+                    dash: dash_pattern(st.dash, st.width).map(|d| StrokeDash {
+                        array: d.into_iter().map(|v| v as f32).collect(),
+                        offset: 0.0,
+                    }),
+                    ..Default::default()
+                }));
+                surface.draw_path(&p);
+                surface.set_stroke(None);
+            }
+            surface.pop();
+        }
+        Prim::Svg {
+            tree,
+            transform,
+            clip,
+        } => {
+            let Some(clip_path) = rect_path(clip.x, clip.y, clip.width, clip.height) else {
+                return;
+            };
+            let sz = tree.size();
+            let Some(size) = Size::from_wh(sz.width(), sz.height()) else {
+                return;
+            };
+            surface.push_clip_path(&clip_path, &FillRule::NonZero);
+            surface.push_transform(&kt(*transform));
+            surface.draw_svg(tree, size, SvgSettings::default());
+            surface.pop();
+            surface.pop();
+        }
     }
 }
 
