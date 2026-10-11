@@ -1,0 +1,32 @@
+Third-party test data for pubrs (`tests/corpus/pub/`)
+
+This directory holds Microsoft Publisher files and reference data used to test
+the `.pub` importer. The files are test inputs only; none is linked into or
+shipped with pubrs.
+
+1. poi/  (24 files: .pub documents and the Sample*.txt text extractions)
+   Source:   Apache POI, test-data/publisher
+             https://github.com/apache/poi
+   Commit:   ae62bb5116b9aee19ebd5834e3a82066132c9f7f (ae62bb51)
+   Licence:  Apache License 2.0
+             Full text: LICENSE-Apache-2.0.txt (next to this file)
+   Copyright (c) The Apache Software Foundation. The files are unmodified.
+
+2. libreoffice/  (4 .pub files)
+   Source:   LibreOffice core, writerperfect/qa/unit/data/draw/libmspub/pass
+             https://github.com/LibreOffice/core
+   Commit:   63a2e19 (see libreoffice/COMMIT for the full hash)
+   Licence:  Mozilla Public License 2.0
+             Full text: LICENSE-MPL-2.0.txt (next to this file)
+   The files are unmodified. Three of them (EDB-*) are crafted exploit samples
+   that exist to check that importers fail safely.
+
+3. expected.json and oracle/text/
+   Generated for pubrs from the files above by converting each with LibreOffice
+   25.2.3.2 (libmspub 0.1.4) to PDF and reading the result with poppler: page
+   count, page size, image count, word count and the extracted text. LibreOffice
+   and libmspub are used as a reference tool only; their output text is the text
+   of the Publisher files above.
+
+The SHA-256 of every file here is in SHA256SUMS. ASSETS.md at the repository
+root lists these sources.

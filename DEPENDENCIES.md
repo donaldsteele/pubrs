@@ -23,3 +23,4 @@ Any dependency outside that stack has a one-line justification below.
 - `muda` (macOS only): native NSMenu menu bar from the shared keymap table (egui has no native menus).
 - `windows` features `Data_Pdf`, `Graphics_Imaging`, `Storage*`: Windows printing rasterises the exported PDF with the OS PDF renderer (WinRT) and prints through GDI after the system print dialog.
 - `proptest` (dev, pubrs-core and pubrs-io): property tests for command/undo sequences, save/load round-trips and loader fuzzing.
+- `cfb` (pubrs-io, MIT): reads the OLE compound file container of Microsoft Publisher `.pub` files (T23).
