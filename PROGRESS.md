@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** the owner merges `plan/publisher-parity` into `main` and tags v0.2.0: `git tag v0.2.0 && git push origin v0.2.0` (see RELEASE.md: it also lists the manual print checks and the 0.2.0 release notes). Nothing else in the plan is left.
+**Next step:** v0.2.1: link the Windows C runtime statically (`+crt-static`; nothing sets it today, so `VCRUNTIME140.dll` may be missing on a clean Windows install, and CI runners already have it, so CI cannot catch it). Then the owner publishes the release. v0.2.0 is tagged on 101cf18 and its draft release is unpublished (see "After 0.2.0" at the end of this file).
 
 
 ## Phase 2: Publisher parity
@@ -156,3 +156,20 @@ Definition of Done for the plan:
 7. The release workflow builds every installer from a manual dispatch on the branch: **done**. Run 38154397382 (dispatched on `plan/publisher-parity`) built and uploaded MSI x64 and ARM64, the universal DMG, and .deb + AppImage for x86_64 and aarch64; the draft-release job was skipped, as it runs only for tags. The first dispatch (38152433047) failed only at the DMG step (`hdiutil` auto-size ran out of space for the larger 0.2.0 bundle); `build-dmg.sh` now sizes the image explicitly (357aebf). RELEASE.md documents the dispatch; the workspace is at 0.2.0 and `Cargo.lock` matches (`--locked`).
 
 Tests: 547 in `cargo test --workspace` (0 failed), also with `PUBRS_LAYOUT_VERIFY=1`; +1 MCP acceptance, +1 PDF export, +the 31 new self-test steps. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `scripts/cross-check.sh` are clean. Dependencies: every crate in `Cargo.lock` has a permissive licence; the exceptions to PLAN.md's list (BSL-1.0 `clipboard-win` and `error-code`, and the OFL and Ubuntu font licences of egui's default fonts) are in DEPENDENCIES.md for the owner.
+
+## After 0.2.0: release and website (2026-10-11)
+
+- `plan/publisher-parity` was fast-forwarded into `main` (c1f189f..101cf18) and tagged v0.2.0. The tag release run
+  38160912906 built all 7 installers into a **draft** release, which is still unpublished. The v0.1.0 and v0.1.1
+  drafts are still there too; the owner has not said whether to delete them.
+- Project website: `site/`, live at https://donaldsteele.github.io/pubrs/ (also the repo homepage), deployed by
+  `.github/workflows/pages.yml` on pushes to `main` that touch `site/**`. Its Download buttons point at
+  `/releases/latest`, which is empty until a release is published. `README.md` was added.
+- Screenshots are real captures: `pubrs-app --showcase DIR` (`crates/pubrs-app/src/showcase.rs`, scenes in
+  `crates/pubrs-app/showcase/`) run by `scripts/site-screenshots.sh` under xvfb. Re-run it and commit the images in
+  `site/assets/screens/` when the UI changes visibly.
+- CI run 38166376503 on `main` 1a71f74 is green on all four OSes.
+- Open for the owner: the Windows C runtime (next step above), publishing the release, the RELEASE.md manual print
+  checks (5160 alignment, booklet duplex fold, PDF/X-4 preflight), checking the label-sheet presets written from
+  memory against datasheets (5376, 5377, 22805, 5305, 8315, C32011, L7651, L7161/L7162 margins), and the licence
+  outliers listed in DEPENDENCIES.md (BSL-1.0 clipboard-win and error-code, OFL/Ubuntu fonts).
