@@ -1046,6 +1046,30 @@ fn frame_props(
                     }
                 }
             });
+            ui.label("Alt text");
+            let mut alt = img.alt_text.clone();
+            let r = ui
+                .add(
+                    egui::TextEdit::multiline(&mut alt)
+                        .id_salt(format!("alt-{id}"))
+                        .desired_rows(2)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Describe the picture for screen readers"),
+                )
+                .on_hover_text(
+                    "What the picture shows. Written to the PDF when you export with tagged output, \
+                     and read aloud by screen readers.",
+                );
+            crate::dialogs::mark(ui, "alt-text", &r);
+            if r.changed() {
+                app.exec_merge(
+                    Command::SetImageAlt {
+                        frame: id,
+                        alt_text: alt,
+                    },
+                    &key("alt"),
+                );
+            }
             ui.label("Crop (%)");
             let c = img.crop;
             let mut vals = [

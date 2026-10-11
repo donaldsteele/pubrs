@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 158934,
+  "bytes": 158974,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 58
+  "revision": 59
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 158934,
+  "bytes": 158974,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 58
+  "revision": 59
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 59
+  "revision": 60
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 58
+  "revision": 59
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 60
+  "revision": 61
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 56
+  "revision": 57
 }
 ```
 
@@ -1519,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 36
+  "revision": 37
 }
 ```
 
@@ -1560,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 38
 }
 ```
 
@@ -1598,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 38
+  "revision": 39
 }
 ```
 
@@ -1637,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 40
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001f",
-  "revision": 53
+  "revision": 54
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 54
+  "revision": 55
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 50
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 51
+  "revision": 52
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 53
 }
 ```
 
@@ -1911,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 41
 }
 ```
 
@@ -1941,7 +1941,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 44
+  "revision": 45
 }
 ```
 
@@ -1979,7 +1979,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 47
+  "revision": 48
 }
 ```
 
@@ -2019,7 +2019,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 49
 }
 ```
 
@@ -2087,7 +2087,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 56
+  "revision": 57
 }
 ```
 
@@ -2124,6 +2124,7 @@ Result:
   "effective_dpi": 446.8965517241379,
   "frame": {
     "content": {
+      "alt_text": "Steaming cup of coffee on a wooden table",
       "asset": "00000000-0000-87ea-8000-00000000001b",
       "crop": {
         "bottom": 0.0,
@@ -2132,8 +2133,7 @@ Result:
         "top": 0.0
       },
       "fit": "fill",
-      "lock_aspect": true,
-      "…": "1 more keys"
+      "…": "2 more keys"
     },
     "id": "00000000-0000-87ea-8000-000000000013",
     "locked": false,
@@ -2152,7 +2152,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 56,
+  "revision": 57,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2212,7 +2212,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
-  "revision": 55
+  "revision": 56
 }
 ```
 
@@ -2430,7 +2430,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 0,
   "overflowing": false,
-  "revision": 45,
+  "revision": 46,
   "story_id": "00000000-0000-87ea-8000-000000000019"
 }
 ```
@@ -3095,7 +3095,7 @@ Result:
 
 ```json
 {
-  "revision": 45,
+  "revision": 46,
   "swatches": [
     {
       "name": "Brand Cyan",
@@ -3160,7 +3160,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41,
+  "revision": 42,
   "swatch_id": "00000000-0000-87ea-8000-00000000001d"
 }
 ```
@@ -3195,7 +3195,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42,
+  "revision": 43,
   "swatch_id": "00000000-0000-87ea-8000-00000000001e"
 }
 ```
@@ -3242,7 +3242,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43
+  "revision": 44
 }
 ```
 
@@ -3307,7 +3307,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 47
+  "revision": 48
 }
 ```
 
@@ -3428,7 +3428,7 @@ Result:
     "… 3 more"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 46
+  "revision": 47
 }
 ```
 
@@ -3477,7 +3477,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 35
+  "revision": 36
 }
 ```
 
@@ -3605,6 +3605,44 @@ Result:
   "pixel_height": 1200,
   "pixel_width": 1800,
   "revision": 34
+}
+```
+
+### `image_set_alt_text`
+
+Set the alt text of a picture frame: what the picture shows, for screen readers. It is written to the PDF as /Alt when export_pdf is called with tagged: true. An empty string clears it.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `alt_text` | string | yes | What the picture shows, for screen readers (written to tagged PDF as /Alt). An empty string clears it. |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `frame_id` | uuid | yes | An image (picture) frame. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — Written to the PDF as /Alt when export_pdf is called with tagged: true. An empty string clears it.
+
+```json
+{
+  "arguments": {
+    "alt_text": "Steaming cup of coffee on a wooden table",
+    "frame_id": "00000000-0000-87ea-8000-000000000013"
+  },
+  "name": "image_set_alt_text"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000013"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 35
 }
 ```
 
@@ -3940,7 +3978,7 @@ Result:
 
 ### `export_pdf`
 
-Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed). Writes to path, or returns base64 when no path is given.
+Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed), standard none|pdfx4|pdfa2b (pdfx4 = commercial printing: PDF 1.6, CMYK output intent, checked before it is returned; pdfa2b = archive), output_intent_icc (path of a CMYK output profile for pdfx4), tagged (tagged PDF with image alt text). CMYK and spot swatches are written as DeviceCMYK and Separation colours. Writes to path, or returns base64 when no path is given.
 
 _read-only_
 
@@ -3953,8 +3991,11 @@ _read-only_
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `font_embedding` | "subset" \| "outlines" |  | Font handling in PDFs. |
 | `impose` | boolean |  | Impose the pages onto label sheets or booklet sheets when the document has a sheet or booklet set (default true). false exports the plain pages. |
+| `output_intent_icc` | string |  | pdfx4 only: path of a CMYK output profile (.icc, class prtr) to use instead of the bundled generic CMYK (SWOP-like) profile. |
 | `path` | string |  | Output file path. Without a path the PDF is returned as base64. |
 | `return_base64` | boolean |  | Also return the bytes as base64 when a path is given. |
+| `standard` | "none" \| "pdfx4" \| "pdfa2b" |  | none (default), pdfx4 (commercial printing: PDF 1.6 with a CMYK output intent, checked before it is returned) or pdfa2b (archive). |
+| `tagged` | boolean |  | Write a tagged PDF: text as paragraphs, pictures as figures with their alt text (set with image_set_alt_text), the rest as artifacts. |
 
 **Result fields:** `base64`, `bytes`, `doc_id`, `imposed`, `page_count`, `path`, `revision`
 
@@ -3974,20 +4015,22 @@ Result:
 
 ```json
 {
-  "bytes": 94604,
+  "bytes": 94785,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 58
+  "revision": 59
 }
 ```
 
-**Example** — page_count is 1 sheet and imposed is "sheet".
+**Example** — Commercial printing: PDF/X-4 (PDF 1.6, CMYK output intent, TrimBox and BleedBox). The result is checked before it is returned; a failed check is an export error that names the issues.
 
 ```json
 {
   "arguments": {
-    "path": "labels.pdf"
+    "crop_marks": true,
+    "path": "spring-fair-x4.pdf",
+    "standard": "pdfx4"
   },
   "name": "export_pdf"
 }
@@ -3997,12 +4040,57 @@ Result:
 
 ```json
 {
-  "bytes": 1767,
-  "doc_id": "00000000-0000-87ea-8000-00000000002d",
-  "imposed": "sheet",
-  "page_count": 1,
-  "path": "<output_dir>/labels.pdf",
-  "revision": 2
+  "bytes": 514376,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "page_count": 2,
+  "path": "<output_dir>/spring-fair-x4.pdf",
+  "revision": 59
+}
+```
+
+### `export_print_package`
+
+Save for a commercial printer: a zip with the PDF/X-4 file, the .pubrs document with its images, and a README listing the fonts used and the colours (swatches with their CMYK and spot values). Options: bleed, crop_marks, output_intent_icc. Writes to path, or returns base64 when no path is given.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bleed` | boolean |  | Include the document's bleed (default: true when the document has bleed). |
+| `crop_marks` | boolean |  | Add crop marks outside the bleed (default false). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `output_intent_icc` | string |  | Path of a CMYK output profile to use instead of the bundled one. |
+| `path` | string |  | Output .zip path. Without a path the zip is returned as base64. |
+
+**Result fields:** `base64`, `bytes`, `doc_id`, `files`, `path`, `revision`
+
+**Example** — Save for a commercial printer: a zip with the PDF/X-4 file, the .pubrs with its images and a README listing the fonts and colours.
+
+```json
+{
+  "arguments": {
+    "crop_marks": true,
+    "path": "spring-fair-print.zip"
+  },
+  "name": "export_print_package"
+}
+```
+
+Result:
+
+```json
+{
+  "bytes": 668402,
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "files": [
+    "spring-fair-print-pdfx4.pdf",
+    "spring-fair-print.pubrs",
+    "README.txt"
+  ],
+  "path": "<output_dir>/spring-fair-print.zip",
+  "revision": 59
 }
 ```
 
@@ -4047,7 +4135,7 @@ Result:
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 58,
+  "revision": 59,
   "width": 596
 }
 ```
@@ -4089,7 +4177,7 @@ Result:
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAe0UlEQVR4nO2d… (10596 characters)",
-  "revision": 58,
+  "revision": 59,
   "width": 249
 }
 ```
@@ -4130,7 +4218,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 57
+  "revision": 58
 }
 ```
 
@@ -4168,7 +4256,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 58
+  "revision": 59
 }
 ```
 
@@ -4221,9 +4309,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 51 more"
+    "… 52 more"
   ],
-  "revision": 56
+  "revision": 57
 }
 ```
 
@@ -4342,6 +4430,7 @@ Result:
       },
       "00000000-0000-87ea-8000-000000000013": {
         "content": {
+          "alt_text": "Steaming cup of coffee on a wooden table",
           "asset": "00000000-0000-87ea-8000-00000000001b",
           "crop": {
             "bottom": 0.0,
@@ -4350,8 +4439,7 @@ Result:
             "top": 0.0
           },
           "fit": "fill",
-          "lock_aspect": true,
-          "…": "1 more keys"
+          "…": "2 more keys"
         },
         "id": "00000000-0000-87ea-8000-000000000013",
         "locked": false,
@@ -4405,7 +4493,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 4,
+    "schema_version": 5,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -4557,7 +4645,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 58
+  "revision": 59
 }
 ```
 
@@ -4590,7 +4678,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 58,
+  "revision": 59,
   "warnings": [
     {
       "code": "overflow",

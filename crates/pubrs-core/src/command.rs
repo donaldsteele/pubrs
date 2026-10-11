@@ -336,6 +336,11 @@ pub enum Command {
         frame: FrameId,
         lock: bool,
     },
+    /// Set a picture frame's alt text (empty clears it).
+    SetImageAlt {
+        frame: FrameId,
+        alt_text: String,
+    },
     // ---- composition ----
     /// Several commands applied atomically as one undo step.
     Batch {
@@ -405,6 +410,7 @@ impl Command {
             Self::SetImageCrop { .. } => "set_image_crop",
             Self::SetImageFit { .. } => "set_image_fit",
             Self::SetLockAspect { .. } => "set_lock_aspect",
+            Self::SetImageAlt { .. } => "set_image_alt",
             Self::Batch { .. } => "batch",
             Self::Patch(_) => "patch",
         }
@@ -1020,6 +1026,10 @@ impl Command {
             }
             Self::SetLockAspect { frame, lock } => {
                 image_mut(doc, *frame)?.lock_aspect = *lock;
+                Ok(())
+            }
+            Self::SetImageAlt { frame, alt_text } => {
+                image_mut(doc, *frame)?.alt_text = alt_text.clone();
                 Ok(())
             }
             Self::Batch { commands, .. } => {

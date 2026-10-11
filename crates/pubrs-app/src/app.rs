@@ -10,7 +10,7 @@ use eframe::egui;
 use pubrs_api::core::align::{AlignEdge, DistributeAxis};
 use pubrs_api::core::{Command, Document, DocumentId, FrameId, FrameKind, Owner, StoryId};
 use pubrs_api::tools::doc::{DocClose, DocNew, DocOpen, DocRef, DocSaveAs};
-use pubrs_api::tools::export::{ExportPdf, ExportPng};
+use pubrs_api::tools::export::{ExportPdf, ExportPng, ExportPrintPackage};
 use pubrs_api::tools::frames::{
     FrameAlign, FrameDistribute, FrameDuplicate, FrameGroup, FrameLock, FrameSetZorder,
     FrameUngroup, RelativeTo, ZAction,
@@ -559,6 +559,54 @@ impl PubrsApp {
         }
     }
 
+    /// Export a PDF with the Export dialog's choices.
+    pub fn export_pdf_with(&mut self, path: &Path, st: &crate::dialogs::ExportState) -> bool {
+        let Some(id) = self.doc_id() else {
+            return false;
+        };
+        let r = self.session.export_pdf(ExportPdf {
+            doc_id: Some(id),
+            path: Some(session_path(path)),
+            bleed: Some(st.bleed),
+            crop_marks: st.crop_marks,
+            standard: st.standard(),
+            tagged: st.tagged,
+            ..Default::default()
+        });
+        match self.report(r) {
+            Some(out) => {
+                self.notify(format!(
+                    "Exported {} ({} pages)",
+                    path.display(),
+                    out.page_count
+                ));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Save the zip for a commercial printer.
+    pub fn export_print_package_to(&mut self, path: &Path, bleed: bool, crop_marks: bool) -> bool {
+        let Some(id) = self.doc_id() else {
+            return false;
+        };
+        let r = self.session.export_print_package(ExportPrintPackage {
+            doc_id: Some(id),
+            path: Some(session_path(path)),
+            bleed: Some(bleed),
+            crop_marks,
+            output_intent_icc: None,
+        });
+        match self.report(r) {
+            Some(_) => {
+                self.notify(format!("Saved {} for a commercial printer", path.display()));
+                true
+            }
+            None => false,
+        }
+    }
+
     fn export_png_to(&mut self, path: &Path) {
         let Some(v) = self.view() else { return };
         let page = self.doc().and_then(|d| d.pages.get(v.page).map(|p| p.id));
@@ -892,11 +940,20 @@ impl PubrsApp {
                 }
             }
             ExportPdf => {
-                let name = pubrs_api::session::slug(
-                    &self.doc().map(|d| d.meta.title.clone()).unwrap_or_default(),
-                );
-                if let Some(p) = self.platform.dialogs.save_export(&name, "pdf", "PDF") {
-                    self.export_pdf_to(&p);
+                if let Some(doc) = self.doc() {
+                    self.dialog = Some(Dialog::ExportPdf(crate::dialogs::ExportState::new(doc)));
+                }
+            }
+            SavePrintPackage => {
+                let Some(doc) = self.doc() else { return };
+                let has_bleed = doc.setup.bleed > 0.0;
+                let name = pubrs_api::session::slug(&doc.meta.title);
+                if let Some(p) = self
+                    .platform
+                    .dialogs
+                    .save_export(&name, "zip", "print package")
+                {
+                    self.export_print_package_to(&p, has_bleed, true);
                 }
             }
             ExportPng => {

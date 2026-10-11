@@ -16,6 +16,7 @@ pub mod gpu;
 pub mod images;
 pub mod impose;
 pub mod pdf;
+pub mod pdfx;
 pub mod raster;
 pub mod scene;
 pub mod tiles;
@@ -25,7 +26,7 @@ pub use damage::{PageDamage, PageState, page_damage, page_fingerprint};
 pub use images::{
     ImageContent, ImageResolver, ImageSnapshot, NoImages, RasterImage, pixmap_from_rgba,
 };
-pub use pdf::{FontEmbedding, PdfError, PdfOptions, render_pdf};
+pub use pdf::{FontEmbedding, PdfError, PdfOptions, PdfStandard, render_pdf};
 pub use raster::{PixelRect, RasterOptions, RasterRenderer, Region, RenderError, pixel_size};
 pub use resvg::tiny_skia;
 pub use scene::{

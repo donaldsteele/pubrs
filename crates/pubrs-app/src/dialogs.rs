@@ -26,6 +26,8 @@ pub enum Dialog {
     ColorScheme,
     /// Add or edit a swatch.
     Swatch(SwatchEditor),
+    /// File → Export PDF…
+    ExportPdf(ExportState),
 }
 
 /// What kind of swatch the editor makes.
@@ -512,6 +514,7 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         }
         Dialog::ColorScheme => scheme_dialog(app, ui),
         Dialog::Swatch(ed) => swatch_dialog(app, ui, ed),
+        Dialog::ExportPdf(st) => export_dialog(app, ui, st),
         Dialog::Message(title, body) => {
             ui.heading(title.as_str());
             ui.label(body.as_str());
@@ -1376,4 +1379,212 @@ fn paragraph_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ParagraphState) 
         }
     });
     out
+}
+
+// ---------------------------------------------------------------------------
+// Export PDF
+
+/// The presets of the Export PDF dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportPreset {
+    Screen,
+    Desktop,
+    Commercial,
+    Archive,
+}
+
+impl ExportPreset {
+    pub const ALL: [ExportPreset; 4] = [
+        ExportPreset::Screen,
+        ExportPreset::Desktop,
+        ExportPreset::Commercial,
+        ExportPreset::Archive,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ExportPreset::Screen => "Screen",
+            ExportPreset::Desktop => "Desktop printing",
+            ExportPreset::Commercial => "Commercial printing (PDF/X-4)",
+            ExportPreset::Archive => "Archive (PDF/A-2b)",
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            ExportPreset::Screen => "screen",
+            ExportPreset::Desktop => "desktop",
+            ExportPreset::Commercial => "commercial",
+            ExportPreset::Archive => "archive",
+        }
+    }
+
+    fn about(self) -> &'static str {
+        match self {
+            ExportPreset::Screen => {
+                "For reading on a screen and sharing by email. Tagged for screen readers."
+            }
+            ExportPreset::Desktop => {
+                "For an office or home printer. Plain PDF with fonts embedded."
+            }
+            ExportPreset::Commercial => {
+                "For a print shop: PDF/X-4 with a CMYK output profile, trim and bleed boxes. \
+                 The file is checked before it is saved."
+            }
+            ExportPreset::Archive => "For long-term storage: PDF/A-2b, checked by the PDF writer.",
+        }
+    }
+
+    /// Bleed and crop marks make sense only for printing.
+    fn prints(self) -> bool {
+        matches!(self, ExportPreset::Desktop | ExportPreset::Commercial)
+    }
+}
+
+/// Export PDF dialog state.
+pub struct ExportState {
+    pub preset: ExportPreset,
+    pub bleed: bool,
+    pub crop_marks: bool,
+    pub tagged: bool,
+    /// Whether the publication has a bleed set up.
+    pub has_bleed: bool,
+    /// Where to save, when already decided (the GUI self-test sets this to
+    /// skip the native file dialog).
+    pub target: Option<std::path::PathBuf>,
+}
+
+impl ExportState {
+    pub fn new(doc: &pubrs_api::core::Document) -> Self {
+        let mut s = Self {
+            preset: ExportPreset::Desktop,
+            bleed: false,
+            crop_marks: false,
+            tagged: false,
+            has_bleed: doc.setup.bleed > 0.0,
+            target: None,
+        };
+        s.choose(ExportPreset::Desktop);
+        s
+    }
+
+    pub fn choose(&mut self, p: ExportPreset) {
+        self.preset = p;
+        self.bleed = p == ExportPreset::Commercial && self.has_bleed;
+        self.crop_marks = p == ExportPreset::Commercial;
+        self.tagged = p == ExportPreset::Screen;
+    }
+
+    pub fn standard(&self) -> pubrs_api::tools::export::PdfStandardIn {
+        use pubrs_api::tools::export::PdfStandardIn as S;
+        match self.preset {
+            ExportPreset::Commercial => S::Pdfx4,
+            ExportPreset::Archive => S::Pdfa2b,
+            _ => S::None,
+        }
+    }
+}
+
+fn export_dialog(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) -> Outcome {
+    ui.heading("Export PDF");
+    ui.label("Choose what the PDF is for. You can still change the options below.");
+    ui.add_space(6.0);
+    for p in ExportPreset::ALL {
+        ui.horizontal(|ui| {
+            let r = ui.radio(st.preset == p, p.label());
+            mark(ui, &format!("preset-{}", p.id()), &r);
+            if r.clicked() {
+                st.choose(p);
+            }
+        });
+        ui.indent(p.id(), |ui| ui.small(p.about()));
+    }
+    ui.add_space(6.0);
+    ui.separator();
+    let prints = st.preset.prints();
+    let bleed_ok = prints && st.has_bleed;
+    if !bleed_ok {
+        st.bleed = false;
+    }
+    if !prints {
+        st.crop_marks = false;
+    }
+    let r = ui
+        .add_enabled(
+            bleed_ok,
+            egui::Checkbox::new(&mut st.bleed, "Include bleed"),
+        )
+        .on_disabled_hover_text(if prints {
+            "This publication has no bleed. Set one in Page Setup."
+        } else {
+            "Bleed is for printing. Choose Desktop or Commercial printing."
+        })
+        .on_hover_text("Extend artwork past the trim edge into the bleed area");
+    mark(ui, "export-bleed", &r);
+    let r = ui
+        .add_enabled(
+            prints,
+            egui::Checkbox::new(&mut st.crop_marks, "Crop marks"),
+        )
+        .on_disabled_hover_text(
+            "Crop marks are for printing. Choose Desktop or Commercial printing.",
+        )
+        .on_hover_text("Draw trim marks outside the bleed area");
+    mark(ui, "export-marks", &r);
+    let r = ui
+        .checkbox(&mut st.tagged, "Tagged PDF (accessibility)")
+        .on_hover_text("Mark up text and pictures, with picture alt text, for screen readers");
+    mark(ui, "export-tagged", &r);
+    ui.add_space(8.0);
+    let mut go = false;
+    let mut package = false;
+    let mut cancel = false;
+    ui.horizontal(|ui| {
+        let b = ui.button("Export…");
+        mark(ui, "export-go", &b);
+        go = b.clicked();
+        let b = ui.button("Save for a commercial printer…").on_hover_text(
+            "A zip with the PDF/X-4 file, the editable publication with its pictures, and a \
+                 list of the fonts and colours used",
+        );
+        mark(ui, "export-package", &b);
+        package = b.clicked();
+        let b = ui.button("Cancel");
+        mark(ui, "export-cancel", &b);
+        cancel = b.clicked();
+    });
+    if cancel || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        return Outcome::Close;
+    }
+    let name =
+        pubrs_api::session::slug(&app.doc().map(|d| d.meta.title.clone()).unwrap_or_default());
+    if go {
+        let path = st
+            .target
+            .clone()
+            .or_else(|| app.platform.dialogs.save_export(&name, "pdf", "PDF"));
+        if let Some(path) = path
+            && app.export_pdf_with(&path, st)
+        {
+            return Outcome::Close;
+        }
+    }
+    if package {
+        let path = st.target.clone().or_else(|| {
+            app.platform
+                .dialogs
+                .save_export(&name, "zip", "print package")
+        });
+        if let Some(path) = path {
+            let (bleed, marks) = if st.preset == ExportPreset::Commercial {
+                (st.bleed, st.crop_marks)
+            } else {
+                (st.has_bleed, true)
+            };
+            if app.export_print_package_to(&path, bleed, marks) {
+                return Outcome::Close;
+            }
+        }
+    }
+    Outcome::Keep
 }

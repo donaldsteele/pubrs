@@ -4159,6 +4159,7 @@ dependencies = [
 name = "pubrs-render"
 version = "0.1.1"
 dependencies = [
+ "hayro-syntax",
  "krilla",
  "krilla-svg",
  "pollster 0.4.0",

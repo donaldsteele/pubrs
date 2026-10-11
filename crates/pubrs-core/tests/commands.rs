@@ -1086,6 +1086,27 @@ fn patch_json_matches_the_golden_corpus() {
         replace_with: Some(Paint::swatch(sw_cmyk)),
     });
 
+    // Picture alt text (schema 5), appended likewise.
+    let alt_img = FrameId::new(&mut r.fx.ids);
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame: Frame::new(
+            alt_img,
+            Rect::new(10.0, 10.0, 80.0, 60.0),
+            FrameContent::Image(ImageFrame::new(None)),
+        ),
+        story: None,
+    });
+    r.run(Command::SetImageAlt {
+        frame: alt_img,
+        alt_text: "A loaf of bread on a board".into(),
+    });
+    r.run(Command::SetImageAlt {
+        frame: alt_img,
+        alt_text: String::new(),
+    });
+
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/patch_corpus.json");
@@ -1292,4 +1313,98 @@ fn old_documents_without_swatches_serialize_unchanged() {
     let doc = Document::new(&mut ids, PageSetup::default());
     let json = serde_json::to_string(&doc).unwrap();
     assert!(!json.contains("swatches") && !json.contains("scheme"));
+}
+
+// ---- picture alt text and strict paints ----
+
+#[test]
+fn image_alt_text_sets_trims_clears_and_undoes() {
+    let mut fx = Fixture::new();
+    let page = fx.ed.doc().pages[0].id;
+    let img = FrameId::new(&mut fx.ids);
+    fx.ed
+        .execute(Command::AddFrame {
+            parent: Parent::Page(page),
+            index: None,
+            frame: Frame::new(
+                img,
+                Rect::new(10.0, 10.0, 80.0, 60.0),
+                FrameContent::Image(ImageFrame::new(None)),
+            ),
+            story: None,
+        })
+        .unwrap();
+    let alt = |fx: &Fixture| {
+        fx.ed
+            .doc()
+            .frame(img)
+            .unwrap()
+            .as_image()
+            .unwrap()
+            .alt_text
+            .clone()
+    };
+    assert_eq!(alt(&fx), "");
+    fx.ed
+        .execute(Command::SetImageAlt {
+            frame: img,
+            alt_text: "Two loaves".into(),
+        })
+        .unwrap();
+    assert_eq!(alt(&fx), "Two loaves");
+    fx.ed.undo().unwrap();
+    assert_eq!(alt(&fx), "");
+    fx.ed.redo().unwrap();
+    assert_eq!(alt(&fx), "Two loaves");
+    // Not a picture frame: refused.
+    let shape = fx.shape(Rect::new(0.0, 0.0, 10.0, 10.0));
+    assert!(
+        fx.ed
+            .execute(Command::SetImageAlt {
+                frame: shape,
+                alt_text: "x".into(),
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn paint_objects_reject_typos_and_bad_hex_clearly() {
+    let id = "00000000-0000-0000-0000-000000000001";
+    let ok: Paint = serde_json::from_str(&format!(r#"{{"swatch":"{id}","tint":40}}"#)).unwrap();
+    assert!(matches!(ok, Paint::Swatch { tint, .. } if tint == 40.0));
+    let ok: Paint = serde_json::from_str(&format!(r#"{{"swatch":"{id}"}}"#)).unwrap();
+    assert!(matches!(ok, Paint::Swatch { tint, .. } if tint == 100.0));
+    // A misspelt key names itself.
+    let e = serde_json::from_str::<Paint>(&format!(r#"{{"swatch":"{id}","tint_pct":40}}"#))
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("tint_pct"), "{e}");
+    let e = serde_json::from_str::<Paint>(r##"{"gradient":"linear","stops":[],"angel":3}"##)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("angel"), "{e}");
+    // The same in a gradient stop.
+    let e = serde_json::from_str::<GradientStop>(&format!(
+        r#"{{"offset":0,"color":{{"swatch":"{id}","tnt":5}}}}"#
+    ))
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("tnt"), "{e}");
+    // A gradient is not a solid colour.
+    let e = serde_json::from_str::<SolidPaint>(r#"{"gradient":"linear","stops":[]}"#)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("gradient"), "{e}");
+    // A bad hex string says what a colour looks like.
+    for bad in ["#12345", "#GG0000", "red"] {
+        let e = serde_json::from_str::<Paint>(&format!("\"{bad}\""))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("#RRGGBB") && e.contains(bad), "{e}");
+    }
+    // Plain colours still read and write unchanged.
+    let c: Paint = serde_json::from_str("\"#1E3A8A80\"").unwrap();
+    assert_eq!(c, Paint::Color(Color::rgba(0x1E, 0x3A, 0x8A, 0x80)));
+    assert_eq!(serde_json::to_string(&c).unwrap(), "\"#1E3A8A80\"");
 }

@@ -240,6 +240,8 @@ pub static TOOLS: &[ToolDef] = &[
         "Set how the image fills its frame: fill (cover, may crop), fit (all visible) or stretch. resize_frame: true makes the frame match the image's aspect ratio."),
     tool!("image_replace", "Images", image_replace, images::ImagePlace => images::ImagePlaceOut, ro = false, destructive = false, image = None,
         "Swap the image in a picture frame for another file/base64 image, keeping the frame and fit mode (crop is reset)."),
+    tool!("image_set_alt_text", "Images", image_set_alt_text, images::ImageSetAltText => Changed, ro = false, destructive = false, image = None,
+        "Set the alt text of a picture frame: what the picture shows, for screen readers. It is written to the PDF as /Alt when export_pdf is called with tagged: true. An empty string clears it."),
     // ---------------------------------------------------------------- templates
     tool!("template_list", "Templates", template_list, templates::TemplateList => templates::TemplateListOut, ro = true, destructive = false, image = None,
         "List templates (built-in: flyer, trifold_brochure, business_card, newsletter; plus user templates) with page size and every placeholder's name, kind, hint and size."),
@@ -256,7 +258,9 @@ pub static TOOLS: &[ToolDef] = &[
         "Print the document as a saddle-stitched booklet: pages are padded to a multiple of 4, reordered and put 2-up on sheets twice the page width (front and back are separate PDF pages). Not combinable with a label sheet."),
     // ---------------------------------------------------------------- export
     tool!("export_pdf", "Export", export_pdf, export::ExportPdf => export::ExportPdfOut, ro = true, destructive = false, image = None,
-        "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed). Writes to path, or returns base64 when no path is given."),
+        "Export the whole document as a print-ready PDF (embedded subset fonts, TrimBox/BleedBox set). Options: bleed, crop_marks, font_embedding subset|outlines, impose (default true: documents with a label sheet or booklet are imposed), standard none|pdfx4|pdfa2b (pdfx4 = commercial printing: PDF 1.6, CMYK output intent, checked before it is returned; pdfa2b = archive), output_intent_icc (path of a CMYK output profile for pdfx4), tagged (tagged PDF with image alt text). CMYK and spot swatches are written as DeviceCMYK and Separation colours. Writes to path, or returns base64 when no path is given."),
+    tool!("export_print_package", "Export", export_print_package, export::ExportPrintPackage => export::ExportPrintPackageOut, ro = true, destructive = false, image = None,
+        "Save for a commercial printer: a zip with the PDF/X-4 file, the .pubrs document with its images, and a README listing the fonts used and the colours (swatches with their CMYK and spot values). Options: bleed, crop_marks, output_intent_icc. Writes to path, or returns base64 when no path is given."),
     tool!("export_png", "Export", export_png, export::ExportPng => export::ExportPngOut, ro = true, destructive = false, image = None,
         "Render one page to PNG at a dpi (default 150), optionally including bleed. Writes to path or returns base64."),
     tool!("render_preview", "Export", render_preview, export::RenderPreview => export::RenderPreviewOut, ro = true, destructive = false, image = Some("png_base64"),

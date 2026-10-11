@@ -50,8 +50,19 @@ Deferred and partial work. Each entry says what is missing and why.
 - Masters, pictures, shapes, tables and colour schemes in `.pub` files are dropped and reported until M32.
 - Linked-chain flow order in 98/2000 `.pub` files is page order; prev/next ids are read only for 2002+.
 - The `.pub` oracle (libmspub) counts a chained story once per frame; recall is measured that way (ADR 0017).
-- Colour (M21): the PDF writes every swatch as its RGB equivalent; DeviceCMYK, Separation and PDF/X come with M22 (the exact values are kept in `ResolvedInk::spec`).
+- Colour (M21, resolved in M22): the PDF now writes CMYK as DeviceCMYK and spot colours as Separation.
 - Colour (M21): `validate` does not warn about a reference to a missing swatch (it draws magenta); the design checker (M29) should.
 - Colour (M21): the gradient editor in the GUI edits the angle and the first and last stop colours only (custom colours, no swatches or extra stops in the dialog); the API takes up to 16 stops with swatches.
 - Colour (M21): the GPU gradient path (vello) is compile-checked only; CI has no GPU adapter.
 - Colour (M21): the swatch tools take a swatch id or name, but `{swatch: ...}` paints in other tools need the id.
+
+## Commercial print output (M22)
+
+- Colour is quantised to 8 bits per component (krilla); a value read back can differ from the swatch by up to 0.2 percent (ADR 0018).
+- A gradient that mixes RGB with CMYK or spot stops is written in RGB; stops of one spot stay Separation, CMYK and spot mixes become DeviceCMYK.
+- PDF/X-4 and PDF/A-2b write CMYK as ICCBased against the output profile (same numbers as DeviceCMYK); the plain export writes DeviceCMYK.
+- PDF/X-4 is checked by `pdfx::check` only (veraPDF has no PDF/X profile); trapping, overprint and total ink coverage are not checked.
+- The OutputCondition of a custom `output_intent_icc` is the fixed text "Custom CMYK output profile" (the profile's description is not read).
+- The Export dialog has no field for a custom output profile; use `export_pdf` with `output_intent_icc`.
+- `validate` does not yet warn about RGB colours in a PDF/X job (`rgb_in_cmyk_job`) or pictures without alt text (`missing_alt_text`); the design checker (M29) should.
+- Tagged PDF has no heading or list structure: text is `P` per frame, pictures are `Figure`, everything else is an artifact.

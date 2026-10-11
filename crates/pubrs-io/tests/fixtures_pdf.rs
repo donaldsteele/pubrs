@@ -1,0 +1,168 @@
+//! PDF/A-2b and PDF/X-4 fixtures. Writes `target/pdf-standards/{a2b,x4}.pdf`
+//! (the newsletter template) for the veraPDF step in CI, and checks that
+//! `pdfx::check` finds nothing wrong in PDF/X-4 exports of the newsletter, a
+//! label sheet and a booklet (and of a document with CMYK, spot colour and
+//! gradients).
+#![allow(clippy::unwrap_used)]
+
+mod common;
+
+use std::path::PathBuf;
+
+use pubrs_core::*;
+use pubrs_io::ExportContext;
+use pubrs_io::templates::{builtin, instantiate};
+use pubrs_render::{PdfOptions, PdfStandard};
+
+use common::test_fonts;
+
+fn out_dir() -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/pdf-standards");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn newsletter() -> Document {
+    let t = builtin("newsletter").expect("built-in newsletter");
+    instantiate(&t, "newsletter", &mut SeqIds::new(901))
+}
+
+/// Avery 5160 labels, one record per label, with a CMYK fill.
+fn label_sheet() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(902), PageSetup::default());
+    let preset = pubrs_io::sheet_preset("avery-5160").unwrap();
+    b.exec(Command::SetPageSize { size: preset.label }).unwrap();
+    b.exec(Command::SetSheet {
+        sheet: Some(preset.layout(SheetFill::Repeat)),
+    })
+    .unwrap();
+    let p = b.page(0);
+    let ink = SwatchId::new(&mut b.ids);
+    b.exec(Command::AddSwatch {
+        swatch: Swatch {
+            id: ink,
+            name: "Label Blue".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(90.0, 40.0, 0.0, 10.0)),
+        },
+    })
+    .unwrap();
+    let bar = b
+        .shape(
+            p,
+            Rect::new(0.0, 0.0, 189.0, 10.0),
+            Shape::Rectangle { corner_radius: 0.0 },
+        )
+        .unwrap();
+    b.style(
+        bar,
+        FrameStyle {
+            fill: Some(Paint::swatch(ink)),
+            stroke: None,
+            opacity: 1.0,
+        },
+    )
+    .unwrap();
+    b.text(
+        p,
+        Rect::new(8.0, 14.0, 170.0, 40.0),
+        "Golden Crust\n12 Mill Lane",
+    )
+    .unwrap();
+    b.finish()
+}
+
+/// Four pages printed as a saddle-stitched booklet.
+fn booklet() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(903), PageSetup::default());
+    b.exec(Command::SetBleed { bleed: 9.0 }).unwrap();
+    b.exec(Command::SetBooklet { booklet: true }).unwrap();
+    let mut pages = vec![b.page(0)];
+    for _ in 0..3 {
+        pages.push(b.add_page().unwrap());
+    }
+    for (i, p) in pages.into_iter().enumerate() {
+        let bg = b
+            .shape(
+                p,
+                Rect::new(-9.0, -9.0, 630.0, 100.0),
+                Shape::Rectangle { corner_radius: 0.0 },
+            )
+            .unwrap();
+        b.style(
+            bg,
+            FrameStyle {
+                fill: Some(Color::rgb(254, 243, 199).into()),
+                stroke: None,
+                opacity: 1.0,
+            },
+        )
+        .unwrap();
+        b.text(
+            p,
+            Rect::new(36.0, 120.0, 540.0, 300.0),
+            &format!(
+                "Page {}\n{}",
+                i + 1,
+                "Fresh bread every morning. ".repeat(30)
+            ),
+        )
+        .unwrap();
+    }
+    b.finish()
+}
+
+fn export(doc: &Document, standard: PdfStandard) -> Vec<u8> {
+    let mut ctx = ExportContext::new(test_fonts());
+    ctx.export_pdf(
+        doc,
+        &PdfOptions {
+            standard,
+            bleed: true,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|e| panic!("{standard:?}: {e}"))
+}
+
+#[test]
+fn pdfx4_checker_passes_on_newsletter_label_sheet_and_booklet() {
+    for (name, doc) in [
+        ("newsletter", newsletter()),
+        ("label sheet", label_sheet()),
+        ("booklet", booklet()),
+        ("colour document", common::colour_document()),
+    ] {
+        let pdf = export(&doc, PdfStandard::PdfX4);
+        let issues = pubrs_render::pdfx::check(&pdf);
+        assert!(issues.is_empty(), "{name}: {issues:?}");
+    }
+}
+
+#[test]
+fn writes_the_standards_fixtures() {
+    let dir = out_dir();
+    let news = newsletter();
+    let a2b = export(&news, PdfStandard::PdfA2b);
+    assert!(a2b.starts_with(b"%PDF-"));
+    std::fs::write(dir.join("a2b.pdf"), &a2b).unwrap();
+    let x4 = export(&news, PdfStandard::PdfX4);
+    assert!(pubrs_render::pdfx::check(&x4).is_empty());
+    std::fs::write(dir.join("x4.pdf"), &x4).unwrap();
+    // More documents in each standard, for a local veraPDF run.
+    for (name, doc) in [
+        ("label", label_sheet()),
+        ("booklet", booklet()),
+        ("colour", common::colour_document()),
+    ] {
+        std::fs::write(
+            dir.join(format!("a2b-{name}.pdf")),
+            export(&doc, PdfStandard::PdfA2b),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(format!("x4-{name}.pdf")),
+            export(&doc, PdfStandard::PdfX4),
+        )
+        .unwrap();
+    }
+}

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use pubrs_core::{Document, DocumentId, Frame, FrameId, PageId, Story, StoryId, Touched};
 use pubrs_layout::DocumentLayout;
-use pubrs_render::{FontEmbedding, PdfOptions, RasterOptions};
+use pubrs_render::{FontEmbedding, PdfOptions, PdfStandard, RasterOptions};
 use pubrs_render::{
     ImageSnapshot, PageDamage, PageScene, PageState, PixelRect, Region, SceneOptions,
     build_page_scene_with, page_damage, page_fingerprint,
@@ -52,6 +52,65 @@ pub struct ExportPdf {
     /// Also return the bytes as base64 when a path is given.
     #[serde(default)]
     pub return_base64: bool,
+    /// none (default), pdfx4 (commercial printing: PDF 1.6 with a CMYK
+    /// output intent, checked before it is returned) or pdfa2b (archive).
+    #[serde(default)]
+    pub standard: PdfStandardIn,
+    /// pdfx4 only: path of a CMYK output profile (.icc, class prtr) to use
+    /// instead of the bundled generic CMYK (SWOP-like) profile.
+    #[serde(default)]
+    pub output_intent_icc: Option<String>,
+    /// Write a tagged PDF: text as paragraphs, pictures as figures with their
+    /// alt text (set with image_set_alt_text), the rest as artifacts.
+    #[serde(default)]
+    pub tagged: bool,
+}
+
+/// The standard a PDF is written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PdfStandardIn {
+    /// Ordinary PDF. Default.
+    #[default]
+    None,
+    /// PDF/X-4 for commercial printing.
+    Pdfx4,
+    /// PDF/A-2b for archiving.
+    Pdfa2b,
+}
+
+/// Export a zip for a commercial printer.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExportPrintPackage {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    /// Output .zip path. Without a path the zip is returned as base64.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Include the document's bleed (default: true when the document has bleed).
+    #[serde(default)]
+    pub bleed: Option<bool>,
+    /// Add crop marks outside the bleed (default false).
+    #[serde(default)]
+    pub crop_marks: bool,
+    /// Path of a CMYK output profile to use instead of the bundled one.
+    #[serde(default)]
+    pub output_intent_icc: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ExportPrintPackageOut {
+    pub doc_id: DocumentId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub bytes: u64,
+    /// Names of the files in the zip.
+    pub files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base64: Option<String>,
+    pub revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -250,6 +309,13 @@ impl Session {
 
     pub fn export_pdf(&mut self, req: ExportPdf) -> ApiResult<ExportPdfOut> {
         let id = self.resolve(req.doc_id)?;
+        if req.output_intent_icc.is_some() && req.standard != PdfStandardIn::Pdfx4 {
+            return Err(ApiError::invalid(
+                "output_intent_icc only applies to standard pdfx4",
+                "set standard to pdfx4, or leave output_intent_icc out",
+            ));
+        }
+        let intent = self.read_output_profile(req.output_intent_icc.as_deref())?;
         let layout = self.layout(Some(id))?;
         let parts = self.doc_with_caches(id)?;
         let doc = parts.doc;
@@ -263,6 +329,14 @@ impl Session {
             title: None,
             author: None,
             flat: !req.impose.unwrap_or(true),
+            standard: match req.standard {
+                PdfStandardIn::None => PdfStandard::None,
+                PdfStandardIn::Pdfx4 => PdfStandard::PdfX4,
+                PdfStandardIn::Pdfa2b => PdfStandard::PdfA2b,
+            },
+            output_intent_icc: intent,
+            tagged: req.tagged,
+            alt_text: Default::default(),
         };
         let pdf = parts.ctx.export_pdf_with(doc, &layout, &opts)?;
         let revision = parts.revision;
@@ -288,6 +362,70 @@ impl Session {
             page_count,
             imposed,
             base64: (path.is_none() || req.return_base64).then(|| b64(&pdf)),
+            revision,
+        })
+    }
+
+    /// Read and check a CMYK output profile given by path.
+    fn read_output_profile(&self, path: Option<&str>) -> ApiResult<Option<Vec<u8>>> {
+        let Some(p) = path else { return Ok(None) };
+        let p = self.resolve_path(p);
+        let bytes = std::fs::read(&p).map_err(|e| {
+            ApiError::new(
+                "file_not_found",
+                format!("cannot read the output profile {}: {e}", p.display()),
+                "give the path of a CMYK output profile (.icc)",
+            )
+        })?;
+        pubrs_render::pdf::check_output_profile(&bytes).map_err(|why| {
+            ApiError::invalid(
+                format!("{} is not a CMYK output profile: {why}", p.display()),
+                "use a printer-supplied CMYK output profile (ICC class prtr, colour space CMYK), or omit output_intent_icc to use the bundled generic profile",
+            )
+        })?;
+        Ok(Some(bytes))
+    }
+
+    pub fn export_print_package(
+        &mut self,
+        req: ExportPrintPackage,
+    ) -> ApiResult<ExportPrintPackageOut> {
+        let id = self.resolve(req.doc_id)?;
+        let intent = self.read_output_profile(req.output_intent_icc.as_deref())?;
+        let layout = self.layout(Some(id))?;
+        let path = match &req.path {
+            Some(p) => Some(self.resolve_path(p)),
+            None => self.default_path(Some(id), "zip"),
+        };
+        let stem = path.as_ref().and_then(|p| p.file_stem()).map_or_else(
+            || "print-package".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        );
+        let parts = self.doc_with_caches(id)?;
+        let doc = parts.doc;
+        let opts = PdfOptions {
+            bleed: req.bleed.unwrap_or(doc.setup.bleed > 0.0),
+            crop_marks: req.crop_marks,
+            output_intent_icc: intent,
+            standard: PdfStandard::PdfX4,
+            tagged: false,
+            ..Default::default()
+        };
+        let zip = parts.ctx.export_print_package(doc, &layout, &opts, &stem)?;
+        let revision = parts.revision;
+        if let Some(p) = &path {
+            write_file(&p.display().to_string(), &zip)?;
+        }
+        Ok(ExportPrintPackageOut {
+            doc_id: id,
+            path: path.as_ref().map(|p| p.display().to_string()),
+            bytes: zip.len() as u64,
+            files: vec![
+                format!("{stem}-pdfx4.pdf"),
+                format!("{stem}.pubrs"),
+                "README.txt".into(),
+            ],
+            base64: path.is_none().then(|| b64(&zip)),
             revision,
         })
     }

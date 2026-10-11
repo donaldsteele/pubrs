@@ -5766,5 +5766,237 @@
       }
     },
     "step": "delete_swatch"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": null
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010",
+            "00000000-0000-802a-8000-000000000021"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": {
+          "content": {
+            "crop": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "fit": "fill",
+            "lock_aspect": true,
+            "type": "image"
+          },
+          "id": "00000000-0000-802a-8000-000000000022",
+          "locked": false,
+          "rect": {
+            "height": 60.0,
+            "width": 80.0,
+            "x": 10.0,
+            "y": 10.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 6.0,
+            "mode": "square"
+          }
+        }
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010",
+            "00000000-0000-802a-8000-000000000021",
+            "00000000-0000-802a-8000-000000000022"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "step": "add_frame"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": {
+          "content": {
+            "crop": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "fit": "fill",
+            "lock_aspect": true,
+            "type": "image"
+          },
+          "id": "00000000-0000-802a-8000-000000000022",
+          "locked": false,
+          "rect": {
+            "height": 60.0,
+            "width": 80.0,
+            "x": 10.0,
+            "y": 10.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 6.0,
+            "mode": "square"
+          }
+        }
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": {
+          "content": {
+            "alt_text": "A loaf of bread on a board",
+            "crop": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "fit": "fill",
+            "lock_aspect": true,
+            "type": "image"
+          },
+          "id": "00000000-0000-802a-8000-000000000022",
+          "locked": false,
+          "rect": {
+            "height": 60.0,
+            "width": 80.0,
+            "x": 10.0,
+            "y": 10.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 6.0,
+            "mode": "square"
+          }
+        }
+      }
+    },
+    "step": "set_image_alt"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": {
+          "content": {
+            "alt_text": "A loaf of bread on a board",
+            "crop": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "fit": "fill",
+            "lock_aspect": true,
+            "type": "image"
+          },
+          "id": "00000000-0000-802a-8000-000000000022",
+          "locked": false,
+          "rect": {
+            "height": 60.0,
+            "width": 80.0,
+            "x": 10.0,
+            "y": 10.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 6.0,
+            "mode": "square"
+          }
+        }
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000022": {
+          "content": {
+            "crop": {
+              "bottom": 0.0,
+              "left": 0.0,
+              "right": 0.0,
+              "top": 0.0
+            },
+            "fit": "fill",
+            "lock_aspect": true,
+            "type": "image"
+          },
+          "id": "00000000-0000-802a-8000-000000000022",
+          "locked": false,
+          "rect": {
+            "height": 60.0,
+            "width": 80.0,
+            "x": 10.0,
+            "y": 10.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 6.0,
+            "mode": "square"
+          }
+        }
+      }
+    },
+    "step": "set_image_alt"
   }
 ]

@@ -17,7 +17,7 @@ use crate::style::{CharProps, ParaProps, StyleSheet};
 use crate::swatch::{Paint, SchemeId, Swatch};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -528,6 +528,9 @@ pub struct ImageFrame {
     /// Keep the frame's aspect ratio when resizing.
     #[serde(default = "yes")]
     pub lock_aspect: bool,
+    /// Alternative text describing the picture, written to tagged PDF.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub alt_text: String,
 }
 
 fn yes() -> bool {
@@ -541,6 +544,7 @@ impl ImageFrame {
             fit: ImageFit::Fill,
             crop: Crop::default(),
             lock_aspect: true,
+            alt_text: String::new(),
         }
     }
 }

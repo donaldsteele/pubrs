@@ -23,6 +23,7 @@ resvg.workspace = true
 usvg.workspace = true
 krilla.workspace = true
 krilla-svg.workspace = true
+hayro-syntax = { version = "0.8", default-features = false, features = ["std"] }
 skrifa.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

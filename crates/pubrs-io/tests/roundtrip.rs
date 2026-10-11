@@ -181,6 +181,13 @@ fn rich_document() -> Document {
             },
         },
     );
+    run(
+        &mut ed,
+        Command::SetImageAlt {
+            frame: img,
+            alt_text: "A loaf of sourdough on a wooden board".into(),
+        },
+    );
     let a = FrameId::new(&mut ids);
     let b = FrameId::new(&mut ids);
     for (id, shape) in [
@@ -404,10 +411,11 @@ fn every_schema_fixture_opens_and_round_trips() {
     // A fixture is created only when it is missing and only for the current
     // schema version; an existing fixture is never rewritten, even when
     // blessing, so files written by earlier versions stay frozen.
-    let fixtures: [(u32, Document); 3] = [
+    let fixtures: [(u32, Document); 4] = [
         (2, sheet_document()),
         (3, hyphenation_document()),
         (4, common::colour_document()),
+        (5, rich_document()),
     ];
     for (v, doc) in &fixtures {
         let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -438,7 +446,14 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 4, "expected the schema_v1 to v4 fixtures");
+    assert!(n >= 5, "expected the schema_v1 to v5 fixtures");
+    let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
+    let alt: Vec<_> = v5
+        .frames
+        .values()
+        .filter_map(|f| f.as_image().map(|i| i.alt_text.clone()))
+        .collect();
+    assert_eq!(alt, ["A loaf of sourdough on a wooden board"]);
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v2.pubrs")).unwrap();
     let sheet = doc.setup.sheet.as_ref().expect("v2 fixture uses a sheet");
     assert_eq!(

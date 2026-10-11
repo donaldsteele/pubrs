@@ -291,3 +291,34 @@ impl Session {
         )
     }
 }
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImageSetAltText {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    /// An image (picture) frame.
+    pub frame_id: FrameId,
+    /// What the picture shows, for screen readers (written to tagged PDF as
+    /// /Alt). An empty string clears it.
+    pub alt_text: String,
+}
+
+impl Session {
+    pub fn image_set_alt_text(&mut self, req: ImageSetAltText) -> ApiResult<Changed> {
+        if req.alt_text.chars().count() > 1000 {
+            return Err(ApiError::invalid(
+                "alt text is longer than 1000 characters",
+                "describe the picture in a sentence or two",
+            ));
+        }
+        self.exec(
+            req.doc_id,
+            Command::SetImageAlt {
+                frame: req.frame_id,
+                alt_text: req.alt_text.trim().to_string(),
+            },
+        )
+    }
+}

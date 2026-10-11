@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
-use krilla::color::{rgb, separation};
+use krilla::color::{cmyk, rgb, separation};
 use krilla::geom::{Path, PathBuilder, Point, Rect as KRect, Size, Transform};
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
@@ -18,7 +18,10 @@ use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId};
 use krilla::{Data, Document};
 use krilla_svg::{SurfaceExt, SvgSettings};
-use pubrs_core::{AssetId, Color, ImageFormat, ResolvedInk, ResolvedPaint};
+use pubrs_core::{
+    AssetId, Cmyk, Color, FrameId, ImageFormat, InkSpec, ResolvedGradient, ResolvedInk,
+    ResolvedPaint,
+};
 use pubrs_layout::GlyphRun;
 
 use crate::images::{ImageContent, ImageResolver};
@@ -48,7 +51,37 @@ pub struct PdfOptions {
     /// Export the document's own pages even when it has a label sheet or
     /// booklet set up. By default (false) such documents are imposed.
     pub flat: bool,
+    /// Which archival or print standard to write.
+    pub standard: PdfStandard,
+    /// A CMYK output profile (ICC bytes) to use as the PDF/X-4 output intent
+    /// instead of the bundled one. Ignored for other standards.
+    pub output_intent_icc: Option<Vec<u8>>,
+    /// Write a tagged PDF: text as paragraphs, pictures as figures with
+    /// their alt text, everything else as artifacts.
+    pub tagged: bool,
+    /// Alt text of picture frames, by frame, for tagged output.
+    pub alt_text: HashMap<FrameId, String>,
 }
+
+/// The standard a PDF is written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PdfStandard {
+    /// Ordinary PDF 1.7: DeviceRGB, DeviceCMYK and Separation colours.
+    #[default]
+    None,
+    /// PDF/X-4 for commercial printing (PDF 1.6, CMYK output intent). The
+    /// result is checked and an export that fails the check is an error.
+    PdfX4,
+    /// PDF/A-2b for archiving (krilla's validator).
+    PdfA2b,
+}
+
+/// The bundled CMYK output profile (see ASSETS.md): ICC v2, class `prtr`.
+pub const GENERIC_CMYK_ICC: &[u8] =
+    include_bytes!("../../../assets/icc/generic-cmyk-swop-like.icc");
+
+/// Output condition name of the bundled profile.
+pub const GENERIC_CMYK_CONDITION: &str = "Generic CMYK (SWOP-like)";
 
 /// Distance of crop marks from the trim edge when there is no bleed.
 const MARK_MIN_OFFSET: f64 = 6.0;
@@ -63,6 +96,31 @@ pub enum PdfError {
     NoPages,
     #[error("PDF writer: {0}")]
     Krilla(String),
+    #[error("not a usable CMYK output profile: {0}")]
+    BadProfile(String),
+    #[error("the PDF/X-4 result failed its checks: {}", .0.join("; "))]
+    NotPdfX4(Vec<String>),
+}
+
+/// Validate a CMYK output profile: ICC header with class `prtr`, colour
+/// space `CMYK` and the `acsp` signature.
+pub fn check_output_profile(icc: &[u8]) -> Result<(), String> {
+    if icc.len() < 128 {
+        return Err("shorter than an ICC header (128 bytes)".into());
+    }
+    if &icc[36..40] != b"acsp" {
+        return Err("no ICC signature 'acsp' at byte 36".into());
+    }
+    if &icc[12..16] != b"prtr" {
+        return Err("profile class is not 'prtr' (output device)".into());
+    }
+    if &icc[16..20] != b"CMYK" {
+        return Err("colour space is not 'CMYK'".into());
+    }
+    if krilla::icc::ICCProfile::<4>::new(icc).is_none() {
+        return Err("the profile could not be parsed as a four-channel ICC profile".into());
+    }
+    Ok(())
 }
 
 /// Geometry of the page boxes for a trim size, in surface coordinates.
@@ -111,27 +169,104 @@ fn alpha_of(c: Color) -> NormalizedF32 {
     NormalizedF32::new(f32::from(c.a) / 255.0).unwrap_or(NormalizedF32::ONE)
 }
 
-fn fill_of(c: Color) -> Fill {
+/// Percent (0 to 100) to a PDF byte level. krilla stores every colour
+/// component as a `u8`, so the value written is `round(p / 100 * 255) / 255`
+/// (ADR 0018).
+fn level(percent: f64) -> u8 {
+    let p = if percent.is_finite() {
+        percent.clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    (p / 100.0 * 255.0).round() as u8
+}
+
+/// A DeviceCMYK colour with each component scaled by the tint (percent).
+fn cmyk_scaled(c: &Cmyk, tint: f64) -> cmyk::Color {
+    let t = if tint.is_finite() {
+        tint.clamp(0.0, 100.0) / 100.0
+    } else {
+        1.0
+    };
+    cmyk::Color::new(
+        level(c.c * t),
+        level(c.m * t),
+        level(c.y * t),
+        level(c.k * t),
+    )
+}
+
+/// The exact PDF colour of an ink: RGB as RGB, CMYK as DeviceCMYK with the
+/// tint applied to the components, a spot colour as a Separation named after
+/// the spot (tint = tint percent) with its CMYK alternative as the fallback.
+fn color_of(ink: &ResolvedInk) -> krilla::color::Color {
+    match &ink.spec {
+        InkSpec::Rgb => rgb_of(ink.rgba).into(),
+        InkSpec::Cmyk { cmyk, tint } => cmyk_scaled(cmyk, *tint).into(),
+        InkSpec::Spot { name, cmyk, tint } => separation::Color::new(
+            level(*tint),
+            separation::SeparationSpace::new(
+                separation::SeparationColorant::Custom(name.clone()),
+                cmyk_scaled(cmyk, 100.0).into(),
+            ),
+        )
+        .into(),
+    }
+}
+
+fn fill_of_ink(ink: &ResolvedInk) -> Fill {
     Fill {
-        paint: rgb_of(c).into(),
-        opacity: alpha_of(c),
+        paint: color_of(ink).into(),
+        opacity: alpha_of(ink.rgba),
         rule: FillRule::NonZero,
     }
 }
 
-/// A fill for a resolved paint. T13 writes the RGB equivalent; the exact
-/// CMYK and spot definition stays in `ResolvedInk::spec` for the print
-/// output milestone, which will switch this to DeviceCMYK and Separation.
+/// The colour space shared by every stop of a gradient. krilla writes one
+/// colour space per shading, so stops of mixed kinds are brought to a common
+/// one: all-spot stops of one spot stay Separation, CMYK and spot stops
+/// become DeviceCMYK (the spot's alternative at its tint), and anything mixed
+/// with RGB falls back to RGB screen colours.
+fn gradient_stop_color(g: &ResolvedGradient, ink: &ResolvedInk) -> krilla::color::Color {
+    let all_cmykish = g.stops.iter().all(|(_, i)| !matches!(i.spec, InkSpec::Rgb));
+    let spot_names: Vec<&str> = g
+        .stops
+        .iter()
+        .filter_map(|(_, i)| match &i.spec {
+            InkSpec::Spot { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    let one_spot = spot_names.len() == g.stops.len() && spot_names.windows(2).all(|w| w[0] == w[1]);
+    if one_spot {
+        return color_of(ink);
+    }
+    if all_cmykish {
+        return match &ink.spec {
+            InkSpec::Cmyk { cmyk, tint } | InkSpec::Spot { cmyk, tint, .. } => {
+                cmyk_scaled(cmyk, *tint).into()
+            }
+            InkSpec::Rgb => rgb_of(ink.rgba).into(),
+        };
+    }
+    rgb_of(ink.rgba).into()
+}
+
+/// A fill for a resolved paint: exact CMYK and spot colours (see
+/// [`color_of`]); gradients use [`gradient_stop_color`].
 fn fill_of_paint(p: &ResolvedPaint, geom: &Geom) -> Fill {
     let ResolvedPaint::Gradient(g) = p else {
-        return fill_of(p.solid_rgba());
+        let ResolvedPaint::Solid(ink) = p else {
+            return fill_of_ink(&ResolvedInk::from(p.solid_rgba()));
+        };
+        return fill_of_ink(ink);
     };
     let stops: Vec<Stop> = g
         .stops
         .iter()
         .map(|(o, c)| Stop {
             offset: NormalizedF32::new(*o as f32).unwrap_or(NormalizedF32::ZERO),
-            color: rgb_of(c.rgba).into(),
+            color: gradient_stop_color(g, c),
             opacity: alpha_of(c.rgba),
         })
         .collect();
@@ -263,6 +398,153 @@ impl AsRef<[u8]> for BlobBytes {
     }
 }
 
+/// Today's date from the system clock, for the standards that require a
+/// creation date.
+fn today() -> krilla::metadata::DateTime {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+    let year = (yoe + era * 400 + i64::from(month <= 2)) as u16;
+    krilla::metadata::DateTime::new(year)
+        .month(month)
+        .day(day)
+        .hour((rem / 3600) as u8)
+        .minute((rem % 3600 / 60) as u8)
+        .second((rem % 60) as u8)
+}
+
+/// The CMYK profile a standard-conforming export uses.
+fn output_profile(opts: &PdfOptions) -> Result<Vec<u8>, PdfError> {
+    match (&opts.output_intent_icc, opts.standard) {
+        (Some(icc), PdfStandard::PdfX4) => {
+            check_output_profile(icc).map_err(PdfError::BadProfile)?;
+            Ok(icc.clone())
+        }
+        _ => Ok(GENERIC_CMYK_ICC.to_vec()),
+    }
+}
+
+fn serialize_settings(
+    opts: &PdfOptions,
+    icc: &[u8],
+) -> Result<krilla::SerializeSettings, PdfError> {
+    use krilla::configure::{Archival, ConfigurationBuilder, PdfVersion, Validator};
+    let mut s = krilla::SerializeSettings {
+        enable_tagging: opts.tagged,
+        ..Default::default()
+    };
+    let cfg_err = |e| PdfError::Krilla(format!("{e:?}"));
+    match opts.standard {
+        PdfStandard::None => {}
+        PdfStandard::PdfX4 => {
+            // PDF 1.6 with device-independent colour: RGB becomes ICC-based
+            // sRGB and CMYK is written against the output profile.
+            s.configuration = ConfigurationBuilder::new()
+                .with_version(PdfVersion::Pdf16)
+                .finish()
+                .map_err(cfg_err)?;
+            s.no_device_cs = true;
+            s.cmyk_profile = krilla::icc::ICCProfile::<4>::new(icc);
+        }
+        PdfStandard::PdfA2b => {
+            s.configuration = ConfigurationBuilder::new()
+                .set_validator(Validator::A(Archival::A2_B))
+                .finish()
+                .map_err(cfg_err)?;
+            s.cmyk_profile = krilla::icc::ICCProfile::<4>::new(icc);
+        }
+    }
+    Ok(s)
+}
+
+/// Builds the tag tree of a tagged export.
+#[derive(Default)]
+struct Tagger {
+    root: krilla::tagging::TagTree,
+    /// Text leaves of the current frame.
+    para: Vec<krilla::tagging::Node>,
+}
+
+impl Tagger {
+    fn end_frame(&mut self) {
+        if !self.para.is_empty() {
+            let children = std::mem::take(&mut self.para);
+            self.root.push(krilla::tagging::TagGroup::with_children(
+                krilla::tagging::Tag::P,
+                children,
+            ));
+        }
+    }
+}
+
+/// Draw one primitive, tagged when the export is tagged.
+fn draw_tagged(
+    surface: &mut Surface<'_>,
+    prim: &Prim,
+    frame: FrameId,
+    tagger: &mut Option<Tagger>,
+    opts: &PdfOptions,
+    state: &mut DrawState<'_>,
+) {
+    use krilla::tagging::{Artifact, ArtifactType, ContentTag, Node as TagNode, SpanTag};
+    let Some(tagger) = tagger else {
+        draw_prim(
+            surface,
+            prim,
+            state.images,
+            opts,
+            state.fonts,
+            state.image_cache,
+        );
+        return;
+    };
+    let tag = match prim {
+        Prim::Glyphs(..) => ContentTag::Span(SpanTag::empty()),
+        Prim::Image { .. } => ContentTag::Other,
+        _ => ContentTag::Artifact(Artifact::with_kind(ArtifactType::Layout)),
+    };
+    let artifact = matches!(tag, ContentTag::Artifact(_));
+    let id = surface.start_tagged(tag);
+    draw_prim(
+        surface,
+        prim,
+        state.images,
+        opts,
+        state.fonts,
+        state.image_cache,
+    );
+    surface.end_tagged();
+    if artifact {
+        return;
+    }
+    match prim {
+        Prim::Image { .. } => {
+            let alt = opts.alt_text.get(&frame).filter(|a| !a.is_empty()).cloned();
+            tagger.root.push(krilla::tagging::TagGroup::with_children(
+                krilla::tagging::Tag::Figure(alt),
+                vec![TagNode::Leaf(id)],
+            ));
+        }
+        _ => tagger.para.push(TagNode::Leaf(id)),
+    }
+}
+
+struct DrawState<'a> {
+    images: &'a dyn ImageResolver,
+    fonts: &'a mut HashMap<(u64, u32), Option<Font>>,
+    image_cache: &'a mut HashMap<AssetId, Option<krilla::image::Image>>,
+}
+
 /// Write pages to a PDF.
 pub fn render_pdf(
     pages: &[PageScene],
@@ -272,8 +554,12 @@ pub fn render_pdf(
     if pages.is_empty() {
         return Err(PdfError::NoPages);
     }
-    let mut doc = Document::new();
+    let icc = output_profile(opts)?;
+    let mut doc = Document::new_with(serialize_settings(opts, &icc)?);
     let mut meta = krilla::metadata::Metadata::new().creator("pubrs".to_string());
+    if opts.standard != PdfStandard::None {
+        meta = meta.creation_date(today());
+    }
     if let Some(t) = &opts.title
         && !t.is_empty()
     {
@@ -287,6 +573,7 @@ pub fn render_pdf(
     doc.set_metadata(meta);
     let mut fonts: HashMap<(u64, u32), Option<Font>> = HashMap::new();
     let mut image_cache: HashMap<AssetId, Option<krilla::image::Image>> = HashMap::new();
+    let mut tagger = opts.tagged.then(Tagger::default);
     for scene in pages {
         let boxes = page_boxes(scene, opts);
         let (mw, mh) = boxes.media;
@@ -306,7 +593,15 @@ pub fn render_pdf(
         let mut page = doc.start_page_with(settings);
         let mut surface = page.surface();
         if opts.crop_marks {
+            if tagger.is_some() {
+                surface.start_tagged(krilla::tagging::ContentTag::Artifact(
+                    krilla::tagging::Artifact::with_kind(krilla::tagging::ArtifactType::Page),
+                ));
+            }
             draw_crop_marks(&mut surface, scene, s, b.max(MARK_MIN_OFFSET));
+            if tagger.is_some() {
+                surface.end_tagged();
+            }
         }
         if let Some(clip) = rect_path(s - b, s - b, scene.width + 2.0 * b, scene.height + 2.0 * b) {
             surface.push_clip_path(&clip, &FillRule::NonZero);
@@ -334,15 +629,23 @@ pub fn render_pdf(
                     NormalizedF32::new(node.opacity as f32).unwrap_or(NormalizedF32::ONE),
                 );
             }
+            let mut state = DrawState {
+                images,
+                fonts: &mut fonts,
+                image_cache: &mut image_cache,
+            };
             for prim in &node.prims {
-                draw_prim(
+                draw_tagged(
                     &mut surface,
                     prim,
-                    images,
+                    node.frame,
+                    &mut tagger,
                     opts,
-                    &mut fonts,
-                    &mut image_cache,
+                    &mut state,
                 );
+            }
+            if let Some(t) = &mut tagger {
+                t.end_frame();
             }
             if layered {
                 surface.pop();
@@ -356,7 +659,30 @@ pub fn render_pdf(
         surface.finish();
         page.finish();
     }
-    doc.finish().map_err(|e| PdfError::Krilla(format!("{e:?}")))
+    if let Some(t) = tagger {
+        doc.set_tag_tree(t.root);
+    }
+    let bytes = doc
+        .finish()
+        .map_err(|e| PdfError::Krilla(format!("{e:?}")))?;
+    if opts.standard != PdfStandard::PdfX4 {
+        return Ok(bytes);
+    }
+    let cond = if opts.output_intent_icc.is_some() {
+        "Custom CMYK output profile"
+    } else {
+        GENERIC_CMYK_CONDITION
+    };
+    let title = opts.title.as_deref().unwrap_or("Untitled");
+    let out = crate::pdfx::make_pdfx4(&bytes, title, &icc, cond).ok_or_else(|| {
+        PdfError::Krilla("could not add the PDF/X-4 output intent to the PDF".into())
+    })?;
+    let issues = crate::pdfx::check(&out);
+    if issues.is_empty() {
+        Ok(out)
+    } else {
+        Err(PdfError::NotPdfX4(issues))
+    }
 }
 
 fn draw_prim(
@@ -384,7 +710,7 @@ fn draw_prim(
             if let Some(p) = geom_path(*geom) {
                 surface.set_fill(None);
                 surface.set_stroke(Some(Stroke {
-                    paint: rgb_of(color.rgba).into(),
+                    paint: color_of(color).into(),
                     width: *width as f32,
                     opacity: alpha_of(color.rgba),
                     dash: dash_pattern(*dash, *width).map(|d| StrokeDash {
@@ -400,7 +726,7 @@ fn draw_prim(
         Prim::Rect { rect, color } => {
             if let Some(p) = rect_path(rect.x, rect.y, rect.width, rect.height) {
                 surface.set_stroke(None);
-                surface.set_fill(Some(fill_of(color.rgba)));
+                surface.set_fill(Some(fill_of_ink(color)));
                 surface.draw_path(&p);
             }
         }
@@ -421,7 +747,7 @@ fn draw_prim(
                 ImageContent::Raster(img) => {
                     let image = image_cache
                         .entry(*asset)
-                        .or_insert_with(|| krilla_image(img))
+                        .or_insert_with(|| krilla_image(img, opts.standard == PdfStandard::None))
                         .clone();
                     if let (Some(image), Some(size)) =
                         (image, Size::from_wh(img.width as f32, img.height as f32))
@@ -443,7 +769,10 @@ fn draw_prim(
     }
 }
 
-fn krilla_image(img: &crate::images::RasterImage) -> Option<krilla::image::Image> {
+fn krilla_image(
+    img: &crate::images::RasterImage,
+    interpolate: bool,
+) -> Option<krilla::image::Image> {
     let data = || Data::from(Arc::new(img.encoded.to_vec()));
     let from_pixels = || {
         let pm = img.pixmap.clone();
@@ -451,8 +780,8 @@ fn krilla_image(img: &crate::images::RasterImage) -> Option<krilla::image::Image
     };
     if img.passthrough {
         match img.format {
-            ImageFormat::Jpeg => krilla::image::Image::from_jpeg(data(), true).ok(),
-            ImageFormat::Png => krilla::image::Image::from_png(data(), true).ok(),
+            ImageFormat::Jpeg => krilla::image::Image::from_jpeg(data(), interpolate).ok(),
+            ImageFormat::Png => krilla::image::Image::from_png(data(), interpolate).ok(),
             ImageFormat::Svg => None,
         }
         .or_else(|| Some(from_pixels()))
@@ -502,10 +831,10 @@ fn draw_run(
         origin = Affine::skew_x(skew).then(origin);
     }
     surface.push_transform(&kt(origin));
-    surface.set_fill(Some(fill_of(ink.rgba)));
+    surface.set_fill(Some(fill_of_ink(ink)));
     if run.synthetic_bold {
         surface.set_stroke(Some(Stroke {
-            paint: rgb_of(ink.rgba).into(),
+            paint: color_of(ink).into(),
             width: (run.font_size * 0.03) as f32,
             line_join: LineJoin::Round,
             opacity: alpha_of(ink.rgba),
@@ -570,4 +899,33 @@ fn draw_crop_marks(surface: &mut Surface<'_>, scene: &PageScene, slug: f64, offs
         }
     }
     surface.set_stroke(None);
+}
+
+/// The full name of a font ("Inter Bold"), for reports such as the print
+/// package's font list.
+pub fn font_name(font: &pubrs_layout::types::FontHandle) -> Option<String> {
+    use skrifa::MetadataProvider;
+    let f = skrifa::FontRef::from_index(font.bytes(), font.index).ok()?;
+    let name = f
+        .localized_strings(skrifa::string::StringId::FULL_NAME)
+        .english_or_first()?
+        .chars()
+        .collect::<String>();
+    Some(name)
+}
+
+/// The distinct fonts the glyph runs of `pages` use, sorted by name.
+pub fn fonts_used(pages: &[PageScene]) -> Vec<String> {
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut seen: std::collections::HashSet<(u64, u32)> = std::collections::HashSet::new();
+    for node in pages.iter().flat_map(|p| &p.nodes) {
+        for prim in &node.prims {
+            if let Prim::Glyphs(run, _) = prim
+                && seen.insert(run.font.key())
+            {
+                names.insert(font_name(&run.font).unwrap_or_else(|| "(unnamed font)".into()));
+            }
+        }
+    }
+    names.into_iter().collect()
 }

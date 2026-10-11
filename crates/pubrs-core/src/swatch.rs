@@ -148,9 +148,9 @@ pub struct GradientStop {
 }
 
 /// A colour or swatch reference: a [`Paint`] that is not a gradient.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum SolidPaint {
     /// `"#RRGGBB"` or `"#RRGGBBAA"`.
     Color(Color),
@@ -198,9 +198,9 @@ fn is_full_tint(t: &f64) -> bool {
 }
 
 /// A colour specification used by fills, strokes and text.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum Paint {
     /// `"#RRGGBB"` or `"#RRGGBBAA"`.
     Color(Color),
@@ -841,6 +841,116 @@ pub fn apply_scheme(doc: &mut Document, scheme: &Scheme) {
     doc.scheme = Some(SchemeId(scheme.id.to_string()));
 }
 
+// ---- reading paints ----
+//
+// `Paint` and `SolidPaint` are read by hand instead of with an untagged
+// derive: serde's untagged enums answer any mistake with "data did not match
+// any variant", which hides a typo such as `tint_pct` or a bad hex colour.
+// Here a misspelt key names itself and a bad colour says what is wrong.
+
+const PAINT_FIELDS: &[&str] = &["swatch", "tint", "gradient", "stops", "angle"];
+const SOLID_FIELDS: &[&str] = &["swatch", "tint"];
+
+struct PaintVisitor {
+    gradients: bool,
+}
+
+impl<'de> serde::de::Visitor<'de> for PaintVisitor {
+    type Value = Paint;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.gradients {
+            f.write_str(
+                "a colour \"#RRGGBB\" or \"#RRGGBBAA\", a swatch {\"swatch\": id, \"tint\": 0-100} or a gradient {\"gradient\", \"stops\", \"angle\"}",
+            )
+        } else {
+            f.write_str(
+                "a colour \"#RRGGBB\" or \"#RRGGBBAA\" or a swatch {\"swatch\": id, \"tint\": 0-100}",
+            )
+        }
+    }
+
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Paint, E> {
+        s.parse::<Color>().map(Paint::Color).map_err(|e| {
+            E::custom(format!(
+                "invalid colour {s:?}: {e}; use \"#RRGGBB\" or \"#RRGGBBAA\" (hex digits only)"
+            ))
+        })
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Paint, A::Error> {
+        use serde::de::Error;
+        let fields = if self.gradients {
+            PAINT_FIELDS
+        } else {
+            SOLID_FIELDS
+        };
+        let mut swatch: Option<SwatchId> = None;
+        let mut tint: Option<f64> = None;
+        let mut gradient: Option<GradientKind> = None;
+        let mut stops: Option<Vec<GradientStop>> = None;
+        let mut angle: Option<f64> = None;
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "swatch" => swatch = Some(map.next_value()?),
+                "tint" => tint = Some(map.next_value()?),
+                "gradient" if self.gradients => gradient = Some(map.next_value()?),
+                "stops" if self.gradients => stops = Some(map.next_value()?),
+                "angle" if self.gradients => angle = Some(map.next_value()?),
+                _ => return Err(A::Error::unknown_field(&key, fields)),
+            }
+        }
+        match (swatch, gradient) {
+            (Some(_), Some(_)) => Err(A::Error::custom(
+                "a paint is either a swatch or a gradient, not both",
+            )),
+            (Some(swatch), None) => {
+                if stops.is_some() || angle.is_some() {
+                    return Err(A::Error::custom("`stops` and `angle` belong to a gradient"));
+                }
+                Ok(Paint::Swatch {
+                    swatch,
+                    tint: tint.unwrap_or(100.0),
+                })
+            }
+            (None, Some(gradient)) => {
+                if tint.is_some() {
+                    return Err(A::Error::custom(
+                        "`tint` belongs to a swatch, not a gradient",
+                    ));
+                }
+                Ok(Paint::Gradient {
+                    gradient,
+                    stops: stops.ok_or_else(|| A::Error::missing_field("stops"))?,
+                    angle: angle.unwrap_or(0.0),
+                })
+            }
+            (None, None) => Err(A::Error::custom(if self.gradients {
+                "a colour object needs `swatch` (with an optional `tint`) or `gradient` (with `stops`)"
+            } else {
+                "a colour object needs `swatch` (with an optional `tint`)"
+            })),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Paint {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(PaintVisitor { gradients: true })
+    }
+}
+
+impl<'de> Deserialize<'de> for SolidPaint {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        match d.deserialize_any(PaintVisitor { gradients: false })? {
+            Paint::Color(c) => Ok(SolidPaint::Color(c)),
+            Paint::Swatch { swatch, tint } => Ok(SolidPaint::Swatch { swatch, tint }),
+            Paint::Gradient { .. } => Err(serde::de::Error::custom(
+                "a gradient stop cannot itself be a gradient",
+            )),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

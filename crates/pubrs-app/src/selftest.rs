@@ -1441,6 +1441,84 @@ impl SelfTest {
                 if app.dialog.is_some() {
                     return Err("the scheme dialog did not close".into());
                 }
+                // File → Export PDF…: Commercial printing preset (PDF/X-4).
+                app.new_from_template("flyer")
+                    .ok_or("template_apply failed")?;
+                app.run_action(ctx, Action::ExportPdf);
+            }
+            70 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::ExportPdf(_))) {
+                    return Err("File > Export PDF did not open the Export dialog".into());
+                }
+                self.click_target(ctx, "preset-commercial")?;
+            }
+            71 => {
+                let path = self.out.join("commercial.pdf");
+                let _ = std::fs::remove_file(&path);
+                match &mut app.dialog {
+                    Some(crate::dialogs::Dialog::ExportPdf(st)) => {
+                        if st.standard() != pubrs_api::tools::export::PdfStandardIn::Pdfx4
+                            || !st.bleed
+                            || !st.crop_marks
+                        {
+                            return Err(
+                                "the Commercial preset did not set PDF/X-4, bleed and crop marks"
+                                    .into(),
+                            );
+                        }
+                        st.target = Some(path);
+                    }
+                    _ => return Err("the Export dialog closed".into()),
+                }
+                self.screenshot(ctx);
+                self.click_target(ctx, "export-go")?;
+            }
+            72 => {
+                if app.dialog.is_some() {
+                    return Err("the Export dialog did not close after Export".into());
+                }
+                let bytes = std::fs::read(self.out.join("commercial.pdf"))
+                    .map_err(|e| format!("no commercial.pdf: {e}"))?;
+                let text = String::from_utf8_lossy(&bytes);
+                if !text.contains("/S/GTS_PDFX") || !text.contains("/GTS_PDFXVersion(PDF/X-4)") {
+                    return Err(
+                        "the Commercial printing export has no PDF/X-4 markers (GTS_PDFX)".into(),
+                    );
+                }
+                let issues = pubrs_api::render::pdfx::check(&bytes);
+                if !issues.is_empty() {
+                    return Err(format!("the PDF/X-4 export fails its check: {issues:?}"));
+                }
+                self.ok("Export PDF dialog: the Commercial printing preset wrote a PDF/X-4 file (GTS_PDFX) that passes the checker");
+                app.run_action(ctx, Action::ExportPdf);
+            }
+            73 => {
+                // Keyboard: Escape closes the dialog.
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::ExportPdf(_))) {
+                    return Err("the Export dialog did not reopen".into());
+                }
+                self.click_target(ctx, "preset-archive")?;
+            }
+            74 => {
+                match &app.dialog {
+                    Some(crate::dialogs::Dialog::ExportPdf(st)) => {
+                        if st.standard() != pubrs_api::tools::export::PdfStandardIn::Pdfa2b
+                            || st.crop_marks
+                        {
+                            return Err(
+                                "the Archive preset did not choose PDF/A-2b without crop marks"
+                                    .into(),
+                            );
+                        }
+                    }
+                    _ => return Err("the Export dialog closed".into()),
+                }
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            75 => {
+                if app.dialog.is_some() {
+                    return Err("Escape did not close the Export dialog".into());
+                }
                 return Ok(true);
             }
             _ => return Ok(true),

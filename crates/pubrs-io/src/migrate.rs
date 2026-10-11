@@ -9,7 +9,8 @@ use crate::error::IoError;
 type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
-const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4];
+const MIGRATIONS: [Step; SCHEMA_VERSION as usize] =
+    [v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5];
 
 /// The schema version a document JSON declares (absent = 0).
 pub fn version_of(v: &Value) -> u64 {
@@ -75,6 +76,16 @@ fn v3_to_v4(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(4));
+    Ok(v)
+}
+
+/// Version 5 (commercial print output) adds the optional `alt_text` of picture
+/// frames; absent means empty, so a version 4 document only needs its version
+/// stamped.
+fn v4_to_v5(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(5));
     Ok(v)
 }
 
