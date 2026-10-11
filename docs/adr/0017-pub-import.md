@@ -21,6 +21,6 @@
 - Consequence:
   - **How the oracle counts text.** libmspub writes a story's whole text into every frame that shows it, so a three-frame chain appears three times in the reference text (SampleNewsletter: 3,306 words). pubrs keeps one copy per story. The recall check therefore counts the text of every text frame (a story in a chain of N frames counts N times), which is what the reference does. The test also prints the plain per-story recall (0.451 for SampleNewsletter); only the per-frame figure is held to 0.90.
   - Both measures are enforced at 0.90: per-frame recall (above) and per-file distinct-word recall (all stories pooled), the share of the oracle's distinct words found anywhere in the imported text with each story counted once, which does not depend on duplication (SampleNewsletter 0.901, every other file 0.917 or more).
-  - Pictures, shapes, tables, masters and colour schemes are listed as dropped chunk types until T24.
+  - Pictures, shapes, tables, masters and colour schemes were listed as dropped chunk types until T24; ADR 0026 imports them.
   - The three `EDB-*` exploit files and the three clusterfuzz files fail in the container (bad magic or malformed FAT) with an `Err` in under a millisecond.
   - The corpus is the only specification, so unusual files may import with missing text; the report says what was skipped.

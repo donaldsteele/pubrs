@@ -35,7 +35,7 @@ impl Default for Budget {
 }
 
 /// One kind of thing the importer dropped or did not understand.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Dropped {
     /// Short machine-readable kind, for example `unknown-block`.
     pub kind: String,
@@ -46,13 +46,31 @@ pub struct Dropped {
 }
 
 /// The result of an import, beside the document.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ImportReport {
     /// Pages created.
     pub pages: usize,
-    /// Frames created.
+    /// Frames created (text, picture, shape and table frames).
     pub frames: usize,
-    /// Everything dropped, by kind.
+    /// Pictures placed (frames with an image).
+    #[serde(default)]
+    pub pictures: usize,
+    /// Shape frames created (rectangle, ellipse, line).
+    #[serde(default)]
+    pub shapes: usize,
+    /// Tables created.
+    #[serde(default)]
+    pub tables: usize,
+    /// Master pages created.
+    #[serde(default)]
+    pub masters: usize,
+    /// Colour swatches created from the file's colour scheme.
+    #[serde(default)]
+    pub swatches: usize,
+    /// Font families the document uses, as named in the file.
+    #[serde(default)]
+    pub fonts: Vec<String>,
+    /// Everything dropped or substituted, by kind.
     pub dropped: Vec<Dropped>,
     /// The parse budget; not part of the serialised report.
     #[serde(skip)]
@@ -80,6 +98,75 @@ impl ImportReport {
                 detail: detail.into(),
             });
         }
+    }
+
+    /// Record the fonts the document uses that the caller's font library does
+    /// not have, with the fallback it will use, as one `font-fallback` entry.
+    /// `missing` pairs a family with its fallback.
+    pub fn note_font_fallbacks(&mut self, missing: &[(String, String)]) {
+        if missing.is_empty() {
+            return;
+        }
+        const SHOWN: usize = 4;
+        let mut detail = missing
+            .iter()
+            .take(SHOWN)
+            .map(|(f, fb)| format!("{f} is not installed; {fb} is used"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        if missing.len() > SHOWN {
+            detail.push_str(&format!("; and {} more", missing.len() - SHOWN));
+        }
+        self.dropped.retain(|d| d.kind != "font-fallback");
+        self.dropped.push(Dropped {
+            kind: "font-fallback".into(),
+            count: missing.len(),
+            detail,
+        });
+    }
+
+    /// One line for the CLI and the GUI, for example
+    /// `Imported 4 pages, 63 frames, 1 picture; dropped: 2 shape, 1 picture-wmf`.
+    pub fn summary(&self) -> String {
+        let plural = |n: usize, one: &str, many: &str| {
+            if n == 1 {
+                format!("{n} {one}")
+            } else {
+                format!("{n} {many}")
+            }
+        };
+        let mut parts = vec![
+            plural(self.pages, "page", "pages"),
+            plural(self.frames, "frame", "frames"),
+        ];
+        for (n, one, many) in [
+            (self.pictures, "picture", "pictures"),
+            (self.shapes, "shape", "shapes"),
+            (self.tables, "table", "tables"),
+            (self.masters, "master", "masters"),
+            (self.swatches, "swatch", "swatches"),
+        ] {
+            if n > 0 {
+                parts.push(plural(n, one, many));
+            }
+        }
+        let mut out = format!("Imported {}", parts.join(", "));
+        let dropped: Vec<String> = self
+            .dropped
+            .iter()
+            .filter(|d| d.kind != "font-fallback")
+            .map(|d| format!("{} {}", d.count, d.kind))
+            .collect();
+        if !dropped.is_empty() {
+            out.push_str(&format!("; dropped: {}", dropped.join(", ")));
+        }
+        if let Some(f) = self.dropped.iter().find(|d| d.kind == "font-fallback") {
+            out.push_str(&format!(
+                "; {} substituted",
+                plural(f.count, "font", "fonts")
+            ));
+        }
+        out
     }
 
     /// Total number of dropped items.

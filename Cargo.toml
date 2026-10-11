@@ -51,7 +51,7 @@ tiny-skia = "0.12"
 vello = "0.11"
 krilla = "0.8"
 krilla-svg = "0.8"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 resvg = "0.47"
 usvg = "0.47"
 zip = { version = "9", default-features = false, features = ["deflate"] }

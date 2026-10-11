@@ -89,6 +89,14 @@
                                     <Verb Id='open' Command='Open' TargetFile='pubrsAppExe' Argument='"%1"'/>
                                 </Extension>
                             </ProgId>
+                            <!-- Microsoft Publisher files (.pub) are offered under "Open with" only:
+                                 pubrs is listed in .pub\OpenWithProgids and never made the default
+                                 handler, so installing it does not take .pub files from Publisher
+                                 (docs/adr/0026-pub-import-part-2.md). The verb passes the path to
+                                 pubrs-app, which imports .pub files. -->
+                            <RegistryValue Root='HKCR' Key='.pub\OpenWithProgids' Name='pubrs.PublisherFile' Type='string' Value=''/>
+                            <RegistryValue Root='HKCR' Key='pubrs.PublisherFile' Type='string' Value='Microsoft Publisher document (import into pubrs)'/>
+                            <RegistryValue Root='HKCR' Key='pubrs.PublisherFile\shell\open\command' Type='string' Value='"[#pubrsAppExe]" "%1"'/>
                         </Component>
                         <Component Id='CliExe' Guid='*'>
                             <File Id='pubrsCliExe' Name='pubrs.exe' DiskId='1' Source='$(var.CargoTargetBinDir)\pubrs.exe' KeyPath='yes'/>

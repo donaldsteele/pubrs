@@ -65,7 +65,14 @@ Deferred and partial work. Each entry says what is missing and why.
 - `.pub` margin guides are not read; imported pages use 36 pt margins.
 - Blank `.pub` pages are dropped on import (they can't be told apart from placeholder pages).
 - Publisher 98 text is read as Windows-1252; non-Western code pages import garbled.
-- Masters, pictures, shapes, tables and colour schemes in `.pub` files are dropped and reported until M32.
+- (M32, ADR 0026) `.pub` Windows metafile (WMF/EMF) pictures are not drawn: they leave an empty picture frame and a `picture-wmf`/`picture-emf` report entry. The corpus WMFs are vector only, so a WMF renderer (or a bitmap extractor for files that embed one) is open.
+- `.pub` pictures in Publisher 98 and 2000 files are not imported (no corpus sample; the picture shape markers are unknown). Picture crop properties are not read; pictures stretch to the frame.
+- `.pub` shapes of Escher types other than rectangle, rounded rectangle, ellipse and line (the corpus has types 6 and 136) are reported as `shape` and not drawn; rounded-rectangle `adjust` values, dashes, arrowheads, gradient/pattern/picture fills and shadows are not read.
+- `.pub` tables: only plain row-by-column grids with one paragraph per cell import (merged cells, cell borders and fills are not read); other tables keep their text as a text frame and are reported as `table`.
+- `.pub` masters: the master reference is read for 2002+ files only, and no corpus master has a shape, so a master with frames is covered by the shared frame pipeline but by no corpus file.
+- `.pub` colour scheme slots (palette entries 0 to 6 = Main, Accent 1 to 4, Hyperlink, Followed Hyperlink; 7 = Background) are inferred from three schemes.
+- macOS has no Apple-event handler for opened files: `.pubrs` and `.pub` files arrive only as command-line paths (File, Import Publisher File… and drag and drop work).
+- The macOS `.pub` document type and the Windows "Open with" registration for `.pub` are not built or run in this environment; CI and the release workflow are the first to build them.
 - Linked-chain flow order in 98/2000 `.pub` files is page order; prev/next ids are read only for 2002+.
 - The `.pub` oracle (libmspub) counts a chained story once per frame; recall is measured that way (ADR 0017).
 - Colour (M21, resolved in M22): the PDF now writes CMYK as DeviceCMYK and spot colours as Separation.

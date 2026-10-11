@@ -16,6 +16,13 @@ impl FileDialogs for NativeDialogs {
             .pick_file()
     }
 
+    fn pick_publisher_file(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title("Import Publisher file")
+            .add_filter("Microsoft Publisher", &["pub"])
+            .pick_file()
+    }
+
     fn save_document(&self, suggested_name: &str) -> Option<PathBuf> {
         rfd::FileDialog::new()
             .set_title("Save publication")
@@ -50,6 +57,9 @@ pub struct NullDialogs;
 
 impl FileDialogs for NullDialogs {
     fn open_document(&self) -> Option<PathBuf> {
+        None
+    }
+    fn pick_publisher_file(&self) -> Option<PathBuf> {
         None
     }
     fn save_document(&self, _: &str) -> Option<PathBuf> {

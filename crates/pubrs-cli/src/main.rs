@@ -6,8 +6,9 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use pubrs_api::tools::doc::{DocOpen, DocRef};
+use pubrs_api::tools::doc::{DocOpen, DocRef, DocSaveAs};
 use pubrs_api::tools::export::{ExportPdf, ExportPng, FontEmbeddingIn};
+use pubrs_api::tools::import::DocImport;
 use pubrs_api::{ScriptFile, Session, SessionConfig, run_script};
 use serde_json::json;
 
@@ -51,6 +52,18 @@ enum Cmd {
         /// Output file (one page) or directory (several pages).
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+    /// Import a Microsoft Publisher (.pub) file into a new .pubrs file and
+    /// print what was imported and what was dropped.
+    Import {
+        file: PathBuf,
+        /// Output .pubrs file; an explicit -o overwrites. Default: next to the
+        /// input, and an existing file there is not overwritten.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Print the full import report as JSON instead of one summary line.
+        #[arg(long)]
+        json: bool,
     },
     /// Export a .pubrs file to PDF.
     Export {
@@ -197,6 +210,37 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     ..Default::default()
                 }))?;
                 say!("{} ({}x{})", path.display(), out.width, out.height);
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        Cmd::Import { file, output, json } => {
+            let imported = api(s.doc_import(DocImport {
+                path: file.display().to_string(),
+            }))?;
+            let out = output
+                .clone()
+                .unwrap_or_else(|| file.with_extension("pubrs"));
+            let out = std::path::absolute(&out).unwrap_or(out);
+            if output.is_none() && out.exists() {
+                bail!(
+                    "{} already exists; pass -o to choose an output file (an explicit -o overwrites)",
+                    out.display()
+                );
+            }
+            let saved = api(s.doc_save_as(DocSaveAs {
+                doc_id: Some(imported.doc_id),
+                path: Some(out.display().to_string()),
+            }))?;
+            if *json {
+                say!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &json!({"output": saved.path, "report": imported.report})
+                    )?
+                );
+            } else {
+                say!("{}", imported.summary);
+                say!("{}", saved.path);
             }
             Ok(ExitCode::SUCCESS)
         }

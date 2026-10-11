@@ -9,8 +9,8 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
-    color, doc, export, find, frames, history, images, pages, query, sheets, spell, styles, tables,
-    templates, text, wordart,
+    color, doc, export, find, frames, history, images, import, pages, query, sheets, spell, styles,
+    tables, templates, text, wordart,
 };
 
 /// One tool.
@@ -102,6 +102,8 @@ pub static TOOLS: &[ToolDef] = &[
         "Create a new empty document and make it current. Sizes are in points (72 per inch). Defaults: letter portrait, 36pt margins, no bleed, 1 page. Returns doc_id and page ids."),
     tool!("doc_open", "Document", doc_open, doc::DocOpen => doc::DocOpenOut, ro = false, destructive = false, image = None,
         "Open a .pubrs file from disk and make it current. Returns a new doc_id for this session."),
+    tool!("doc_import", "Document", doc_import, import::DocImport => import::DocImportOut, ro = false, destructive = false, image = None,
+        "Import a Microsoft Publisher (.pub) file as a new, unsaved document and make it current. Reads pages, text frames with their formatting and links, pictures (PNG, JPEG, GIF), rectangles, ellipses and lines with fill and outline, tables, colour scheme swatches and master pages; Windows metafile pictures are left as empty picture frames. The report lists everything dropped or substituted, by kind and count, including fonts that are not installed. Use doc_save_as to keep the result."),
     tool!("doc_save", "Document", doc_save, doc::DocRef => doc::DocSaveOut, ro = false, destructive = false, image = None,
         "Save the document to the path it was opened from or last saved to. Use doc_save_as for new documents."),
     tool!("doc_save_as", "Document", doc_save_as, doc::DocSaveAs => doc::DocSaveOut, ro = false, destructive = false, image = None,

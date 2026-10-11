@@ -68,6 +68,18 @@ Printing on Linux uses CUPS; install it if you want to print.
 You can also drag a `.pubrs` file onto the window to open it, or drag a picture
 onto the window to place it in the selected picture frame.
 
+### Importing Microsoft Publisher files
+
+**File → Import Publisher File…** (or dragging a `.pub` file onto the window)
+turns a Publisher 98, 2000, 2002 or later file into a new, unsaved publication.
+Pages, text boxes with their formatting and links, pictures (PNG, JPEG and GIF),
+rectangles, ellipses and lines with their colours, tables, the colour scheme
+(as swatches) and the master page come across. A report then lists everything
+that did not: pictures drawn as Windows metafiles are left as empty picture
+frames, shapes of other kinds are skipped, and fonts you do not have are drawn
+with Liberation Sans. Save the result with **Save** to keep it as a `.pubrs`
+file. On the command line: `pubrs import old.pub -o new.pubrs`.
+
 ### Working with the page
 
 - Click to select, Shift+click to add to the selection, drag on empty space
@@ -251,6 +263,7 @@ assistant saves go to `Documents/pubrs`. See `examples/mcp/README.md` and
 pubrs export brochure.pubrs -o brochure.pdf [--crop-marks] [--no-bleed] [--outlines]
 pubrs render brochure.pubrs --dpi 150 [--page 2] [-o out.png]
 pubrs validate brochure.pubrs [--json]        # exit code 1 if there are problems
+pubrs import old.pub -o new.pubrs [--json]    # import a Publisher file; prints what was dropped
 pubrs script steps.json --out out/            # replay MCP-style tool calls
 pubrs tools                                   # list the tools
 ```

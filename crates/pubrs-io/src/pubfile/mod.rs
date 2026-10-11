@@ -1,8 +1,9 @@
 //! Import of Microsoft Publisher (`.pub`) files.
 //!
-//! Part 1 (this module): the OLE container, page and text-frame geometry, story
-//! text and its character and paragraph formatting. Pictures, shapes, colour
-//! schemes and tables follow in part 2.
+//! Part 1 (ADR 0017): the OLE container, page and text-frame geometry, story
+//! text and its character and paragraph formatting. Part 2 (ADR 0026): pictures
+//! (`images`), shapes with fill and outline, colour scheme swatches, tables, masters and
+//! the report of everything dropped or substituted.
 //!
 //! The format is undocumented. The field layouts here were learned from the
 //! corpus under `tests/corpus/pub/` and from libmspub and Apache POI HPBF read
@@ -12,6 +13,7 @@
 //! [`IoError::Format`].
 
 pub mod container;
+pub mod images;
 pub mod records;
 pub mod report;
 mod text;
@@ -50,16 +52,23 @@ fn import_inner(bytes: &[u8]) -> Result<(Document, ImportReport), IoError> {
         .ok_or_else(|| IoError::Format("pub: no Contents stream; not a Publisher file".into()))?;
     let quill = c.stream("/Quill/QuillSub/CONTENTS");
     let escher = c.stream("/Escher/EscherStm");
-    import_streams_unguarded(&contents, quill.as_deref(), escher.as_deref())
+    let delay = c.stream("/Escher/EscherDelayStm");
+    import_streams_unguarded(
+        &contents,
+        quill.as_deref(),
+        escher.as_deref(),
+        delay.as_deref(),
+    )
 }
 
-/// Import from the three streams directly (no container, no panic boundary).
+/// Import from the four streams directly (no container, no panic boundary).
 /// Used by tests to fuzz the record parsers with mutated streams.
 #[doc(hidden)]
 pub fn import_streams_unguarded(
     contents: &[u8],
     quill: Option<&[u8]>,
     escher: Option<&[u8]>,
+    delay: Option<&[u8]>,
 ) -> Result<(Document, ImportReport), IoError> {
     let version = records::detect(contents, quill.is_some())?;
     if version == Version::Pub2002 && quill.is_none() {
@@ -74,9 +83,23 @@ pub fn import_streams_unguarded(
     };
     let mut rep = ImportReport::default();
     tracing::debug!(version = version.label(), "pub import");
-    let data = records::parse(version, contents, quill, escher, &mut rep);
+    let data = records::parse(version, contents, quill, escher, delay, &mut rep);
     let doc = text::build(&data, &mut rep)?;
     Ok((doc, rep))
+}
+
+/// Add a `font-fallback` entry to `rep` for every font family the imported
+/// document uses that `fonts` does not have. Layout draws such text with
+/// [`pubrs_layout::FALLBACK_SANS`].
+pub fn note_missing_fonts(rep: &mut ImportReport, fonts: &mut pubrs_layout::FontLibrary) {
+    let missing: Vec<(String, String)> = rep
+        .fonts
+        .clone()
+        .into_iter()
+        .filter(|f| !fonts.ensure_family(f))
+        .map(|f| (f, pubrs_layout::FALLBACK_SANS.to_string()))
+        .collect();
+    rep.note_font_fallbacks(&missing);
 }
 
 /// The version of a `.pub` file, without importing it.

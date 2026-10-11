@@ -8,5 +8,5 @@ Icon=pubrs
 Terminal=false
 Categories=Office;Publishing;
 Keywords=publisher;flyer;brochure;newsletter;card;layout;
-MimeType=application/vnd.pubrs+zip;
+MimeType=application/vnd.pubrs+zip;application/x-mspublisher;
 StartupWMClass=pubrs

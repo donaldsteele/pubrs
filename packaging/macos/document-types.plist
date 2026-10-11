@@ -18,6 +18,40 @@
                 <string>io.github.donaldsteele.pubrs.publication</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Microsoft Publisher document</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.microsoft.publisher-document</string>
+            </array>
+        </dict>
+    </array>
+    <key>UTImportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.microsoft.publisher-document</string>
+            <key>UTTypeDescription</key>
+            <string>Microsoft Publisher document</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>pub</string>
+                </array>
+                <key>public.mime-type</key>
+                <string>application/x-mspublisher</string>
+            </dict>
+        </dict>
     </array>
     <key>UTExportedTypeDeclarations</key>
     <array>

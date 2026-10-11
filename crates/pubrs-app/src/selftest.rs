@@ -129,6 +129,8 @@ struct Data {
     /// M20: the table, the undo steps before a check and a column's width.
     m20: Option<FrameId>,
     m20_hist: usize,
+    /// Views open before the Publisher file is dropped (steps 185 to 187).
+    pub_views: usize,
     m20_w: f64,
     /// The table frame's height before the wrapping edit.
     m20_h: f64,
@@ -3543,6 +3545,61 @@ impl SelfTest {
                 }
                 self.ok("right-to-left line: Right/Left/Home follow position on the line, not the order of the text");
                 self.screenshot(ctx);
+                return Ok(false);
+            }
+            195 => {
+                // Drag a Microsoft Publisher file onto the window: it is imported.
+                let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../tests/corpus/pub/poi/SampleNewsletter.pub");
+                if !path.exists() {
+                    return Err(format!("{} is missing", path.display()));
+                }
+                self.data.pub_views = app.views.len();
+                self.drop = Some(path);
+            }
+            196 => {
+                if app.views.len() != self.data.pub_views + 1 {
+                    return Err(format!(
+                        "dropping the .pub file left {} views (was {})",
+                        app.views.len(),
+                        self.data.pub_views
+                    ));
+                }
+                let doc = app.doc().ok_or("no document after the import")?;
+                let pages = doc.pages.len();
+                let pictures = doc
+                    .frames
+                    .values()
+                    .filter(|f| matches!(&f.content, pubrs_api::core::FrameContent::Image(i) if i.asset.is_some()))
+                    .count();
+                if pages != 4 || pictures < 1 {
+                    return Err(format!(
+                        "the imported newsletter has {pages} pages and {pictures} placed pictures"
+                    ));
+                }
+                match &app.dialog {
+                    Some(crate::dialogs::Dialog::ImportReport(v))
+                        if v.summary.starts_with("Imported 4 pages") && !v.entries.is_empty() => {}
+                    _ => return Err("the import report dialog is not showing".into()),
+                }
+                if app
+                    .session
+                    .get(app.doc_id())
+                    .is_ok_and(|o| o.path.is_some())
+                {
+                    return Err("an imported document must have no path until it is saved".into());
+                }
+                self.screenshot(ctx);
+                self.ok(format!(
+                    "dropped a .pub file: imported {pages} pages with {pictures} picture(s); the import report dialog shows"
+                ));
+            }
+            197 => {
+                app.dialog = None;
+                if app.dialog.is_some() {
+                    return Err("the import report dialog did not close".into());
+                }
+                self.ok("closed the import report");
                 return Ok(true);
             }
             _ => return Ok(true),

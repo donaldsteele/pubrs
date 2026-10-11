@@ -251,6 +251,59 @@ pub struct PageRec {
     pub seq: u32,
     /// Seq numbers of the shapes listed on the page, back to front.
     pub shapes: Vec<u32>,
+    /// Seq of the master page this page uses (2002+, page block 0x0d).
+    pub master: Option<u32>,
+}
+
+/// A table shape (2002+, chunk type 0x10 with a 0x63 cell chunk below it).
+#[derive(Debug, Clone, Default)]
+pub struct TableRec {
+    pub rows: u32,
+    pub cols: u32,
+    /// End position of each column / row from the table's origin, in EMU.
+    pub col_ends: Vec<i64>,
+    pub row_ends: Vec<i64>,
+    /// Per cell, in file order: first row, last row, first column, last column.
+    pub cells: Vec<[u32; 4]>,
+}
+
+/// Fill and line of a shape (Escher properties), as colour references.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct LookRec {
+    pub fill: Option<u32>,
+    pub fill_type: Option<u32>,
+    /// Fill boolean flags: fFilled is bit 4 (0x10) with its "use" bit at 0x10_0000.
+    pub fill_flags: Option<u32>,
+    pub line: Option<u32>,
+    pub line_width: Option<i64>,
+    pub line_flags: Option<u32>,
+}
+
+impl LookRec {
+    /// The fill colour when the shape is explicitly filled.
+    pub fn fill_color(&self) -> Option<u32> {
+        let on = match self.fill_flags {
+            Some(f) if f & 0x10_0000 != 0 => f & 0x10 != 0,
+            _ => false,
+        };
+        if on {
+            self.fill.filter(|c| *c != 0xffff_ffff)
+        } else {
+            None
+        }
+    }
+    /// The outline colour when the outline is explicitly on.
+    pub fn line_color(&self) -> Option<u32> {
+        let on = match self.line_flags {
+            Some(f) if f & 0x8_0000 != 0 => f & 0x8 != 0,
+            _ => false,
+        };
+        if on {
+            self.line.filter(|c| *c != 0xffff_ffff)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -275,6 +328,30 @@ pub struct ShapeRec {
     pub shape_type: u32,
     /// Rotation in degrees.
     pub rotation: f64,
+    /// Escher shape type (FSP instance): 1 rectangle, 2 rounded rectangle,
+    /// 3 ellipse, 20 line, 202 text box; 0 when unknown.
+    pub esc_type: u32,
+    /// 1-based index into the BLIP store (Escher property pib).
+    pub pib: Option<u32>,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    pub look: LookRec,
+    pub table: Option<TableRec>,
+}
+
+/// A picture from the BLIP store.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Blip {
+    /// PNG or JPEG bytes (a GIF is converted to PNG on the way in).
+    Raster(Vec<u8>),
+    /// A Windows or Enhanced metafile, a Mac PICT, a DIB or a TIFF: not imported.
+    Unsupported(&'static str),
+    /// An empty or unreadable slot.
+    Missing,
+    /// The same picture as the earlier entry with this (0-based) index.
+    Same(usize),
+    /// Not kept: the file's pictures exceed the byte budget.
+    OverBudget,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -329,6 +406,10 @@ pub struct PubData {
     pub default_char: Vec<CharStyle>,
     pub default_para: Vec<ParaStyle>,
     pub text_colors: Vec<u32>,
+    /// Master pages that pages refer to (2002+).
+    pub masters: Vec<PageRec>,
+    /// The BLIP store, in file order (pib is 1-based into this).
+    pub blips: Vec<Blip>,
 }
 
 /// Detect the version from the `Contents` header.
@@ -460,6 +541,9 @@ const C_PALETTE: u32 = 0x5c;
 const C_GROUP: u32 = 0x30;
 const C_LOGO: u32 = 0x31;
 const C_TABLE: u32 = 0x10;
+const C_TABLE_CELLS: u32 = 0x63;
+/// Most rows plus columns of one table read (the model allows 200 and 40).
+const TABLE_MAX_LINES: usize = 240;
 
 /// The 2002+ directory: trailer at `0x1a`, a directory block of chunk references.
 pub fn chunks_2002(b: &Bytes, rep: &mut ImportReport) -> Vec<ChunkRef> {
@@ -544,6 +628,7 @@ fn parse_contents_2002(b: &Bytes, rep: &mut ImportReport, data: &mut PubData) {
     let mut page_recs: HashMap<u32, PageRec> = HashMap::new();
     let mut masters: HashSet<u32> = HashSet::new();
     let mut shapes: Vec<ShapeRec> = Vec::new();
+    let mut table_cells: HashMap<u32, Vec<[u32; 4]>> = HashMap::new();
     for c in &chunks {
         if rep.exhausted() {
             break;
@@ -557,6 +642,7 @@ fn parse_contents_2002(b: &Bytes, rep: &mut ImportReport, data: &mut PubData) {
                 let mut rec = PageRec {
                     seq: c.seq,
                     shapes: Vec::new(),
+                    master: None,
                 };
                 if parse_page_2002(b, c.offset, rep, &mut rec) {
                     masters.insert(c.seq);
@@ -581,6 +667,10 @@ fn parse_contents_2002(b: &Bytes, rep: &mut ImportReport, data: &mut PubData) {
                 }
             }
             C_PALETTE => parse_palette_2002(b, c.offset, rep, data),
+            C_TABLE_CELLS => {
+                let cells = parse_table_cells_2002(b, c.offset, rep);
+                table_cells.insert(c.parent, cells);
+            }
             _ => rep.drop_item("chunk", format!("type 0x{:02x}", c.ty)),
         }
     }
@@ -611,8 +701,45 @@ fn parse_contents_2002(b: &Bytes, rep: &mut ImportReport, data: &mut PubData) {
             data.pages.push(p.clone());
         }
     }
+    // Cell chunks belong to the table shape that is their parent.
+    for s in &mut shapes {
+        if let (Some(t), Some(cells)) = (s.table.as_mut(), table_cells.remove(&s.seq)) {
+            t.cells = cells;
+        }
+    }
+    // Master pages that pages refer to; a dangling reference is cleared.
+    // A master must be a page chunk that is not itself one of the document's pages.
+    let mut master_seqs: Vec<u32> = Vec::new();
+    let real_pages: HashSet<u32> = data.pages.iter().map(|p| p.seq).collect();
+    let mut page_as_master = 0usize;
+    for p in &mut data.pages {
+        if let Some(m) = p.master {
+            if real_pages.contains(&m) {
+                page_as_master += 1;
+                p.master = None;
+            } else if page_recs.contains_key(&m) {
+                if !master_seqs.contains(&m) && master_seqs.len() < MAX_ITEMS {
+                    master_seqs.push(m);
+                }
+            } else {
+                p.master = None;
+            }
+        }
+    }
+    rep.drop_many(
+        "master",
+        page_as_master,
+        "a page names another page of the document as its master",
+    );
+    for m in &master_seqs {
+        if let Some(rec) = page_recs.get(m)
+            && rep.charge_items(rec.shapes.len() + 1)
+        {
+            data.masters.push(rec.clone());
+        }
+    }
     let mut page_of: HashMap<u32, u32> = HashMap::new();
-    for p in &data.pages {
+    for p in data.pages.iter().chain(data.masters.iter()) {
         for s in &p.shapes {
             page_of.entry(*s).or_insert(p.seq);
         }
@@ -694,6 +821,7 @@ fn parse_document_2002(
 }
 
 /// Returns whether the page is a master (it has a non-empty name of its own).
+/// Also reads the page's master reference (block 0x0d) into `rec.master`.
 fn parse_page_2002(b: &Bytes, off: usize, rep: &mut ImportReport, rec: &mut PageRec) -> bool {
     let Some(len) = b.u32(off).map(co) else {
         return false;
@@ -711,6 +839,7 @@ fn parse_page_2002(b: &Bytes, off: usize, rep: &mut ImportReport, rec: &mut Page
                     }
                 }
             }
+            0x0d if blk.ty == 0x68 => rec.master = Some(blk.value),
             0x0e if blk.ty == B_STRING => {
                 let s = b
                     .slice(blk.data_off + 4, blk.data_len.saturating_sub(4))
@@ -736,9 +865,64 @@ fn parse_shape_2002(b: &Bytes, off: usize, rep: &mut ImportReport, s: &mut Shape
             0x35 if blk.data_len <= 4 => s.valign = (blk.value as u8).min(2),
             0x36 if blk.data_len == 4 && blk.ty != B_STRING => s.prev = Some(blk.value),
             0x37 if blk.data_len == 4 && blk.ty != B_STRING => s.next = Some(blk.value),
+            // Table geometry: rows, columns, then a directory of column and row ends.
+            0x66 if s.shape_type == C_TABLE && blk.ty == 0x20 => {
+                s.table.get_or_insert_with(TableRec::default).rows = blk.value;
+            }
+            0x67 if s.shape_type == C_TABLE && blk.ty == 0x20 => {
+                s.table.get_or_insert_with(TableRec::default).cols = blk.value;
+            }
+            0x6d if s.shape_type == C_TABLE && blk.ty == B_DIRECTORY => {
+                let mut ends = Vec::new();
+                for e in children(b, &blk, rep).iter().take(TABLE_MAX_LINES) {
+                    for sub in children(b, e, rep) {
+                        if sub.id == 1 && sub.data_len == 4 && rep.charge_items(1) {
+                            ends.push(i64::from(sub.value as i32));
+                        }
+                    }
+                }
+                s.table.get_or_insert_with(TableRec::default).row_ends = ends;
+            }
             _ => {}
         }
     }
+    // The directory lists the column ends first, then the row ends.
+    if let Some(t) = s.table.as_mut() {
+        let all = std::mem::take(&mut t.row_ends);
+        let nc = (t.cols as usize).min(all.len());
+        t.col_ends = all[..nc].to_vec();
+        t.row_ends = all[nc..].to_vec();
+    }
+}
+
+/// Cells of a table (chunk 0x63): per cell the first and last row and column
+/// (block ids 1 to 4, each 0 when absent).
+fn parse_table_cells_2002(b: &Bytes, off: usize, rep: &mut ImportReport) -> Vec<[u32; 4]> {
+    let mut out = Vec::new();
+    let Some(len) = b.u32(off).map(co) else {
+        return out;
+    };
+    let end = off.saturating_add(len).min(b.len());
+    let mut blocks = Vec::new();
+    sequence(b, off + 4, end, rep, &mut blocks);
+    for blk in blocks.iter().filter(|k| k.id == 0x02 && k.ty == 0xa0) {
+        for cell in children(b, blk, rep)
+            .iter()
+            .take(TABLE_MAX_LINES * TABLE_MAX_LINES)
+        {
+            let mut v = [0u32; 4];
+            for sub in children(b, cell, rep) {
+                if (1..=4).contains(&sub.id) && sub.data_len == 4 {
+                    v[usize::from(sub.id) - 1] = sub.value;
+                }
+            }
+            if !rep.charge_items(1) {
+                return out;
+            }
+            out.push(v);
+        }
+    }
+    out
 }
 
 fn parse_palette_2002(b: &Bytes, off: usize, rep: &mut ImportReport, data: &mut PubData) {
@@ -912,6 +1096,7 @@ fn parse_contents_2000(b: &Bytes, version: Version, rep: &mut ImportReport, data
         data.pages.push(PageRec {
             seq,
             shapes: shapes_here,
+            master: None,
         });
     }
 }
@@ -1578,6 +1763,7 @@ pub fn utf16(raw: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 const ESC_DGG: u16 = 0xf000;
+const ESC_BSTORE: u16 = 0xf001;
 const ESC_DG: u16 = 0xf002;
 const ESC_SPGR: u16 = 0xf003;
 const ESC_SP: u16 = 0xf004;
@@ -1623,11 +1809,32 @@ pub struct EscherShape {
     pub columns: Option<u32>,
     pub column_gap: Option<i64>,
     pub is_group: bool,
+    pub pib: Option<u32>,
+    pub flip_h: bool,
+    pub flip_v: bool,
+    pub look: LookRec,
 }
 
-pub fn parse_escher(buf: &[u8], rep: &mut ImportReport) -> BTreeMap<u32, EscherShape> {
+/// Combine two boolean-property words: bits whose "use" bit is set in `new`
+/// replace those in `old`.
+fn merge_flags(old: Option<u32>, new: u32) -> u32 {
+    let old = old.unwrap_or(0);
+    let used = new >> 16;
+    let value = (old & 0xffff & !used) | (new & 0xffff & used);
+    (((old >> 16) | used) << 16) | value
+}
+
+/// Shapes by Publisher seq and the BLIP store of an `EscherStm` stream.
+#[derive(Debug, Default)]
+pub struct EscherData {
+    pub shapes: BTreeMap<u32, EscherShape>,
+    pub blips: Vec<Blip>,
+}
+
+pub fn parse_escher(buf: &[u8], delay: Option<&[u8]>, rep: &mut ImportReport) -> EscherData {
     let b = Bytes(buf);
     let mut out = BTreeMap::new();
+    let mut blips: Vec<Blip> = Vec::new();
     let mut pos = 0usize;
     let mut guard = 0;
     while pos + 8 <= b.len() && guard < MAX_ITEMS {
@@ -1642,7 +1849,20 @@ pub fn parse_escher(buf: &[u8], rep: &mut ImportReport) -> BTreeMap<u32, EscherS
             ESC_DG => {
                 walk_group(&b, &r, (0, 0, 1, 1), (0, 0, 1, 1), 0, rep, &mut out);
             }
-            ESC_DGG => {}
+            ESC_DGG => {
+                // The drawing group holds the BLIP store container.
+                let mut p = r.off;
+                let end = r.off + r.len;
+                let mut guard = 0;
+                while p + 8 <= end && guard < 256 {
+                    guard += 1;
+                    let Some(c) = esc_rec(&b, p, end) else { break };
+                    if c.ty == ESC_BSTORE {
+                        super::images::read_store(buf, (c.off, c.len), delay, rep, &mut blips);
+                    }
+                    p = c.off + c.len;
+                }
+            }
             t => rep.drop_item("escher", format!("top-level record 0x{t:04x}")),
         }
         pos = r.off + r.len;
@@ -1650,7 +1870,7 @@ pub fn parse_escher(buf: &[u8], rep: &mut ImportReport) -> BTreeMap<u32, EscherS
             pos += 4; // Publisher puts a 4-byte tail after these containers
         }
     }
-    out
+    EscherData { shapes: out, blips }
 }
 
 type Coord = (i64, i64, i64, i64);
@@ -1732,6 +1952,8 @@ fn parse_sp(
                 shape.shape_type = u32::from(r.inst);
                 let flags = b.u32(r.off + 4).unwrap_or(0);
                 shape.is_group = flags & 1 != 0;
+                shape.flip_h = flags & 0x40 != 0;
+                shape.flip_v = flags & 0x80 != 0;
             }
             ESC_CLIENT_DATA => {
                 for (id, v) in pairs(b, r.off + 4, r.off + r.len) {
@@ -1750,7 +1972,7 @@ fn parse_sp(
                         0x0082 => set_inset(&mut shape.insets, 1, v),
                         0x0083 => set_inset(&mut shape.insets, 2, v),
                         0x0084 => set_inset(&mut shape.insets, 3, v),
-                        _ => {}
+                        _ => fill_line_prop(&mut shape, id, v),
                     }
                 }
             }
@@ -1759,7 +1981,7 @@ fn parse_sp(
                     match id {
                         0x008c => shape.columns = Some(v),
                         0x008d => shape.column_gap = Some(i64::from(v)),
-                        _ => {}
+                        _ => fill_line_prop(&mut shape, id, v),
                     }
                 }
             }
@@ -1795,6 +2017,21 @@ fn parse_sp(
         }
     }
     out.insert(seq, shape);
+}
+
+/// Picture, fill and line properties (MS-ODRAW property numbers; the picture
+/// index carries the "blip" flag 0x4000 in its id).
+fn fill_line_prop(shape: &mut EscherShape, id: u16, v: u32) {
+    match id {
+        0x4104 | 0x0104 => shape.pib = Some(v),
+        0x0180 => shape.look.fill_type = Some(v),
+        0x0181 => shape.look.fill = Some(v),
+        0x01bf => shape.look.fill_flags = Some(merge_flags(shape.look.fill_flags, v)),
+        0x01c0 => shape.look.line = Some(v),
+        0x01cb => shape.look.line_width = Some(i64::from(v as i32)),
+        0x01ff => shape.look.line_flags = Some(merge_flags(shape.look.line_flags, v)),
+        _ => {}
+    }
 }
 
 fn set_inset(slot: &mut Option<[i64; 4]>, i: usize, v: u32) {
@@ -1856,11 +2093,17 @@ pub fn parse(
     contents: &[u8],
     quill: Option<&[u8]>,
     escher: Option<&[u8]>,
+    delay: Option<&[u8]>,
     rep: &mut ImportReport,
 ) -> PubData {
     let mut data = PubData::default();
     let b = Bytes(contents);
-    rep.set_input(contents.len() + quill.map_or(0, <[u8]>::len) + escher.map_or(0, <[u8]>::len));
+    rep.set_input(
+        contents.len()
+            + quill.map_or(0, <[u8]>::len)
+            + escher.map_or(0, <[u8]>::len)
+            + delay.map_or(0, <[u8]>::len),
+    );
     match version {
         Version::Pub2002 => {
             parse_contents_2002(&b, rep, &mut data);
@@ -1868,9 +2111,16 @@ pub fn parse(
                 parse_quill(&Bytes(q), false, rep, &mut data);
             }
             if let Some(e) = escher {
-                let geo = parse_escher(e, rep);
+                let esc = parse_escher(e, delay, rep);
+                data.blips = esc.blips;
+                let geo = esc.shapes;
                 for s in &mut data.shapes {
                     if let Some(g) = geo.get(&s.seq) {
+                        s.esc_type = g.shape_type;
+                        s.pib = g.pib;
+                        s.flip_h = g.flip_h;
+                        s.flip_v = g.flip_v;
+                        s.look = g.look;
                         s.rect = g.rect;
                         s.rotation = g.rotation;
                         s.insets = g.insets;

@@ -29,6 +29,8 @@ pub enum Dialog {
     Lists(ListState),
     SaveTemplate(String),
     Message(String, String),
+    /// After File → Import Publisher File…: what was imported and dropped.
+    ImportReport(Box<ImportReportView>),
     /// Design → Colour Scheme…
     ColorScheme,
     /// Add or edit a swatch.
@@ -41,6 +43,14 @@ pub enum Dialog {
     BorderArt(Box<BorderArtState>),
     /// Insert → Table…
     Table(TableState),
+}
+
+/// The import report as the dialog shows it.
+pub struct ImportReportView {
+    pub file: String,
+    pub summary: String,
+    /// `(kind, count, detail)`: everything dropped or substituted.
+    pub entries: Vec<(String, usize, String)>,
 }
 
 /// What kind of swatch the editor makes.
@@ -545,6 +555,33 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         Dialog::ColorScheme => scheme_dialog(app, ui),
         Dialog::Swatch(ed) => swatch_dialog(app, ui, ed),
         Dialog::ExportPdf(st) => export_dialog(app, ui, st),
+        Dialog::ImportReport(v) => {
+            ui.heading("Publisher file imported");
+            ui.label(RichText::new(&v.file).strong());
+            ui.label(&v.summary);
+            ui.add_space(6.0);
+            if v.entries.is_empty() {
+                ui.colored_label(Color32::DARK_GREEN, "Nothing was dropped.");
+            } else {
+                ui.label("Not imported, or substituted:");
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        for (kind, count, detail) in &v.entries {
+                            ui.group(|ui| {
+                                ui.label(RichText::new(format!("{kind} × {count}")).strong());
+                                ui.small(detail);
+                            });
+                        }
+                    });
+            }
+            ui.add_space(6.0);
+            if ui.button("OK").clicked() {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            }
+        }
         Dialog::Message(title, body) => {
             ui.heading(title.as_str());
             ui.label(body.as_str());

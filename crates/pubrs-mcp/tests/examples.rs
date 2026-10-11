@@ -20,13 +20,19 @@ struct Ran {
     is_error: bool,
 }
 
+/// The `.pub` corpus, for the doc_import examples.
+fn corpus_dir() -> String {
+    root().join("tests/corpus/pub").display().to_string()
+}
+
 fn clean(v: &Value, out: &str, assets: &str, depth: usize) -> Value {
     match v {
         Value::String(s) => {
             let s = s
                 .replace('\\', "/")
                 .replace(out, "<output_dir>")
-                .replace(assets, "<assets>");
+                .replace(assets, "<assets>")
+                .replace(&corpus_dir().replace('\\', "/"), "tests/corpus/pub");
             if s.len() > 160 {
                 Value::String(format!(
                     "{}… ({} characters)",
@@ -202,6 +208,7 @@ async fn every_tool_example_runs_through_mcp() {
     let out_s = h.out.display().to_string().replace('\\', "/");
     let mut vars = BTreeMap::new();
     vars.insert("assets".to_string(), json!(assets.display().to_string()));
+    vars.insert("corpus".to_string(), json!(corpus_dir()));
     let mut ran = Vec::new();
     for (i, step) in steps.iter().enumerate() {
         let tool = step["tool"].as_str().unwrap().to_string();

@@ -10,6 +10,8 @@ pub enum Action {
     NewFromTemplate,
     NewBlank,
     Open,
+    /// File → Import Publisher File…
+    ImportPublisher,
     Save,
     SaveAs,
     SaveAsTemplate,
@@ -183,6 +185,7 @@ pub const MENUS: &[MenuSpec] = &[
             A("New from Template…", Action::NewFromTemplate),
             A("New Blank Publication", Action::NewBlank),
             A("Open…", Action::Open),
+            A("Import Publisher File…", Action::ImportPublisher),
             Sep,
             A("Save", Action::Save),
             A("Save As…", Action::SaveAs),

@@ -18,6 +18,8 @@ pub use common::{DesktopClipboard, DesktopPaths, NativeDialogs, NoClipboard, Nul
 /// Native open/save dialogs.
 pub trait FileDialogs {
     fn open_document(&self) -> Option<PathBuf>;
+    /// File → Import Publisher File…: a Microsoft Publisher (.pub) file.
+    fn pick_publisher_file(&self) -> Option<PathBuf>;
     fn save_document(&self, suggested_name: &str) -> Option<PathBuf>;
     fn pick_image(&self) -> Option<PathBuf>;
     fn save_export(

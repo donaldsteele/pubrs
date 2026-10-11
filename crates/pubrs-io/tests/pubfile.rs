@@ -106,6 +106,8 @@ struct Entry {
     words: usize,
     oracle_text: Option<PathBuf>,
     poi_text: Option<PathBuf>,
+    /// Images the oracle's PDF lists (pdfimages).
+    images: usize,
 }
 
 fn entries() -> Vec<Entry> {
@@ -127,6 +129,7 @@ fn entries() -> Vec<Entry> {
             // repo the same `oracle/text/` sits beside expected.json.
             oracle_text: f["oracle_text"].as_str().map(|p| corpus().join(p)),
             poi_text: f["poi_text"].as_str().map(|p| corpus().join(p)),
+            images: f["images"].as_u64().unwrap() as usize,
         })
         .collect()
 }
@@ -194,17 +197,24 @@ fn frame_text(doc: &pubrs_core::model::Document) -> String {
             let Some(frame) = doc.frames.get(fid) else {
                 continue;
             };
-            if let FrameContent::Text(t) = &frame.content
-                && let Some(story) = doc.stories.get(&t.story)
-            {
-                out.push(
-                    story
-                        .paragraphs
-                        .iter()
-                        .map(|p| p.text())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                );
+            let mut stories = Vec::new();
+            match &frame.content {
+                FrameContent::Text(t) => stories.push(t.story),
+                // Table cells hold the text the oracle prints for a table.
+                FrameContent::Table(t) => stories.extend(t.cells.iter().map(|c| c.story)),
+                _ => {}
+            }
+            for sid in stories {
+                if let Some(story) = doc.stories.get(&sid) {
+                    out.push(
+                        story
+                            .paragraphs
+                            .iter()
+                            .map(|p| p.text())
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    );
+                }
             }
         }
     }
@@ -449,9 +459,24 @@ fn linked_text_frames_form_chains() {
         rep.frames
     );
     assert!(lens.iter().filter(|n| **n == 3).count() >= 4, "{lens:?}");
+    let text_frames = doc
+        .frames
+        .values()
+        .filter(|f| matches!(f.content, pubrs_core::model::FrameContent::Text(_)))
+        .count();
     assert_eq!(
         doc.stories.values().map(|s| s.frames.len()).sum::<usize>(),
-        rep.frames
+        text_frames
+    );
+    let empty_pictures = rep
+        .dropped
+        .iter()
+        .find(|d| d.kind == "picture-wmf")
+        .map_or(0, |d| d.count);
+    assert_eq!(
+        rep.frames,
+        text_frames + rep.pictures + rep.shapes + rep.tables + empty_pictures,
+        "frames = text + pictures + shapes + tables + empty picture frames"
     );
     // Flow order is geometric left to right for the three-column stories.
     for s in doc.stories.values().filter(|s| s.frames.len() == 3) {
@@ -528,6 +553,20 @@ proptest! {
 }
 
 /// `(contents, quill, escher)` of a corpus file.
+type Streams4 = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+
+/// The four streams the importer reads (contents, quill, escher, escher delay).
+fn streams4(name: &str) -> Streams4 {
+    let bytes = std::fs::read(corpus().join(name)).unwrap();
+    let mut c = pubfile::container::Container::open(&bytes).unwrap();
+    (
+        c.stream("/Contents").unwrap(),
+        c.stream("/Quill/QuillSub/CONTENTS"),
+        c.stream("/Escher/EscherStm"),
+        c.stream("/Escher/EscherDelayStm"),
+    )
+}
+
 fn streams_of(name: &str) -> (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>) {
     let bytes = std::fs::read(corpus().join(name)).unwrap();
     let mut c = pubfile::container::Container::open(&bytes).unwrap();
@@ -569,29 +608,36 @@ proptest! {
     #[test]
     fn mutated_streams_never_panic_or_hang(
         which in 0usize..5,
-        target in 0usize..3,
+        target in 0usize..4,
         edits in proptest::collection::vec(
             (any::<proptest::sample::Index>(), any::<u8>(), any::<bool>()), 1..40),
     ) {
-        let (mut contents, mut quill, mut escher) = streams_of(STREAM_FILES[which]);
+        let (mut contents, mut quill, mut escher, mut delay) = streams4(STREAM_FILES[which]);
         match target {
             0 => mutate(&mut contents, &edits),
             1 => if let Some(q) = quill.as_mut() { mutate(q, &edits) },
-            _ => if let Some(e) = escher.as_mut() { mutate(e, &edits) },
+            2 => if let Some(e) = escher.as_mut() { mutate(e, &edits) },
+            _ => if let Some(d) = delay.as_mut() { mutate(d, &edits) },
         }
         let started = Instant::now();
-        let _ = pubfile::import_streams_unguarded(&contents, quill.as_deref(), escher.as_deref());
+        let _ = pubfile::import_streams_unguarded(&contents, quill.as_deref(), escher.as_deref(), delay.as_deref());
         prop_assert!(started.elapsed() < Duration::from_secs(5), "took {:?}", started.elapsed());
     }
 
     #[test]
     fn truncated_streams_never_panic(which in 0usize..5, frac in 0.0f64..1.0) {
-        let (contents, quill, escher) = streams_of(STREAM_FILES[which]);
+        let (contents, quill, escher, delay) = streams4(STREAM_FILES[which]);
         let cut = |d: &[u8]| d[..((d.len() as f64) * frac) as usize].to_vec();
-        let (c, q, e) = (cut(&contents), quill.as_deref().map(cut), escher.as_deref().map(cut));
-        let _ = pubfile::import_streams_unguarded(&c, q.as_deref(), e.as_deref());
-        let _ = pubfile::import_streams_unguarded(&contents, q.as_deref(), escher.as_deref());
-        let _ = pubfile::import_streams_unguarded(&c, quill.as_deref(), e.as_deref());
+        let (c, q, e, dl) = (
+            cut(&contents),
+            quill.as_deref().map(cut),
+            escher.as_deref().map(cut),
+            delay.as_deref().map(cut),
+        );
+        let _ = pubfile::import_streams_unguarded(&c, q.as_deref(), e.as_deref(), dl.as_deref());
+        let _ = pubfile::import_streams_unguarded(&contents, q.as_deref(), escher.as_deref(), delay.as_deref());
+        let _ = pubfile::import_streams_unguarded(&c, quill.as_deref(), e.as_deref(), delay.as_deref());
+        let _ = pubfile::import_streams_unguarded(&contents, quill.as_deref(), escher.as_deref(), dl.as_deref());
     }
 }
 
@@ -664,11 +710,16 @@ fn extreme_escher() -> Vec<u8> {
 fn extreme_escher_coordinates_do_not_overflow() {
     let (contents, quill, _) = streams_of("poi/Sample.pub");
     let started = Instant::now();
-    let _ = pubfile::import_streams_unguarded(&contents, quill.as_deref(), Some(&extreme_escher()));
+    let _ = pubfile::import_streams_unguarded(
+        &contents,
+        quill.as_deref(),
+        Some(&extreme_escher()),
+        None,
+    );
     assert!(started.elapsed() < Duration::from_secs(2));
     // The rectangle comes out clamped, not wrapped: |coordinate| <= 2^31 EMU.
     let mut rep = ImportReport::default();
-    let shapes = pubfile::records::parse_escher(&extreme_escher(), &mut rep);
+    let shapes = pubfile::records::parse_escher(&extreme_escher(), None, &mut rep).shapes;
     assert!(!shapes.is_empty());
     for (seq, s) in &shapes {
         let r = s.rect.unwrap_or_else(|| panic!("shape {seq} has no rect"));
@@ -696,7 +747,7 @@ fn overlapping_max_count_quill_chunk_lists_stay_bounded() {
     }
     q.extend(vec![b'T'; 1_600_000]);
     let started = Instant::now();
-    let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None);
+    let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None, None);
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "{:?}",
@@ -750,6 +801,7 @@ fn quill_lists_pointing_at_one_region_are_parsed_once() {
             &contents,
             Some(&q),
             None,
+            None,
             &mut rep,
         );
         let took = started.elapsed();
@@ -770,7 +822,7 @@ fn quill_lists_pointing_at_one_region_are_parsed_once() {
             assert!(has_kind(&rep, "duplicate-chunk"), "{:?}", rep.dropped);
         }
         // And the whole import path stays panic-free.
-        let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None);
+        let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None, None);
     }
 }
 
@@ -810,6 +862,7 @@ fn zero_stride_pl_chunks_are_charged_and_stop() {
         &contents,
         Some(&q),
         None,
+        None,
         &mut rep,
     );
     let took = started.elapsed();
@@ -819,7 +872,7 @@ fn zero_stride_pl_chunks_are_charged_and_stop() {
         "{:?}",
         rep.dropped
     );
-    let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None);
+    let _ = pubfile::import_streams_unguarded(&contents, Some(&q), None, None);
 }
 
 /// Repoint the first FONT entry of a real Quill stream at a block whose one
@@ -860,7 +913,8 @@ fn long_font_names_are_cut_and_runs_share_the_cut() {
     let q = with_long_font_name(quill.expect("quill"), 60_000);
     let started = Instant::now();
     let (doc, rep) =
-        pubfile::import_streams_unguarded(&contents, Some(&q), escher.as_deref()).expect("import");
+        pubfile::import_streams_unguarded(&contents, Some(&q), escher.as_deref(), None)
+            .expect("import");
     let took = started.elapsed();
     assert!(took < Duration::from_secs(2), "{took:?}");
     assert!(has_kind(&rep, "font-name-truncated"), "{:?}", rep.dropped);
@@ -938,6 +992,7 @@ fn overlapping_contents_directory_entries_are_bounded() {
             &c,
             quill.as_deref(),
             None,
+            None,
             &mut rep,
         );
         let took = started.elapsed();
@@ -956,6 +1011,673 @@ fn overlapping_contents_directory_entries_are_bounded() {
         } else {
             assert!(has_kind(&rep, "duplicate-chunk"), "{:?}", rep.dropped);
         }
-        let _ = pubfile::import_streams_unguarded(&c, quill.as_deref(), None);
+        let _ = pubfile::import_streams_unguarded(&c, quill.as_deref(), None, None);
     }
+}
+
+// ---- part 2: pictures, shapes, colours, tables, masters (ADR 0026) ----
+
+mod common;
+
+use pubrs_core::model::{Document, FrameContent};
+
+fn import_corpus(name: &str) -> (Document, ImportReport) {
+    let bytes = std::fs::read(corpus().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    pubfile::import(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"))
+}
+
+fn placed_pictures(doc: &Document) -> usize {
+    doc.frames
+        .values()
+        .filter(|f| matches!(&f.content, FrameContent::Image(i) if i.asset.is_some()))
+        .count()
+}
+
+/// Pictures the oracle's PDF shows that are not separate picture frames in the
+/// file: `pdfimages` lists the soft mask of a transparent image as an image of
+/// its own. SampleBrochure's two GIFs have a transparent colour (Graphic
+/// Control Extension flag 0x01), so its 5 oracle images are 3 pictures + 2 masks.
+fn oracle_soft_masks(file: &str) -> usize {
+    if file == "poi/SampleBrochure.pub" {
+        2
+    } else {
+        0
+    }
+}
+
+#[test]
+fn placed_pictures_match_the_oracle_image_count() {
+    let mut total = 0;
+    for e in entries().into_iter().filter(|e| e.ok) {
+        let (doc, rep) = import_corpus(&e.file);
+        let placed = placed_pictures(&doc);
+        let want = e.images.saturating_sub(oracle_soft_masks(&e.file));
+        println!(
+            "{:<40} oracle images {} placed {} (pictures {}, empty frames {})",
+            e.file,
+            e.images,
+            placed,
+            rep.pictures,
+            doc.frames
+                .values()
+                .filter(|f| matches!(&f.content, FrameContent::Image(i) if i.asset.is_none()))
+                .count()
+        );
+        assert_eq!(placed, want, "{}: placed pictures", e.file);
+        assert_eq!(rep.pictures, placed, "{}: report count", e.file);
+        total += placed;
+    }
+    // 51318 (1 PNG), SampleNewsletter (1 JPEG), SampleBrochure (2 GIF + 1 JPEG).
+    assert_eq!(total, 5);
+}
+
+#[test]
+fn metafile_pictures_are_reported_not_silent() {
+    // No oracle image is a metafile: every WMF in the corpus draws vector
+    // records only, so there is no extractor (ADR 0026). They leave an empty
+    // picture frame and a "picture-wmf" entry.
+    let (doc, rep) = import_corpus("poi/SampleNewsletter.pub");
+    let wmf = rep
+        .dropped
+        .iter()
+        .find(|d| d.kind == "picture-wmf")
+        .expect("wmf");
+    assert_eq!(wmf.count, 9, "{:?}", rep.dropped);
+    let empty = doc
+        .frames
+        .values()
+        .filter(|f| matches!(&f.content, FrameContent::Image(i) if i.asset.is_none()))
+        .count();
+    assert_eq!(empty, 9);
+    let (_, rep) = import_corpus("poi/SampleBrochure.pub");
+    assert_eq!(
+        rep.dropped
+            .iter()
+            .find(|d| d.kind == "picture-wmf")
+            .map(|d| d.count),
+        Some(5)
+    );
+}
+
+#[test]
+fn import_then_pdf_export_has_the_oracle_page_count() {
+    use pubrs_io::ExportContext;
+    use pubrs_render::PdfOptions;
+    let mut ctx = ExportContext::new(common::test_fonts());
+    for e in entries().into_iter().filter(|e| e.ok) {
+        let (doc, _) = import_corpus(&e.file);
+        let pdf = ctx
+            .export_pdf(&doc, &PdfOptions::default())
+            .unwrap_or_else(|err| panic!("{}: {err}", e.file));
+        let pages = lopdf::Document::load_mem(&pdf)
+            .unwrap_or_else(|err| panic!("{}: {err}", e.file))
+            .get_pages()
+            .len();
+        assert_eq!(pages, e.pages, "{}: PDF pages", e.file);
+    }
+}
+
+fn render_page_png(doc: &Document, page: usize) -> Vec<u8> {
+    let mut ctx = pubrs_io::ExportContext::new(common::test_fonts());
+    let opts = pubrs_render::RasterOptions {
+        dpi: 72.0,
+        ..Default::default()
+    };
+    ctx.page_png(doc, page, &opts).expect("render")
+}
+
+#[test]
+fn pub_sample_newsletter_p1() {
+    let (doc, _) = import_corpus("poi/SampleNewsletter.pub");
+    common::assert_png_golden("pub_sample_newsletter_p1", &render_page_png(&doc, 0));
+}
+
+#[test]
+fn pub_sample_brochure_p1() {
+    let (doc, _) = import_corpus("poi/SampleBrochure.pub");
+    common::assert_png_golden("pub_sample_brochure_p1", &render_page_png(&doc, 0));
+}
+
+#[test]
+fn pub_sample2000_p1() {
+    let (doc, _) = import_corpus("poi/Sample2000.pub");
+    common::assert_png_golden("pub_sample2000_p1", &render_page_png(&doc, 0));
+}
+
+#[test]
+fn imported_render_is_deterministic() {
+    let (doc, _) = import_corpus("poi/SampleBrochure.pub");
+    assert_eq!(render_page_png(&doc, 0), render_page_png(&doc, 0));
+}
+
+#[test]
+fn the_corpus_table_becomes_a_table_frame() {
+    // Sample.pub page 2 holds a 3 x 2 table; the five versions of that sample agree.
+    for name in [
+        "poi/Sample.pub",
+        "poi/Sample2.pub",
+        "poi/Sample3.pub",
+        "poi/Sample4.pub",
+        "poi/Sample_2010.pub",
+        "poi/Sample2_2010.pub",
+        "poi/Sample3_2010.pub",
+        "poi/Sample4_2010.pub",
+    ] {
+        let (doc, rep) = import_corpus(name);
+        let tables: Vec<_> = doc.frames.values().filter_map(|f| f.as_table()).collect();
+        assert_eq!(tables.len(), 1, "{name}");
+        assert_eq!(rep.tables, 1, "{name}");
+        let t = tables[0];
+        assert_eq!((t.row_count(), t.col_count()), (3, 2), "{name}");
+        // Widths and heights come from the file (140 pt columns, about 17 pt rows).
+        assert!(
+            t.cols.iter().all(|w| (w - 140.3).abs() < 1.0),
+            "{name}: {:?}",
+            t.cols
+        );
+        assert!(
+            t.rows.iter().all(|r| (r.min_height - 17.3).abs() < 1.0),
+            "{name}"
+        );
+        let cell = |r: u32, c: u32| {
+            let story = t.cell_at(r, c).expect("cell").story;
+            doc.stories[&story]
+                .paragraphs
+                .iter()
+                .map(|p| p.text())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_eq!(cell(0, 0), "Table on page 2", "{name}");
+        assert_eq!(cell(0, 1), "Top right", "{name}");
+        assert_eq!(cell(1, 0), "P2 table left", "{name}");
+        assert_eq!(cell(2, 1), "Bottom Right", "{name}");
+        assert!(!has_kind(&rep, "table"), "{name}: {:?}", rep.dropped);
+    }
+}
+
+#[test]
+fn files_without_tables_have_none() {
+    for name in [
+        "poi/SampleNewsletter.pub",
+        "poi/Simple.pub",
+        "poi/Sample2000.pub",
+    ] {
+        let (doc, rep) = import_corpus(name);
+        assert!(
+            doc.frames.values().all(|f| f.as_table().is_none()),
+            "{name}"
+        );
+        assert_eq!(rep.tables, 0);
+    }
+}
+
+#[test]
+fn pages_use_the_files_master() {
+    // Every 2002+ file has one master that its pages name (page block 0x0d);
+    // none of the corpus masters holds a shape.
+    for name in [
+        "poi/SampleNewsletter.pub",
+        "poi/Sample.pub",
+        "poi/51318.pub",
+    ] {
+        let (doc, rep) = import_corpus(name);
+        assert_eq!(doc.masters.len(), 1, "{name}");
+        assert_eq!(rep.masters, 1);
+        let m = doc.masters[0].id;
+        assert!(doc.pages.iter().all(|p| p.master == Some(m)), "{name}");
+        assert!(doc.masters[0].frames.is_empty());
+    }
+    // Publisher 98 and 2000 files have no master reference.
+    let (doc, _) = import_corpus("poi/Sample2000.pub");
+    assert!(doc.masters.is_empty());
+}
+
+#[test]
+fn scheme_colours_become_swatches() {
+    use pubrs_core::{Paint, SchemeSlot};
+    let (doc, rep) = import_corpus("poi/SampleNewsletter.pub");
+    assert_eq!(rep.swatches, 8);
+    for slot in SchemeSlot::ALL {
+        let s = doc.swatch(slot.swatch_id()).expect("slot swatch");
+        assert_eq!(s.name, slot.swatch_name());
+    }
+    // Slot colours are the file's: Hyperlink 000080, Followed 663399.
+    let rgb = |slot: SchemeSlot| match &doc.swatch(slot.swatch_id()).unwrap().value {
+        pubrs_core::SwatchValue::Rgb(c) => (c.r, c.g, c.b),
+        v => panic!("{v:?}"),
+    };
+    assert_eq!(rgb(SchemeSlot::Hyperlink), (0x00, 0x00, 0x80));
+    assert_eq!(rgb(SchemeSlot::FollowedHyperlink), (0x66, 0x33, 0x99));
+    // References use the swatches; the document stays valid.
+    let uses_swatch = doc.frames.values().any(|f| {
+        matches!(&f.style.fill, Some(Paint::Swatch { .. }))
+            || matches!(&f.style.stroke, Some(s) if matches!(s.color, Paint::Swatch { .. }))
+    });
+    assert!(uses_swatch);
+    let text_uses = doc.stories.values().any(|st| {
+        st.paragraphs
+            .iter()
+            .flat_map(|p| &p.runs)
+            .any(|r| matches!(r.props.color, Some(Paint::Swatch { .. })))
+    });
+    assert!(
+        text_uses,
+        "text colours by palette index become swatch paints"
+    );
+    // A file with no palette gets none (Publisher 98 with a palette still has 8).
+    let (_, rep) = import_corpus("poi/Sample98.pub");
+    assert!(rep.swatches <= 8);
+}
+
+#[test]
+fn shapes_import_with_fill_and_outline() {
+    use pubrs_core::model::Shape;
+    let (doc, rep) = import_corpus("poi/SampleBrochure.pub");
+    let shapes: Vec<_> = doc
+        .frames
+        .values()
+        .filter_map(|f| match &f.content {
+            FrameContent::Shape(s) => Some((f, &s.shape)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shapes.len(), rep.shapes);
+    assert!(
+        shapes.iter().any(|(_, s)| matches!(s, Shape::Line { .. })),
+        "lines"
+    );
+    assert!(
+        shapes
+            .iter()
+            .any(|(_, s)| matches!(s, Shape::Rectangle { .. })),
+        "rectangles"
+    );
+    assert!(
+        shapes.iter().any(|(f, _)| f.style.fill.is_some()),
+        "a filled shape"
+    );
+    assert!(
+        shapes.iter().any(|(f, _)| f.style.stroke.is_some()),
+        "an outlined shape"
+    );
+    // What is not imported is counted, with the Escher type in the detail.
+    assert!(
+        rep.dropped.iter().any(|d| d.kind == "shape"),
+        "{:?}",
+        rep.dropped
+    );
+}
+
+#[test]
+fn the_summary_names_everything() {
+    let (_, rep) = import_corpus("poi/SampleNewsletter.pub");
+    let s = rep.summary();
+    assert!(s.starts_with("Imported 4 pages, "), "{s}");
+    assert!(s.contains("1 picture"), "{s}");
+    assert!(s.contains("dropped:"), "{s}");
+    assert!(s.contains("picture-wmf"), "{s}");
+    assert!(
+        rep.fonts
+            .iter()
+            .any(|f| f == "Arial" || f == "Times New Roman"),
+        "{:?}",
+        rep.fonts
+    );
+    let mut r = rep.clone();
+    r.note_font_fallbacks(&[("Arial".into(), "Liberation Sans".into())]);
+    assert!(
+        r.summary().ends_with("; 1 font substituted"),
+        "{}",
+        r.summary()
+    );
+    assert!(r.dropped.iter().any(|d| {
+        d.kind == "font-fallback"
+            && d.detail
+                .contains("Arial is not installed; Liberation Sans is used")
+    }));
+}
+
+// ---- hostile pictures ----
+
+/// Positions of every FBSE header (type 0xF007) in an Escher stream.
+fn fbse_offsets(esc: &[u8]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for i in 0..esc.len().saturating_sub(8) {
+        if esc[i + 2] == 0x07 && esc[i + 3] == 0xf0 && esc[i + 4..i + 8] == [0x24, 0, 0, 0] {
+            out.push(i + 8);
+        }
+    }
+    out
+}
+
+fn import4(s: &Streams4) -> Result<(Document, ImportReport), pubrs_io::IoError> {
+    let started = Instant::now();
+    let r = pubfile::import_streams_unguarded(&s.0, s.1.as_deref(), s.2.as_deref(), s.3.as_deref());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    r
+}
+
+#[test]
+fn hostile_fbse_offsets_and_sizes_are_survived() {
+    let base = streams4("poi/SampleBrochure.pub");
+    let esc = base.2.clone().unwrap();
+    let offs = fbse_offsets(&esc);
+    assert_eq!(offs.len(), 8);
+    for fo in [0xffff_ffffu32, 0x7fff_ffff, 64_586, 64_585, 1] {
+        let mut e = esc.clone();
+        for o in &offs {
+            e[o + 28..o + 32].copy_from_slice(&fo.to_le_bytes());
+        }
+        let (doc, rep) =
+            import4(&(base.0.clone(), base.1.clone(), Some(e), base.3.clone())).unwrap();
+        assert_eq!(placed_pictures(&doc), rep.pictures);
+    }
+    // Sizes and name lengths that lie.
+    for (at, val) in [(20usize, 0xffff_ffffu32), (24, 0xffff_ffff)] {
+        let mut e = esc.clone();
+        for o in &offs {
+            e[o + at..o + at + 4].copy_from_slice(&val.to_le_bytes());
+        }
+        import4(&(base.0.clone(), base.1.clone(), Some(e), base.3.clone())).unwrap();
+    }
+    let mut e = esc.clone();
+    for o in &offs {
+        e[o + 33] = 0xff;
+    }
+    import4(&(base.0.clone(), base.1.clone(), Some(e), base.3.clone())).unwrap();
+}
+
+#[test]
+fn hostile_blip_records_in_the_delay_stream() {
+    let base = streams4("poi/SampleBrochure.pub");
+    let delay = base.3.clone().unwrap();
+    // Every BLIP header length claims 4 GiB.
+    let mut d = delay.clone();
+    for off in [0usize, 3554, 16736, 20254, 36932, 39601, 45624, 57165] {
+        d[off + 4..off + 8].copy_from_slice(&0xffff_ffffu32.to_le_bytes());
+    }
+    let (doc, rep) = import4(&(base.0.clone(), base.1.clone(), base.2.clone(), Some(d))).unwrap();
+    assert_eq!(placed_pictures(&doc), 0);
+    assert!(
+        rep.dropped.iter().any(|d| d.kind.starts_with("picture")),
+        "{:?}",
+        rep.dropped
+    );
+    // The delay stream is garbage, empty, or absent.
+    for d in [Some(vec![0xa5u8; 70_000]), Some(Vec::new()), None] {
+        let (doc, _) = import4(&(base.0.clone(), base.1.clone(), base.2.clone(), d)).unwrap();
+        assert_eq!(placed_pictures(&doc), 0);
+    }
+}
+
+#[test]
+fn hostile_pib_values_are_survived() {
+    let base = streams4("poi/SampleBrochure.pub");
+    let esc = base.2.clone().unwrap();
+    for pib in [0u32, 9, 100_000, 0xffff_ffff] {
+        let mut e = esc.clone();
+        let mut patched = 0;
+        for i in 0..e.len().saturating_sub(6) {
+            // property id 0x4104 (pib) with a value in 1..=8
+            if e[i] == 0x04
+                && e[i + 1] == 0x41
+                && e[i + 3..i + 6] == [0, 0, 0]
+                && (1..=8).contains(&e[i + 2])
+            {
+                e[i + 2..i + 6].copy_from_slice(&pib.to_le_bytes());
+                patched += 1;
+            }
+        }
+        assert_eq!(patched, 8);
+        let (doc, rep) =
+            import4(&(base.0.clone(), base.1.clone(), Some(e), base.3.clone())).unwrap();
+        assert_eq!(placed_pictures(&doc), 0, "pib {pib}");
+        assert!(
+            rep.dropped.iter().any(|d| d.kind == "picture"),
+            "pib {pib}: {:?}",
+            rep.dropped
+        );
+    }
+}
+
+/// An Escher record: version/instance word, type, length, body.
+fn esc_record(ver: u16, inst: u16, ty: u16, body: &[u8]) -> Vec<u8> {
+    let mut v = Vec::new();
+    v.extend_from_slice(&(ver | (inst << 4)).to_le_bytes());
+    v.extend_from_slice(&ty.to_le_bytes());
+    v.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    v.extend_from_slice(body);
+    v
+}
+
+fn fbse(fo_delay: u32) -> Vec<u8> {
+    let mut b = vec![0u8; 36];
+    b[0] = 6;
+    b[1] = 6;
+    b[28..32].copy_from_slice(&fo_delay.to_le_bytes());
+    esc_record(2, 6, 0xf007, &b)
+}
+
+#[test]
+fn crafted_pictures_that_lie_about_their_size() {
+    let base = streams4("poi/SampleBrochure.pub");
+    // A GIF whose header claims 65535 x 65535 pixels with no image data.
+    let mut gif = b"GIF89a".to_vec();
+    gif.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x3b]);
+    // A PNG whose IHDR claims 100000 x 100000.
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend_from_slice(&[0, 0, 0, 13]);
+    png.extend_from_slice(b"IHDR");
+    png.extend_from_slice(&100_000u32.to_be_bytes());
+    png.extend_from_slice(&100_000u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    // A WMF blip whose "compressed" data is garbage.
+    let wmf_body = {
+        let mut b = vec![0u8; 16 + 34];
+        b[16 + 32] = 0; // deflate
+        b.extend_from_slice(&[0x78, 0xda, 0xff, 0xff, 0xff]);
+        b
+    };
+    let mut delay = Vec::new();
+    let mut pos = Vec::new();
+    for (ty, inst, body) in [
+        (0xf01eu16, 0x6e0u16, [vec![0u8; 17], gif].concat()),
+        (0xf01e, 0x6e0, [vec![0u8; 17], png].concat()),
+        (0xf01b, 0x216, wmf_body),
+    ] {
+        pos.push(delay.len() as u32);
+        delay.extend(esc_record(0, inst, ty, &body));
+    }
+    let store: Vec<u8> = pos.iter().flat_map(|p| fbse(*p)).collect();
+    let dgg = esc_record(0xf, 0, 0xf000, &esc_record(0xf, 3, 0xf001, &store));
+    let mut esc = dgg;
+    esc.extend_from_slice(&[0; 4]);
+    // Reuse the real drawing: append the Brochure DG records after the DGG.
+    let real = base.2.as_ref().unwrap();
+    let dg_start = real
+        .windows(4)
+        .position(|w| w == [0x0f, 0x00, 0x02, 0xf0])
+        .unwrap();
+    esc.extend_from_slice(&real[dg_start..]);
+    let (doc, rep) = import4(&(base.0, base.1, Some(esc), Some(delay))).unwrap();
+    assert_eq!(placed_pictures(&doc), 0);
+    assert!(
+        rep.dropped.iter().any(|d| d.kind.starts_with("picture")),
+        "{:?}",
+        rep.dropped
+    );
+}
+
+#[test]
+fn hostile_fopt_values_are_survived() {
+    // Fill, line and picture properties set to extreme values on every shape.
+    let base = streams4("poi/SampleNewsletter.pub");
+    let esc = base.2.clone().unwrap();
+    for val in [0xffff_ffffu32, 0x7fff_ffff, 0x8000_0000, 0] {
+        let mut e = esc.clone();
+        let mut i = 0;
+        while i + 6 <= e.len() {
+            let id = u16::from_le_bytes([e[i], e[i + 1]]);
+            if matches!(id, 0x0181 | 0x01bf | 0x01c0 | 0x01cb | 0x01ff | 0x0180) {
+                e[i + 2..i + 6].copy_from_slice(&val.to_le_bytes());
+                i += 6;
+            } else {
+                i += 1;
+            }
+        }
+        import4(&(base.0.clone(), base.1.clone(), Some(e), base.3.clone())).ok();
+    }
+}
+
+#[test]
+fn hostile_table_blocks_are_survived() {
+    // Table rows, columns, directory and cells set to extreme values.
+    let base = streams4("poi/Sample.pub");
+    for val in [0u32, 1, 3, 0xffff, 0xffff_ffff] {
+        let mut c = base.0.clone();
+        // Overwrite 4-byte values behind the table blocks (ids 0x66, 0x67 of type 0x20).
+        for i in 0..c.len().saturating_sub(6) {
+            if (c[i] == 0x66 || c[i] == 0x67) && c[i + 1] == 0x20 {
+                c[i + 2..i + 6].copy_from_slice(&val.to_le_bytes());
+            }
+        }
+        let r = import4(&(c, base.1.clone(), base.2.clone(), base.3.clone()));
+        if let Ok((_, rep)) = r {
+            // Either it is a table or the text still imports as a frame, reported.
+            assert!(
+                rep.tables == 1 || has_kind(&rep, "table") || val == 3 || val == 0,
+                "{val}: {:?}",
+                rep.dropped
+            );
+        }
+    }
+}
+
+// ---- review fixes: BLIP sharing, masters, table limits ----
+
+/// A 1x1 PNG followed by `pad` junk bytes (PNG decoders stop at IEND).
+fn padded_png(pad: usize) -> Vec<u8> {
+    let mut png = Vec::new();
+    image::RgbaImage::new(1, 1)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    png.extend(std::iter::repeat_n(0x5au8, pad));
+    png
+}
+
+#[test]
+fn ten_thousand_fbses_for_one_big_picture_make_one_asset() {
+    let base = streams4("poi/SampleBrochure.pub");
+    let blip_body = [vec![0u8; 17], padded_png(8 * 1024 * 1024)].concat();
+    let delay = esc_record(0, 0x6e0, 0xf01e, &blip_body);
+    let store: Vec<u8> = (0..10_000).flat_map(|_| fbse(0)).collect();
+    let mut esc = esc_record(0xf, 0, 0xf000, &esc_record(0xf, 3, 0xf001, &store));
+    esc.extend_from_slice(&[0; 4]);
+    let real = base.2.as_ref().unwrap();
+    let dg_start = real
+        .windows(4)
+        .position(|w| w == [0x0f, 0x00, 0x02, 0xf0])
+        .unwrap();
+    esc.extend_from_slice(&real[dg_start..]);
+    let started = Instant::now();
+    let (doc, rep) = import4(&(base.0, base.1, Some(esc), Some(delay))).unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    // All 8 picture shapes show the one picture, and it is one asset.
+    assert_eq!(placed_pictures(&doc), 8, "{:?}", rep.dropped);
+    assert_eq!(doc.assets.len(), 1);
+    let ids: std::collections::HashSet<_> = doc
+        .frames
+        .values()
+        .filter_map(|f| match &f.content {
+            FrameContent::Image(i) => i.asset,
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids.len(), 1);
+}
+
+#[test]
+fn distinct_blips_over_the_byte_budget_are_reported() {
+    // Eight distinct 40 MB pictures stay within the input and work limits but
+    // not the 256 MiB retained-bytes cap.
+    let base = streams4("poi/SampleBrochure.pub");
+    let one = [vec![0u8; 17], padded_png(40 * 1024 * 1024)].concat();
+    let mut delay = Vec::new();
+    let mut store = Vec::new();
+    for _ in 0..8 {
+        store.extend(fbse(delay.len() as u32));
+        delay.extend(esc_record(0, 0x6e0, 0xf01e, &one));
+    }
+    let mut esc = esc_record(0xf, 0, 0xf000, &esc_record(0xf, 3, 0xf001, &store));
+    esc.extend_from_slice(&[0; 4]);
+    let real = base.2.as_ref().unwrap();
+    let dg_start = real
+        .windows(4)
+        .position(|w| w == [0x0f, 0x00, 0x02, 0xf0])
+        .unwrap();
+    esc.extend_from_slice(&real[dg_start..]);
+    let started = Instant::now();
+    let r = pubfile::import_streams_unguarded(&base.0, base.1.as_deref(), Some(&esc), Some(&delay));
+    let (doc, rep) = r.unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(doc.assets.len() <= 6, "{}", doc.assets.len());
+    assert!(
+        rep.dropped
+            .iter()
+            .any(|d| d.kind == "picture" && d.detail.contains("budget")),
+        "{:?}",
+        rep.dropped
+    );
+}
+
+#[test]
+fn a_page_named_as_a_master_is_not_one() {
+    // Point every page's master reference (block 0x0d, type 0x68) at the
+    // first real page of the document.
+    let base = streams4("poi/Sample.pub");
+    let mut c = base.0.clone();
+    let target = 0x10au32.to_le_bytes();
+    for i in 0..c.len().saturating_sub(6) {
+        if c[i] == 0x0d && c[i + 1] == 0x68 && c[i + 2..i + 6] == [0x07, 0x01, 0, 0] {
+            c[i + 2..i + 6].copy_from_slice(&target);
+        }
+    }
+    let (doc, rep) = import4(&(c, base.1, base.2, base.3)).unwrap();
+    assert!(doc.masters.is_empty());
+    assert!(doc.pages.iter().all(|p| p.master.is_none()));
+    assert!(has_kind(&rep, "master"), "{:?}", rep.dropped);
+}
+
+#[test]
+fn a_table_larger_than_allowed_falls_back_to_a_text_frame() {
+    // Make the second column end absurdly far away.
+    let base = streams4("poi/Sample.pub");
+    let mut c = base.0.clone();
+    let mut hits = 0;
+    for i in 0..c.len().saturating_sub(4) {
+        if c[i..i + 4] == [0xe0, 0x61, 0x36, 0x00] {
+            c[i..i + 4].copy_from_slice(&0x7fff_ff00u32.to_le_bytes());
+            hits += 1;
+        }
+    }
+    assert!(hits >= 1);
+    let (doc, rep) = import4(&(c, base.1, base.2, base.3)).unwrap();
+    assert_eq!(rep.tables, 0);
+    assert!(doc.frames.values().all(|f| f.as_table().is_none()));
+    assert!(has_kind(&rep, "table"), "{:?}", rep.dropped);
+    // The cell text is still there, as a text frame.
+    assert!(frame_text(&doc).contains("Bottom Right"));
 }

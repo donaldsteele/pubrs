@@ -232,6 +232,94 @@ Result:
 }
 ```
 
+### `doc_import`
+
+Import a Microsoft Publisher (.pub) file as a new, unsaved document and make it current. Reads pages, text frames with their formatting and links, pictures (PNG, JPEG, GIF), rectangles, ellipses and lines with fill and outline, tables, colour scheme swatches and master pages; Windows metafile pictures are left as empty picture frames. The report lists everything dropped or substituted, by kind and count, including fonts that are not installed. Use doc_save_as to keep the result.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `path` | string | yes | Path of a Microsoft Publisher (.pub) file. |
+
+**Result fields:** `doc_id`, `page_ids`, `report`, `revision`, `summary`, `title`
+
+**Example** — A four-page Publisher 2002+ newsletter. The new document has no path until doc_save_as. The report counts pages, frames, pictures, shapes, tables, masters and swatches, and lists what was dropped or substituted by kind (here the Windows metafile pictures, shapes of types the importer does not draw, and fonts that are not installed).
+
+```json
+{
+  "arguments": {
+    "path": "tests/corpus/pub/poi/SampleNewsletter.pub"
+  },
+  "name": "doc_import"
+}
+```
+
+Result:
+
+```json
+{
+  "doc_id": "00000000-0000-87ea-8000-000000000047",
+  "page_ids": [
+    "00000000-5055-8252-8000-000000000002",
+    "00000000-5055-8252-8000-00000000000b",
+    "00000000-5055-8252-8000-00000000000c",
+    "00000000-5055-8252-8000-00000000000d"
+  ],
+  "report": {
+    "dropped": [
+      {
+        "count": 1,
+        "detail": "type 0x00 id 0x39",
+        "kind": "unknown-block"
+      },
+      {
+        "count": 55,
+        "detail": "type 0x72",
+        "kind": "chunk"
+      },
+      "… 4 more"
+    ],
+    "fonts": [
+      "Elephant",
+      "Franklin Gothic Book",
+      "… 5 more"
+    ],
+    "frames": 82,
+    "masters": 1,
+    "pages": 4,
+    "pictures": 1,
+    "shapes": 9,
+    "swatches": 8,
+    "tables": 0
+  },
+  "revision": 0,
+  "summary": "Imported 4 pages, 82 frames, 1 picture, 9 shapes, 1 master, … (162 characters)",
+  "title": "SampleNewsletter"
+}
+```
+
+**Example** — The file does not exist.
+
+```json
+{
+  "arguments": {
+    "path": "tests/corpus/pub/poi/missing.pub"
+  },
+  "name": "doc_import"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "file_not_found",
+  "hint": "check the path; relative paths resolve against the server's working directory",
+  "message": "file error: No such file or directory (os error 2)"
+}
+```
+
 ### `doc_save`
 
 Save the document to the path it was opened from or last saved to. Use doc_save_as for new documents.
@@ -3304,15 +3392,15 @@ Copy frames from one open document into another (or the same one): text frames k
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000051"
+      "00000000-0000-87ea-8000-000000000052"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000050",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000051",
     "offset": {
       "x": 0,
       "y": 36
     },
     "page_index": 0,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005c"
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005d"
   },
   "name": "frame_copy_to_doc"
 }
@@ -3323,13 +3411,13 @@ Result:
 ```json
 {
   "affected_ids": [
-    "00000000-0000-87ea-8000-000000000054",
-    "00000000-0000-87ea-8000-00000000005d",
-    "00000000-0000-87ea-8000-00000000005e"
+    "00000000-0000-87ea-8000-000000000055",
+    "00000000-0000-87ea-8000-00000000005e",
+    "00000000-0000-87ea-8000-00000000005f"
   ],
-  "doc_id": "00000000-0000-87ea-8000-00000000005c",
+  "doc_id": "00000000-0000-87ea-8000-00000000005d",
   "frame_ids": [
-    "00000000-0000-87ea-8000-00000000005d"
+    "00000000-0000-87ea-8000-00000000005e"
   ],
   "revision": 2
 }
@@ -3341,11 +3429,11 @@ Result:
 {
   "arguments": {
     "frame_ids": [
-      "00000000-0000-87ea-8000-000000000051"
+      "00000000-0000-87ea-8000-000000000052"
     ],
-    "from_doc_id": "00000000-0000-87ea-8000-000000000050",
+    "from_doc_id": "00000000-0000-87ea-8000-000000000051",
     "page_index": 3,
-    "to_doc_id": "00000000-0000-87ea-8000-00000000005c"
+    "to_doc_id": "00000000-0000-87ea-8000-00000000005d"
   },
   "name": "frame_copy_to_doc"
 }
@@ -4397,7 +4485,7 @@ _read-only_
 ```json
 {
   "arguments": {
-    "frame_id": "00000000-0000-87ea-8000-000000000051"
+    "frame_id": "00000000-0000-87ea-8000-000000000052"
   },
   "name": "spell_check"
 }
@@ -4414,21 +4502,21 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000051",
+      "frame_id": "00000000-0000-87ea-8000-000000000052",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000051",
+      "frame_id": "00000000-0000-87ea-8000-000000000052",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"
     },
     {
       "end": 57,
-      "frame_id": "00000000-0000-87ea-8000-000000000051",
+      "frame_id": "00000000-0000-87ea-8000-000000000052",
       "language": "en-US",
       "start": 52,
       "…": "2 more keys"
@@ -4460,14 +4548,14 @@ Result:
   "issues": [
     {
       "end": 24,
-      "frame_id": "00000000-0000-87ea-8000-000000000051",
+      "frame_id": "00000000-0000-87ea-8000-000000000052",
       "language": "en-US",
       "start": 16,
       "…": "2 more keys"
     },
     {
       "end": 37,
-      "frame_id": "00000000-0000-87ea-8000-000000000051",
+      "frame_id": "00000000-0000-87ea-8000-000000000052",
       "language": "en-US",
       "start": 31,
       "…": "2 more keys"

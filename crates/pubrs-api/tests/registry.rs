@@ -8,6 +8,7 @@ use pubrs_api::all_tools;
 const REQUIRED: &[&str] = &[
     "doc_new",
     "doc_open",
+    "doc_import",
     "doc_save",
     "doc_save_as",
     "doc_close",

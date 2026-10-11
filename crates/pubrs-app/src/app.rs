@@ -16,13 +16,14 @@ use pubrs_api::tools::frames::{
     FrameUngroup, RelativeTo, ZAction,
 };
 use pubrs_api::tools::images::ImagePlace;
+use pubrs_api::tools::import::DocImport;
 use pubrs_api::tools::pages::{PageAdd, PageDelete};
 use pubrs_api::tools::templates::{TemplateApply, TemplateSave};
 use pubrs_api::tools::text::{TextLinkFrames, TextUnlinkFrames};
 use pubrs_api::{ApiError, ApiResult, Session, SessionConfig};
 
 use crate::autosave::Autosave;
-use crate::dialogs::Dialog;
+use crate::dialogs::{Dialog, ImportReportView};
 use crate::keymap::{self, Action};
 use crate::platform::menu::NativeMenu;
 use crate::platform::{Platform, PrintOptions, PrintOutcome};
@@ -230,7 +231,7 @@ impl PubrsApp {
         }
         tracing::info!(canvas = %app.renderer.describe(), "page rendering");
         for f in &args.files {
-            app.open_path(f);
+            app.open_or_import(f);
         }
         if app.selftest.is_none() && !args.smoke_test {
             let recoverable = app.autosave.recoverable();
@@ -524,6 +525,41 @@ impl PubrsApp {
         }
     }
 
+    /// Import a Microsoft Publisher file as a new, unsaved publication and show
+    /// what was imported and what was dropped.
+    pub fn import_publisher(&mut self, path: &Path) {
+        let r = self.session.doc_import(DocImport {
+            path: session_path(path),
+        });
+        if let Some(out) = self.report(r) {
+            self.add_view(out.doc_id);
+            self.notify(format!("Imported {}: {}", path.display(), out.summary));
+            self.dialog = Some(Dialog::ImportReport(Box::new(ImportReportView {
+                file: path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                summary: out.summary,
+                entries: out
+                    .report
+                    .dropped
+                    .into_iter()
+                    .map(|d| (d.kind, d.count, d.detail))
+                    .collect(),
+            })));
+        }
+    }
+
+    /// Open a file given on the command line or dropped on the window:
+    /// `.pub` is imported, anything else is opened as a publication.
+    pub fn open_or_import(&mut self, path: &Path) {
+        if is_publisher_file(path) {
+            self.import_publisher(path);
+        } else {
+            self.open_path(path);
+        }
+    }
+
     pub fn new_from_template(&mut self, name: &str) -> Option<DocumentId> {
         let r = self.session.template_apply(TemplateApply {
             name: name.to_string(),
@@ -754,7 +790,7 @@ impl PubrsApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    /// Files dropped on the window: publications open, a picture goes into the
+    /// Files dropped on the window: publications open, Publisher files import, a picture goes into the
     /// selected picture frame.
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         let paths: Vec<PathBuf> = ctx.input(|i| {
@@ -771,6 +807,10 @@ impl PubrsApp {
                 .unwrap_or_default();
             if ext == "pubrs" {
                 self.open_path(&path);
+                continue;
+            }
+            if ext == "pub" {
+                self.import_publisher(&path);
                 continue;
             }
             let target = match self.selection().as_slice() {
@@ -1090,6 +1130,11 @@ impl PubrsApp {
             Open => {
                 if let Some(p) = self.platform.dialogs.open_document() {
                     self.open_path(&p);
+                }
+            }
+            ImportPublisher => {
+                if let Some(p) = self.platform.dialogs.pick_publisher_file() {
+                    self.import_publisher(&p);
                 }
             }
             Save => {
@@ -1679,6 +1724,12 @@ fn session_path(path: &Path) -> String {
         .unwrap_or_else(|_| path.to_path_buf())
         .display()
         .to_string()
+}
+
+/// Whether a path names a Microsoft Publisher file (by extension).
+pub fn is_publisher_file(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("pub"))
 }
 
 fn default_true() -> bool {
