@@ -3995,7 +3995,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pubrs-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "lopdf",
@@ -4012,7 +4012,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -4034,7 +4034,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "schemars",
  "serde",
@@ -4057,7 +4057,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-io"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hayro",
  "image",
@@ -4077,7 +4077,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-layout"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fontdb",
  "fontique",
@@ -4091,7 +4091,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4111,7 +4111,7 @@ dependencies = [
 
 [[package]]
 name = "pubrs-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "krilla",
  "krilla-svg",

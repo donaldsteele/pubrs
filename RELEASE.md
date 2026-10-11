@@ -14,8 +14,10 @@
 
 ## Cutting a release
 
-1. Update `version` in the workspace `Cargo.toml` (and the AppStream
-   `<release>` in `packaging/flatpak/*.metainfo.xml`), commit.
+1. Update `version` in the workspace `Cargo.toml`, `version` under
+   `[package.metadata.bundle]` in `crates/pubrs-app/Cargo.toml` (the macOS app),
+   and add a `<release>` to `packaging/flatpak/*.metainfo.xml`. Commit without
+   `[skip ci]` in the message, or the tag will not start the release workflow.
 2. Make sure CI is green on all four jobs.
 3. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`. GitHub does not start the
    workflow for a tag on a commit whose message contains `[skip ci]`; in that case run it

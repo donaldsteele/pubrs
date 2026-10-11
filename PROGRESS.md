@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** `v0.1.0` is tagged and its release is a draft (run 38090646384). Before publishing: the manual per-installer check in RELEASE.md on real desktops. The draft predates the GPU-adapter fix and the bundled Mesa (ADR 0011), so a new tag (`v0.1.1`) or a rebuilt draft is needed to ship them. Further work is listed in TODO.md.
+**Next step:** `v0.1.1` is tagged (GPU adapter choice, bundled Mesa llvmpipe in the x64 MSI, no console window on Windows); its release workflow drafts the GitHub release. Before publishing: the manual per-installer check in RELEASE.md on real desktops. The older `v0.1.0` draft is superseded. Further work is listed in TODO.md.
 
 ## Verification per milestone
 
