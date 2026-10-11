@@ -16,6 +16,8 @@
 //!    and new ink, through the frame's old and new transforms. Lines that
 //!    only moved in character offsets but draw the same glyphs are skipped.
 //! 5. Image frames on the page showing a touched asset: their bounds.
+//! 6. A changed swatch list or colour scheme: the whole page (swatch values
+//!    are resolved when drawing, so no frame or layout changed).
 //!
 //! Whatever paints over or under a damaged rectangle is redrawn with it by
 //! the renderer, clipped to the rectangle. Rectangles are clipped to the
@@ -93,6 +95,13 @@ pub fn page_damage(old: PageState, new: PageState, touched: Option<&Touched>) ->
         return PageDamage::Full;
     };
     if op.id != np.id || op.master != np.master || old.doc.setup != new.doc.setup {
+        return PageDamage::Full;
+    }
+    // Rule 6: a swatch or scheme edit recolours anything that refers to it,
+    // on any page, without touching the frames: repaint the whole page.
+    let same_swatches =
+        Arc::ptr_eq(&old.doc.swatches, &new.doc.swatches) || old.doc.swatches == new.doc.swatches;
+    if !same_swatches || old.doc.scheme != new.doc.scheme || touched.is_some_and(|t| t.swatches) {
         return PageDamage::Full;
     }
     let old_order = old.frames();
@@ -351,7 +360,7 @@ fn frame_bounds(state: PageState, id: FrameId) -> Option<Rect> {
             Prim::Stroke { geom, width, .. } => Some(geom_box(*geom, 2.0 * width.max(0.5))),
             Prim::Image { clip, .. } => Some(*clip),
             Prim::Rect { rect, .. } => Some(*rect),
-            Prim::Glyphs(run) => run_ink(run, &mut fonts),
+            Prim::Glyphs(run, _) => run_ink(run, &mut fonts),
         };
         if let Some(r) = local {
             let m = map_rect(node.transform, r);
@@ -595,7 +604,7 @@ mod tests {
         b.style(
             f,
             FrameStyle {
-                fill: Some(pubrs_core::Color::BLACK),
+                fill: Some(pubrs_core::Color::BLACK.into()),
                 ..Default::default()
             },
         )
@@ -608,6 +617,45 @@ mod tests {
         let (doc, _) = shape_doc();
         assert!(damage(&doc, &doc, None).is_empty());
         assert!(damage(&doc, &doc, Some(&Touched::default())).is_empty());
+    }
+
+    #[test]
+    fn a_swatch_or_scheme_edit_damages_the_whole_page() {
+        use pubrs_core::{Cmyk, Swatch, SwatchId, SwatchValue};
+        let (doc, _) = shape_doc();
+        let id = SwatchId::new(&mut SeqIds::new(9));
+        let add = Command::AddSwatch {
+            swatch: Swatch {
+                id,
+                name: "Ink".into(),
+                value: SwatchValue::Cmyk(Cmyk::new(0.0, 0.0, 0.0, 100.0)),
+            },
+        };
+        let (with, touched) = apply(&doc, add);
+        assert!(touched.swatches);
+        for t in [Some(&touched), None] {
+            assert_eq!(damage(&doc, &with, t), PageDamage::Full);
+        }
+        let (edited, touched) = apply(
+            &with,
+            Command::UpdateSwatch {
+                swatch: Swatch {
+                    id,
+                    name: "Ink".into(),
+                    value: SwatchValue::Cmyk(Cmyk::new(0.0, 0.0, 0.0, 50.0)),
+                },
+            },
+        );
+        for t in [Some(&touched), None] {
+            assert_eq!(damage(&with, &edited, t), PageDamage::Full);
+        }
+        let (scheme, touched) = apply(
+            &edited,
+            Command::ApplyScheme {
+                scheme: pubrs_core::SchemeId("coral_reef".into()),
+            },
+        );
+        assert_eq!(damage(&edited, &scheme, Some(&touched)), PageDamage::Full);
     }
 
     #[test]
@@ -749,7 +797,7 @@ mod tests {
             b.style(
                 f,
                 FrameStyle {
-                    fill: Some(pubrs_core::Color::BLACK),
+                    fill: Some(pubrs_core::Color::BLACK.into()),
                     ..Default::default()
                 },
             )

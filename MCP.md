@@ -186,9 +186,9 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "doc_id": "00000000-0000-87ea-8000-00000000002d",
   "page_ids": [
-    "00000000-0000-87ea-8000-000000000023"
+    "00000000-0000-87ea-8000-000000000025"
   ],
   "revision": 1
 }
@@ -221,7 +221,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000021",
+  "doc_id": "00000000-0000-87ea-8000-000000000023",
   "page_ids": [
     "00000000-0000-87ea-8000-000000000002",
     "00000000-0000-87ea-8000-00000000000b"
@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 158282,
+  "bytes": 158934,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 158282,
+  "bytes": 158934,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -339,7 +339,7 @@ _destructive (needs `confirm: true`)_
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-000000000020"
+    "doc_id": "00000000-0000-87ea-8000-000000000022"
   },
   "name": "doc_close"
 }
@@ -351,7 +351,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": false,
-  "doc_id": "00000000-0000-87ea-8000-000000000020"
+  "doc_id": "00000000-0000-87ea-8000-000000000022"
 }
 ```
 
@@ -361,7 +361,7 @@ Result:
 {
   "arguments": {
     "confirm": true,
-    "doc_id": "00000000-0000-87ea-8000-00000000002b"
+    "doc_id": "00000000-0000-87ea-8000-00000000002d"
   },
   "name": "doc_close"
 }
@@ -373,7 +373,7 @@ Result:
 {
   "closed": true,
   "discarded_changes": true,
-  "doc_id": "00000000-0000-87ea-8000-00000000002b"
+  "doc_id": "00000000-0000-87ea-8000-00000000002d"
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 59
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 53
+  "revision": 60
 }
 ```
 
@@ -1182,7 +1182,7 @@ Add a text frame. Position/size in points from the page's top-left (y down). Opt
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `align` | "left" \| "center" \| "right" \| "justify" \| null |  | Horizontal paragraph alignment. |
-| `color` | string |  | sRGB colour as #RRGGBB or #RRGGBBAA (alpha last), e.g. "#1E3A8A". |
+| `color` | string \| object \| object |  | Text colour: hex or `{"swatch": id, "tint": 0-100}`. |
 | `columns` | integer |  | Number of columns (1-12). |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `font_family` | string |  | Font family for the text, e.g. "Liberation Serif" (see fonts_list). |
@@ -1363,14 +1363,14 @@ Add a rectangle (optional corner_radius), ellipse or line. Lines run corner to c
 | `corner_radius` | number |  | Rectangles: corner radius in points. |
 | `dash` | "solid" \| "dashed" \| "dotted" \| null |  | Dash pattern of a stroke. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
-| `fill` | string |  | Fill colour (default none). |
+| `fill` | string \| string \| object \| object |  | Fill colour (default none). |
 | `height` | number | yes | Height in points. |
 | `line_direction` | "down_right" \| "up_right" |  | Lines: down_right (top-left to bottom-right, default) or up_right. |
 | `master_id` | string |  | Identifies a master page. |
 | `name` | string |  | Display name shown in frame lists. |
 | `page_id` | string |  | Identifies a page. |
 | `shape` | "rectangle" \| "ellipse" \| "line" | yes | Shape type. |
-| `stroke` | string |  | Outline colour (default black for lines, none otherwise). |
+| `stroke` | string \| string \| object \| object |  | Outline colour (default black for lines, none otherwise). |
 | `stroke_width` | number |  | Outline width in points (default 1). |
 | `width` | number | yes | Width in points. |
 | `x` | number | yes | Bounding box. A line runs corner to corner; height 0 = horizontal line. Left edge in points from the page's left edge. |
@@ -1462,7 +1462,7 @@ _destructive (needs `confirm: true`)_
 {
   "arguments": {
     "confirm": true,
-    "frame_id": "00000000-0000-87ea-8000-00000000001e"
+    "frame_id": "00000000-0000-87ea-8000-000000000020"
   },
   "name": "frame_delete"
 }
@@ -1474,10 +1474,10 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001e"
+    "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 56
 }
 ```
 
@@ -1674,11 +1674,11 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001d"
+    "00000000-0000-87ea-8000-00000000001f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "group_id": "00000000-0000-87ea-8000-00000000001d",
-  "revision": 46
+  "group_id": "00000000-0000-87ea-8000-00000000001f",
+  "revision": 53
 }
 ```
 
@@ -1700,7 +1700,7 @@ Dissolve a group; its members keep their positions.
 ```json
 {
   "arguments": {
-    "group_id": "00000000-0000-87ea-8000-00000000001d"
+    "group_id": "00000000-0000-87ea-8000-00000000001f"
   },
   "name": "frame_ungroup"
 }
@@ -1712,14 +1712,14 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001d"
+    "00000000-0000-87ea-8000-00000000001f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_ids": [
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 47
+  "revision": 54
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42
+  "revision": 49
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43
+  "revision": 50
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 44
+  "revision": 51
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 45
+  "revision": 52
 }
 ```
 
@@ -1880,11 +1880,11 @@ Set a frame's fill colour, outline (stroke colour, width in points, dash solid/d
 |---|---|---|---|
 | `dash` | "solid" \| "dashed" \| "dotted" \| null |  | Dash pattern of a stroke. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
-| `fill` | string |  | Background fill, or "none". |
+| `fill` | string \| string \| object \| object |  | Background fill, or "none". |
 | `frame_id` | uuid | yes | Identifies a frame (text, image, shape or group). |
 | `name` | string |  | Display name (empty string clears). Display name shown in frame lists. |
 | `opacity` | number |  | 0 (invisible) to 1 (opaque). |
-| `stroke` | string |  | Outline colour, or "none". |
+| `stroke` | string \| string \| object \| object |  | Outline colour, or "none". |
 | `stroke_width` | number |  | Outline width in points. |
 
 **Result fields:** `affected_ids`, `doc_id`, `revision`
@@ -1912,6 +1912,36 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "revision": 40
+}
+```
+
+**Example** — Fills, outlines and text colours accept hex, a swatch with a tint, or (fills only) a gradient.
+
+```json
+{
+  "arguments": {
+    "fill": {
+      "swatch": "00000000-0000-87ea-8000-00000000001d",
+      "tint": 25
+    },
+    "frame_id": "00000000-0000-87ea-8000-000000000017",
+    "stroke": {
+      "swatch": "00000000-0000-87ea-8000-00000000001e"
+    }
+  },
+  "name": "frame_set_style"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000017"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 44
 }
 ```
 
@@ -1949,7 +1979,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 47
 }
 ```
 
@@ -1989,7 +2019,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 48
 }
 ```
 
@@ -2057,7 +2087,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 49
+  "revision": 56
 }
 ```
 
@@ -2122,7 +2152,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 49,
+  "revision": 56,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2178,11 +2208,11 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001e"
+    "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "frame_id": "00000000-0000-87ea-8000-00000000001e",
-  "revision": 48
+  "frame_id": "00000000-0000-87ea-8000-000000000020",
+  "revision": 55
 }
 ```
 
@@ -2332,7 +2362,7 @@ Format characters start..end (default all): character style by name, font_family
 |---|---|---|---|
 | `bold` | boolean |  |  |
 | `clear` | boolean |  | Remove local character formatting first. |
-| `color` | string |  | sRGB colour as #RRGGBB or #RRGGBBAA (alpha last), e.g. "#1E3A8A". |
+| `color` | string \| object \| object |  | Text colour: hex or `{"swatch": id, "tint": 0-100}`. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
 | `end` | integer |  | Range end (exclusive). Default: end of story. |
 | `font_family` | string |  |  |
@@ -2374,6 +2404,34 @@ Result:
   "overflowing": false,
   "revision": 24,
   "story_id": "00000000-0000-87ea-8000-000000000010"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "color": {
+      "swatch": "00000000-0000-87ea-8000-00000000001e",
+      "tint": 80
+    },
+    "frame_id": "00000000-0000-87ea-8000-000000000017"
+  },
+  "name": "text_apply_char_style"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 0,
+  "overflowing": false,
+  "revision": 45,
+  "story_id": "00000000-0000-87ea-8000-000000000019"
 }
 ```
 
@@ -3008,6 +3066,372 @@ Result:
 }
 ```
 
+## Colour
+
+### `swatch_list`
+
+List the document's swatches (rgb, cmyk or spot) with their screen colour, where each is used, and the applied colour scheme. Use a swatch anywhere a colour is accepted as {"swatch": id, "tint": 0-100}.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+
+**Result fields:** `revision`, `scheme`, `swatches`
+
+**Example**
+
+```json
+{
+  "arguments": {},
+  "name": "swatch_list"
+}
+```
+
+Result:
+
+```json
+{
+  "revision": 45,
+  "swatches": [
+    {
+      "name": "Brand Cyan",
+      "screen": "#17ACE6",
+      "swatch_id": "00000000-0000-87ea-8000-00000000001d",
+      "used_by": [
+        "frame 00000000-0000-87ea-8000-000000000017 fill"
+      ],
+      "…": "1 more keys"
+    },
+    {
+      "name": "Brand Red",
+      "screen": "#F5002F",
+      "swatch_id": "00000000-0000-87ea-8000-00000000001e",
+      "used_by": [
+        "frame 00000000-0000-87ea-8000-000000000017 outline"
+      ],
+      "…": "1 more keys"
+    }
+  ]
+}
+```
+
+### `swatch_create`
+
+Create a named swatch: value {"rgb": "#1E3A8A"}, {"cmyk": {c,m,y,k}} (0-100) or {"spot": {name, cmyk}}. A spot colour must have a CMYK alternative. Returns swatch_id.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `name` | string | yes | Unique name. |
+| `value` | object \| object \| object | yes | `{"rgb": "#1E3A8A"}`, `{"cmyk": {"c":100,"m":60,"y":0,"k":20}}` or `{"spot": {"name": "PANTONE 186 C", "cmyk": {...}}}`. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`, `swatch_id`
+
+**Example** — CMYK is shown on screen by a plain formula; the PDF keeps the values.
+
+```json
+{
+  "arguments": {
+    "name": "Brand Cyan",
+    "value": {
+      "cmyk": {
+        "c": 100,
+        "k": 10,
+        "m": 30,
+        "y": 0
+      }
+    }
+  },
+  "name": "swatch_create"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-00000000001d"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 41,
+  "swatch_id": "00000000-0000-87ea-8000-00000000001d"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "name": "Brand Red",
+    "value": {
+      "spot": {
+        "cmyk": {
+          "c": 0,
+          "k": 4,
+          "m": 100,
+          "y": 81
+        },
+        "name": "PANTONE 186 C"
+      }
+    }
+  },
+  "name": "swatch_create"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-00000000001e"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 42,
+  "swatch_id": "00000000-0000-87ea-8000-00000000001e"
+}
+```
+
+### `swatch_update`
+
+Rename a swatch or change its value; every frame fill, outline and text colour using it recolours at once.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `name` | string |  | Rename. |
+| `swatch` | string | yes | Swatch name or id. |
+| `value` | object \| object \| object |  | New value. Everything using the swatch recolours. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "swatch": "Brand Cyan",
+    "value": {
+      "cmyk": {
+        "c": 90,
+        "k": 10,
+        "m": 25,
+        "y": 0
+      }
+    }
+  },
+  "name": "swatch_update"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-00000000001d"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 43
+}
+```
+
+### `swatch_delete`
+
+Delete a swatch. One that is in use is refused (the error lists where) unless replace_with gives a colour or swatch to use instead. Scheme slot swatches cannot be deleted. Requires confirm: true.
+
+_destructive (needs `confirm: true`)_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `confirm` | boolean |  | Must be true. |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `replace_with` | string \| object \| object |  | What to use where the swatch is used (hex or `{"swatch": id, "tint"}`; a gradient only if the swatch is used by fills alone). Required when the swatch is in use. |
+| `swatch` | string | yes | Swatch name or id. |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — A swatch in use is refused and the error lists where.
+
+```json
+{
+  "arguments": {
+    "confirm": true,
+    "swatch": "Brand Cyan"
+  },
+  "name": "swatch_delete"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "conflict",
+  "hint": "pass replace_with (a colour or swatch) to recolour those places, or change them first",
+  "message": "conflict: swatch is in use (frame 00000000-0000-87ea-8000-000000000017 fill); pass replace_with to recolour those places first"
+}
+```
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "confirm": true,
+    "replace_with": "#1E3A5F",
+    "swatch": "Brand Cyan"
+  },
+  "name": "swatch_delete"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000017",
+    "00000000-0000-87ea-8000-00000000001d"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 47
+}
+```
+
+### `scheme_list`
+
+List the twelve built-in colour schemes (main, accent 1-4, hyperlink, followed hyperlink) and which one the document uses.
+
+_read-only_
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id; marks which scheme is applied (default: the current document, if any). |
+
+**Result fields:** `schemes`
+
+**Example**
+
+```json
+{
+  "arguments": {},
+  "name": "scheme_list"
+}
+```
+
+Result:
+
+```json
+{
+  "schemes": [
+    {
+      "applied": false,
+      "colors": {
+        "accent_1": "#C2410C",
+        "accent_2": "#FFF7ED",
+        "accent_3": "#0F766E",
+        "accent_4": "#CA8A04",
+        "…": "3 more keys"
+      },
+      "name": "Lantern Harbor",
+      "scheme_id": "lantern_harbor"
+    },
+    {
+      "applied": false,
+      "colors": {
+        "accent_1": "#D97706",
+        "accent_2": "#F4EFE6",
+        "accent_3": "#6B8F71",
+        "accent_4": "#8C4A2F",
+        "…": "3 more keys"
+      },
+      "name": "Juniper Slate",
+      "scheme_id": "juniper_slate"
+    },
+    {
+      "applied": false,
+      "colors": {
+        "accent_1": "#E0A526",
+        "accent_2": "#F6F3DC",
+        "accent_3": "#8E5B3A",
+        "accent_4": "#4C8BB3",
+        "…": "3 more keys"
+      },
+      "name": "Meadowlark",
+      "scheme_id": "meadowlark"
+    },
+    {
+      "applied": false,
+      "colors": {
+        "accent_1": "#E6862B",
+        "accent_2": "#FBEFE0",
+        "accent_3": "#4A5A6A",
+        "accent_4": "#B8A05A",
+        "…": "3 more keys"
+      },
+      "name": "Copper Dawn",
+      "scheme_id": "copper_dawn"
+    },
+    "… 8 more"
+  ]
+}
+```
+
+### `scheme_apply`
+
+Apply a built-in colour scheme: sets the seven "Scheme: ..." slot swatches, so everything that uses them (the built-in templates do) recolours. One undo step.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `scheme` | string | yes | Scheme id or name (see scheme_list). |
+
+**Result fields:** `affected_ids`, `doc_id`, `revision`
+
+**Example** — Sets the seven Scheme swatches; everything using them recolours (the built-in templates do).
+
+```json
+{
+  "arguments": {
+    "scheme": "coral_reef"
+  },
+  "name": "scheme_apply"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "70756272-732d-7363-6865-6d652d736c00",
+    "70756272-732d-7363-6865-6d652d736c01",
+    "70756272-732d-7363-6865-6d652d736c02",
+    "70756272-732d-7363-6865-6d652d736c03",
+    "… 3 more"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 46
+}
+```
+
 ## Images
 
 ### `image_place`
@@ -3278,7 +3702,7 @@ Result:
 
 ```json
 {
-  "doc_id": "00000000-0000-87ea-8000-000000000020",
+  "doc_id": "00000000-0000-87ea-8000-000000000022",
   "named_frames": {},
   "page_ids": [
     "00000000-0000-8065-8000-000000000002"
@@ -3452,7 +3876,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "doc_id": "00000000-0000-87ea-8000-00000000002d",
   "revision": 2
 }
 ```
@@ -3507,7 +3931,7 @@ Result:
 ```json
 {
   "affected_ids": [],
-  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "doc_id": "00000000-0000-87ea-8000-00000000002d",
   "revision": 5
 }
 ```
@@ -3550,11 +3974,11 @@ Result:
 
 ```json
 {
-  "bytes": 94134,
+  "bytes": 94604,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -3574,7 +3998,7 @@ Result:
 ```json
 {
   "bytes": 1767,
-  "doc_id": "00000000-0000-87ea-8000-00000000002b",
+  "doc_id": "00000000-0000-87ea-8000-00000000002d",
   "imposed": "sheet",
   "page_count": 1,
   "path": "<output_dir>/labels.pdf",
@@ -3618,12 +4042,12 @@ Result:
 
 ```json
 {
-  "bytes": 21677,
+  "bytes": 22771,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 51,
+  "revision": 58,
   "width": 596
 }
 ```
@@ -3664,8 +4088,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAdKklEQVR4nO3d… (10032 characters)",
-  "revision": 51,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAe0UlEQVR4nO2d… (10596 characters)",
+  "revision": 58,
   "width": 249
 }
 ```
@@ -3699,14 +4123,14 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001e"
+    "00000000-0000-87ea-8000-000000000020"
   ],
   "can_redo": true,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 50
+  "revision": 57
 }
 ```
 
@@ -3737,14 +4161,14 @@ Result:
 {
   "affected_ids": [
     "00000000-0000-87ea-8000-000000000002",
-    "00000000-0000-87ea-8000-00000000001e"
+    "00000000-0000-87ea-8000-000000000020"
   ],
   "can_redo": false,
   "can_undo": true,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -3797,9 +4221,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 44 more"
+    "… 51 more"
   ],
-  "revision": 49
+  "revision": 56
 }
 ```
 
@@ -3981,7 +4405,8 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 3,
+    "schema_version": 4,
+    "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
       "margins": {
@@ -4105,9 +4530,34 @@ Result:
         },
         "… 5 more"
       ]
-    }
+    },
+    "swatches": [
+      {
+        "id": "00000000-0000-87ea-8000-00000000001e",
+        "name": "Brand Red",
+        "value": {
+          "spot": {
+            "cmyk": {
+              "c": 0.0,
+              "k": 4.0,
+              "m": 100.0,
+              "y": 81.0
+            },
+            "name": "PANTONE 186 C"
+          }
+        }
+      },
+      {
+        "id": "70756272-732d-7363-6865-6d652d736c00",
+        "name": "Scheme: Main",
+        "value": {
+          "rgb": "#0F5E73"
+        }
+      },
+      "… 6 more"
+    ]
   },
-  "revision": 51
+  "revision": 58
 }
 ```
 
@@ -4140,7 +4590,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 51,
+  "revision": 58,
   "warnings": [
     {
       "code": "overflow",

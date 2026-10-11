@@ -2,12 +2,13 @@
 
 use eframe::egui::{self, Color32, RichText};
 use pubrs_api::core::{
-    Align, CharProps, Color, Command, Crop, Dash, FrameContent, FrameId, FrameKind, ImageFit,
-    Margins, PageSizePreset, ParaProps, Rect, Shape, Size, Stroke, TextFrameProps, VerticalAlign,
-    WrapMode,
+    Align, CharProps, Color, Command, Crop, Dash, Document, FrameContent, FrameId, FrameKind,
+    GradientKind, GradientStop, ImageFit, Margins, PageSizePreset, Paint, ParaProps, Rect, Shape,
+    Size, SolidPaint, Stroke, SwatchValue, TextFrameProps, VerticalAlign, WrapMode,
 };
 
 use crate::app::{PubrsApp, Tool, Units};
+use crate::dialogs::{Dialog, SwatchEditor, SwatchKind};
 use crate::keymap::{self, Action, MenuItem};
 
 fn menu_items(app: &mut PubrsApp, ui: &mut egui::Ui, items: &[MenuItem]) {
@@ -318,23 +319,286 @@ fn move_page(app: &mut PubrsApp, dir: isize) {
     }
 }
 
-fn color_edit(ui: &mut egui::Ui, c: Option<Color>) -> Option<Option<Color>> {
-    let mut on = c.is_some();
-    let col = c.unwrap_or(Color::BLACK);
-    let mut rgba = Color32::from_rgba_unmultiplied(col.r, col.g, col.b, col.a);
-    let mut changed = false;
+/// A small colour square.
+pub(crate) fn chip(ui: &mut egui::Ui, c: Color) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+    let fill = Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a);
+    ui.painter().rect_filled(rect, 2.0, fill);
+    ui.painter().rect_stroke(
+        rect,
+        2.0,
+        egui::Stroke::new(1.0, Color32::from_gray(150)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// What a colour picker offers.
+#[derive(Clone, Copy)]
+struct PaintOpts {
+    none_ok: bool,
+    gradient_ok: bool,
+}
+
+fn paint_label(doc: &Document, p: Option<&Paint>) -> String {
+    match p {
+        None => "None".into(),
+        Some(Paint::Color(c)) => c.to_hex(),
+        Some(Paint::Swatch { swatch, tint }) => {
+            let name = doc
+                .swatch(*swatch)
+                .map_or("(missing swatch)", |s| s.name.as_str());
+            if *tint < 100.0 {
+                format!("{name} {tint:.0}%")
+            } else {
+                name.to_string()
+            }
+        }
+        Some(Paint::Gradient { gradient, .. }) => match gradient {
+            GradientKind::Linear => "Linear gradient".into(),
+            GradientKind::Radial => "Radial gradient".into(),
+        },
+    }
+}
+
+fn solid_of(doc: &Document, p: Option<&Paint>) -> SolidPaint {
+    match p {
+        Some(Paint::Swatch { swatch, tint }) => SolidPaint::Swatch {
+            swatch: *swatch,
+            tint: *tint,
+        },
+        Some(other) => SolidPaint::Color(doc.resolve_paint(other).solid_rgba()),
+        None => SolidPaint::Color(Color::BLACK),
+    }
+}
+
+fn to_color(c: Color32) -> Color {
+    let [r, g, b, a] = c.to_srgba_unmultiplied();
+    Color::rgba(r, g, b, a)
+}
+
+fn to_color32(c: Color) -> Color32 {
+    Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
+}
+
+/// A colour picker: the document's swatches first, then a custom colour
+/// (and, for fills, gradients). Returns the new paint when it changed.
+/// `salt` must be unique on screen; controls are registered for the GUI
+/// self-test as `paint-{salt}` and `paint-swatch-{name}`.
+fn paint_edit(
+    ui: &mut egui::Ui,
+    doc: &Document,
+    salt: &str,
+    cur: Option<&Paint>,
+    o: PaintOpts,
+) -> Option<Option<Paint>> {
+    let mut out: Option<Option<Paint>> = None;
     ui.horizontal(|ui| {
-        changed |= ui.checkbox(&mut on, "").changed();
-        ui.add_enabled_ui(on, |ui| {
-            changed |= ui.color_edit_button_srgba(&mut rgba).changed();
-        });
+        match cur {
+            Some(p) => chip(ui, doc.resolve_paint(p).solid_rgba()),
+            None => chip(ui, Color::TRANSPARENT),
+        }
+        let r = egui::ComboBox::from_id_salt(("paint", salt))
+            .selected_text(paint_label(doc, cur))
+            .width(150.0)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show_ui(ui, |ui| {
+                if o.none_ok && ui.selectable_label(cur.is_none(), "None").clicked() {
+                    out = Some(None);
+                    ui.close();
+                }
+                if !doc.swatches.is_empty() {
+                    ui.small("Swatches");
+                }
+                for s in doc.swatches.iter() {
+                    let selected =
+                        matches!(cur, Some(Paint::Swatch { swatch, .. }) if *swatch == s.id);
+                    ui.horizontal(|ui| {
+                        chip(ui, doc.resolve_swatch(s.id, 100.0).rgba);
+                        let r = ui.selectable_label(selected, &s.name);
+                        crate::dialogs::mark(ui, &format!("paint-swatch-{}", s.name), &r);
+                        if r.clicked() {
+                            out = Some(Some(Paint::swatch(s.id)));
+                            ui.close();
+                        }
+                    });
+                }
+                ui.separator();
+                ui.small("Custom colour");
+                let mut c = to_color32(doc.resolve_paint_or_black(cur));
+                if ui.color_edit_button_srgba(&mut c).changed() {
+                    out = Some(Some(Paint::Color(to_color(c))));
+                }
+                if o.gradient_ok {
+                    ui.separator();
+                    for (kind, label) in [
+                        (GradientKind::Linear, "Linear gradient"),
+                        (GradientKind::Radial, "Radial gradient"),
+                    ] {
+                        let is = matches!(cur, Some(Paint::Gradient { gradient, .. }) if *gradient == kind);
+                        let r = ui.selectable_label(is, label);
+                        crate::dialogs::mark(ui, &format!("paint-{label}"), &r);
+                        if r.clicked() && !is {
+                            out = Some(Some(Paint::Gradient {
+                                gradient: kind,
+                                stops: vec![
+                                    GradientStop {
+                                        offset: 0.0,
+                                        color: solid_of(doc, cur),
+                                    },
+                                    GradientStop {
+                                        offset: 1.0,
+                                        color: SolidPaint::Color(Color::WHITE),
+                                    },
+                                ],
+                                angle: 0.0,
+                            }));
+                            ui.close();
+                        }
+                    }
+                }
+            });
+        crate::dialogs::mark(ui, &format!("paint-{salt}"), &r.response);
+        r.response.on_hover_text(
+            "Pick a swatch from this publication, a custom colour, or none. \
+             Swatches update everywhere they are used when edited.",
+        );
     });
-    changed.then(|| {
-        on.then(|| {
-            let [r, g, b, a] = rgba.to_srgba_unmultiplied();
-            Color::rgba(r, g, b, a)
-        })
-    })
+    match cur {
+        Some(Paint::Swatch { swatch, tint }) => {
+            let mut t = *tint;
+            ui.horizontal(|ui| {
+                ui.label("Tint");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut t)
+                            .range(0.0..=100.0)
+                            .speed(0.5)
+                            .suffix("%"),
+                    )
+                    .changed()
+                {
+                    out = Some(Some(Paint::Swatch {
+                        swatch: *swatch,
+                        tint: t,
+                    }));
+                }
+            });
+        }
+        Some(Paint::Gradient {
+            gradient,
+            stops,
+            angle,
+        }) => {
+            let mut a = *angle;
+            if *gradient == GradientKind::Linear {
+                ui.horizontal(|ui| {
+                    ui.label("Angle");
+                    if ui
+                        .add(egui::DragValue::new(&mut a).speed(1.0).suffix("°"))
+                        .changed()
+                    {
+                        out = Some(Some(Paint::Gradient {
+                            gradient: *gradient,
+                            stops: stops.clone(),
+                            angle: a,
+                        }));
+                    }
+                });
+            }
+            for (i, label) in [(0, "From"), (stops.len().saturating_sub(1), "To")] {
+                let Some(stop) = stops.get(i) else { continue };
+                let cur_c = doc.resolve_solid(&stop.color.to_paint()).rgba;
+                let mut c = to_color32(cur_c);
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    if ui.color_edit_button_srgba(&mut c).changed() {
+                        let mut s2 = stops.clone();
+                        s2[i].color = SolidPaint::Color(to_color(c));
+                        out = Some(Some(Paint::Gradient {
+                            gradient: *gradient,
+                            stops: s2,
+                            angle: a,
+                        }));
+                    }
+                });
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
+/// The Swatches section of the properties panel: list, add, edit, delete.
+fn swatches_section(app: &mut PubrsApp, ui: &mut egui::Ui, doc: &Document) {
+    ui.separator();
+    let mut h = egui::CollapsingHeader::new(RichText::new("Swatches").strong()).id_salt("swatches");
+    if let Some(open) = app.swatches_open.take() {
+        h = h.open(Some(open));
+    }
+    h.show(ui, |ui| {
+        if doc.swatches.is_empty() {
+            ui.small("No swatches yet. Add one below, or apply a colour scheme (Design menu).");
+        }
+        for s in doc.swatches.iter() {
+            ui.horizontal_wrapped(|ui| {
+                chip(ui, doc.resolve_swatch(s.id, 100.0).rgba);
+                let kind = match &s.value {
+                    SwatchValue::Rgb(_) => "",
+                    SwatchValue::Cmyk(_) => " (CMYK)",
+                    SwatchValue::Spot { .. } => " (spot)",
+                };
+                ui.label(format!("{}{kind}", s.name));
+                let edit = ui
+                    .small_button("Edit")
+                    .on_hover_text("Change this swatch; everything using it recolours");
+                if edit.clicked() {
+                    app.dialog = Some(Dialog::Swatch(SwatchEditor::edit(s)));
+                }
+                let uses = doc.swatch_uses(s.id);
+                let reason = if let Some(slot) = pubrs_api::core::swatch::slot_of(s.id) {
+                    Some(format!(
+                        "“{}” is a colour scheme slot; apply another scheme to change it",
+                        slot.swatch_name()
+                    ))
+                } else if !uses.is_empty() {
+                    Some(format!("In use: {}", uses.join("; ")))
+                } else {
+                    None
+                };
+                let del = ui
+                    .add_enabled(reason.is_none(), egui::Button::new("Delete").small())
+                    .on_hover_text("Delete this swatch");
+                let del = match &reason {
+                    Some(r) => del.on_disabled_hover_text(r.as_str()),
+                    None => del,
+                };
+                if del.clicked() {
+                    app.exec(Command::DeleteSwatch {
+                        swatch: s.id,
+                        replace_with: None,
+                    });
+                }
+            });
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (kind, label, name) in [
+                (SwatchKind::Rgb, "+ RGB", "swatch-add-rgb"),
+                (SwatchKind::Cmyk, "+ CMYK", "swatch-add-cmyk"),
+                (SwatchKind::Spot, "+ Spot", "swatch-add-spot"),
+            ] {
+                let b = ui
+                    .button(label)
+                    .on_hover_text("Add a swatch to this publication");
+                crate::dialogs::mark(ui, name, &b);
+                if b.clicked() {
+                    app.dialog = Some(Dialog::Swatch(SwatchEditor::add(doc, kind)));
+                }
+            }
+        });
+        if ui.button("Colour scheme…").clicked() {
+            app.dialog = Some(Dialog::ColorScheme);
+        }
+    });
 }
 
 fn length(ui: &mut egui::Ui, label: &str, units: Units, value: f64) -> Option<f64> {
@@ -396,6 +660,7 @@ pub fn properties_panel(app: &mut PubrsApp, ui: &mut egui::Ui) {
                         });
                     }
                 }
+                swatches_section(app, ui, &doc);
             });
         });
 }
@@ -615,11 +880,20 @@ fn frame_props(
     }
     ui.separator();
     ui.label(RichText::new("Fill and line").strong());
-    let style = f.style;
-    ui.horizontal(|ui| {
-        ui.label("Fill");
-        if let Some(c) = color_edit(ui, style.fill) {
-            let mut s = style;
+    let style = f.style.clone();
+    ui.label("Fill");
+    {
+        if let Some(c) = paint_edit(
+            ui,
+            doc,
+            &format!("fill-{id}"),
+            style.fill.as_ref(),
+            PaintOpts {
+                none_ok: true,
+                gradient_ok: true,
+            },
+        ) {
+            let mut s = style.clone();
             s.fill = c;
             app.exec_merge(
                 Command::SetFrameStyle {
@@ -629,15 +903,24 @@ fn frame_props(
                 &key("fill"),
             );
         }
-    });
-    ui.horizontal(|ui| {
-        ui.label("Line");
-        if let Some(c) = color_edit(ui, style.stroke.map(|s| s.color)) {
-            let mut s = style;
+    }
+    ui.label("Line");
+    {
+        if let Some(c) = paint_edit(
+            ui,
+            doc,
+            &format!("stroke-{id}"),
+            style.stroke.as_ref().map(|s| &s.color),
+            PaintOpts {
+                none_ok: true,
+                gradient_ok: false,
+            },
+        ) {
+            let mut s = style.clone();
             s.stroke = c.map(|color| Stroke {
                 color,
-                width: style.stroke.map_or(1.0, |s| s.width),
-                dash: style.stroke.map(|s| s.dash).unwrap_or_default(),
+                width: style.stroke.as_ref().map_or(1.0, |s| s.width),
+                dash: style.stroke.as_ref().map(|s| s.dash).unwrap_or_default(),
             });
             app.exec_merge(
                 Command::SetFrameStyle {
@@ -647,8 +930,8 @@ fn frame_props(
                 &key("stroke"),
             );
         }
-    });
-    if let Some(st) = style.stroke {
+    }
+    if let Some(st) = style.stroke.clone() {
         let mut w = st.width;
         let mut dash = st.dash;
         ui.horizontal(|ui| {
@@ -672,11 +955,11 @@ fn frame_props(
                     }
                 });
             if a || b {
-                let mut s = style;
+                let mut s = style.clone();
                 s.stroke = Some(Stroke {
                     width: w,
                     dash,
-                    ..st
+                    ..st.clone()
                 });
                 app.exec_merge(
                     Command::SetFrameStyle {
@@ -989,18 +1272,25 @@ fn text_props(
             app.run_action(&ctx, Action::Underline);
         }
     });
-    ui.horizontal(|ui| {
-        ui.label("Colour");
-        if let Some(Some(c)) = color_edit(ui, Some(a.color)) {
-            apply_chars(
-                app,
-                CharProps {
-                    color: Some(c),
-                    ..Default::default()
-                },
-            );
-        }
-    });
+    ui.label("Colour");
+    if let Some(Some(c)) = paint_edit(
+        ui,
+        doc,
+        &format!("text-{id}"),
+        Some(&Paint::from(a.color)),
+        PaintOpts {
+            none_ok: false,
+            gradient_ok: false,
+        },
+    ) {
+        apply_chars(
+            app,
+            CharProps {
+                color: Some(c),
+                ..Default::default()
+            },
+        );
+    }
     ui.horizontal(|ui| {
         for (al, label) in [
             (Align::Left, "Left"),

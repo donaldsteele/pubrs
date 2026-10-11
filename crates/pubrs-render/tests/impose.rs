@@ -22,7 +22,7 @@ fn label(tag: f64, w: f64, h: f64) -> PageScene {
             opacity: 1.0,
             prims: vec![Prim::Rect {
                 rect: Rect::new(0.0, 0.0, tag, 1.0),
-                color: Color::BLACK,
+                color: Color::BLACK.into(),
             }],
             clip: None,
         }],

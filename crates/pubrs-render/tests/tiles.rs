@@ -38,8 +38,12 @@ fn small_page() -> PageSetup {
 
 fn style(fill: Option<Color>, stroke: Option<(Color, f64, Dash)>, opacity: f64) -> FrameStyle {
     FrameStyle {
-        fill,
-        stroke: stroke.map(|(color, width, dash)| pubrs_core::Stroke { color, width, dash }),
+        fill: fill.map(Into::into),
+        stroke: stroke.map(|(color, width, dash)| pubrs_core::Stroke {
+            color: color.into(),
+            width,
+            dash,
+        }),
         opacity,
     }
 }
@@ -210,7 +214,7 @@ fn text() -> Page {
         start: 0,
         end: 6,
         props: CharProps {
-            color: Some(Color::rgb(180, 83, 9)),
+            color: Some(Color::rgb(180, 83, 9).into()),
             ..Default::default()
         },
     })
@@ -380,7 +384,7 @@ fn master_bleed() -> Page {
             shape: Shape::Rectangle { corner_radius: 0.0 },
         }),
     );
-    f.style.fill = Some(Color::rgb(30, 58, 138));
+    f.style.fill = Some(Color::rgb(30, 58, 138).into());
     b.frame(Parent::Master(master), f, None).unwrap();
     b.exec(Command::SetPageMaster {
         page: p,
@@ -400,7 +404,7 @@ fn master_bleed() -> Page {
         start: 0,
         end: 34,
         props: CharProps {
-            color: Some(Color::WHITE),
+            color: Some(Color::WHITE.into()),
             font_size: Some(14.0),
             ..Default::default()
         },
@@ -539,6 +543,124 @@ fn stress() -> Page {
     }
 }
 
+/// Gradient fills (linear at several angles, radial, rotated, translucent,
+/// off the page) and swatch tints: shader pixels must not depend on where
+/// the tile starts. Odd resolution so edges fall mid-pixel.
+fn colour() -> Page {
+    let mut b = DocBuilder::new(SeqIds::new(7), small_page());
+    let p = b.page(0);
+    let ink = SwatchId::new(&mut b.ids);
+    b.exec(Command::AddSwatch {
+        swatch: Swatch {
+            id: ink,
+            name: "Ink".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(80.0, 20.0, 0.0, 10.0)),
+        },
+    })
+    .unwrap();
+    let stops = |a: SolidPaint, z: SolidPaint| {
+        vec![
+            GradientStop {
+                offset: 0.0,
+                color: a,
+            },
+            GradientStop {
+                offset: 0.4,
+                color: Color::rgb(250, 204, 21).into(),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: z,
+            },
+        ]
+    };
+    let mut add = |rect: Rect, shape: Shape, fill: Paint, rotation: f64, opacity: f64| {
+        let f = b.shape(p, rect, shape).unwrap();
+        b.style(
+            f,
+            FrameStyle {
+                fill: Some(fill),
+                stroke: None,
+                opacity,
+            },
+        )
+        .unwrap();
+        if rotation != 0.0 {
+            b.exec(Command::SetRotation {
+                frame: f,
+                degrees: rotation,
+            })
+            .unwrap();
+        }
+    };
+    let rectangle = Shape::Rectangle { corner_radius: 6.0 };
+    for (i, angle) in [0.0, 33.0, 90.0, 215.0].into_iter().enumerate() {
+        add(
+            Rect::new(10.0 + 70.0 * i as f64, 10.0, 62.0, 50.0),
+            rectangle,
+            Paint::Gradient {
+                gradient: GradientKind::Linear,
+                stops: stops(SolidPaint::swatch(ink), Color::rgb(190, 24, 93).into()),
+                angle,
+            },
+            0.0,
+            1.0,
+        );
+    }
+    add(
+        Rect::new(30.0, 80.0, 120.0, 70.0),
+        Shape::Ellipse,
+        Paint::Gradient {
+            gradient: GradientKind::Radial,
+            stops: stops(Color::WHITE.into(), SolidPaint::swatch(ink)),
+            angle: 0.0,
+        },
+        0.0,
+        0.8,
+    );
+    add(
+        Rect::new(120.0, 90.0, 110.0, 60.0),
+        rectangle,
+        Paint::Gradient {
+            gradient: GradientKind::Linear,
+            stops: stops(Color::BLACK.into(), Color::WHITE.into()),
+            angle: 12.0,
+        },
+        27.0,
+        0.7,
+    );
+    add(
+        Rect::new(-25.0, 150.0, 120.0, 70.0),
+        Shape::Ellipse,
+        Paint::Gradient {
+            gradient: GradientKind::Radial,
+            stops: stops(Color::rgb(30, 58, 138).into(), Color::TRANSPARENT.into()),
+            angle: 0.0,
+        },
+        0.0,
+        1.0,
+    );
+    for (i, tint) in [25.0, 50.0, 100.0].into_iter().enumerate() {
+        add(
+            Rect::new(190.0 + 30.0 * i as f64, 160.0, 26.0, 30.0),
+            Shape::Rectangle { corner_radius: 0.0 },
+            Paint::Swatch { swatch: ink, tint },
+            0.0,
+            1.0,
+        );
+    }
+    Page {
+        name: "colour",
+        doc: b.finish(),
+        images: ImageSnapshot::new(HashMap::new()),
+        opts: RasterOptions {
+            dpi: 101.3,
+            include_bleed: true,
+            background: None,
+        },
+    }
+}
+
 fn scene(page: &Page) -> PageScene {
     let layout = Layouter::new(fonts()).layout_document(&page.doc);
     build_page_scene_with(
@@ -577,7 +699,14 @@ fn first_difference(a: &Pixmap, b: &Pixmap) -> Option<(u32, u32)> {
 
 #[test]
 fn every_golden_page_tiles_byte_identically() {
-    for page in [shapes(), text(), images(), master_bleed(), stress()] {
+    for page in [
+        shapes(),
+        text(),
+        images(),
+        master_bleed(),
+        stress(),
+        colour(),
+    ] {
         let scene = scene(&page);
         let reference = RasterRenderer::new()
             .render(&scene, &page.images, &page.opts)

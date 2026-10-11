@@ -84,7 +84,7 @@ fn undo_redo_restores_every_state_exactly() {
             end: 5,
             props: CharProps {
                 bold: Some(true),
-                color: Some(Color::rgb(200, 0, 0)),
+                color: Some(Color::rgb(200, 0, 0).into()),
                 ..Default::default()
             },
         },
@@ -824,7 +824,7 @@ fn patch_json_matches_the_golden_corpus() {
     r.run(Command::SetFrameStyle {
         frame: shape,
         style: FrameStyle {
-            fill: Some(Color::rgb(10, 20, 30)),
+            fill: Some(Color::rgb(10, 20, 30).into()),
             stroke: None,
             opacity: 0.5,
         },
@@ -1011,6 +1011,81 @@ fn patch_json_matches_the_golden_corpus() {
     r.run(Command::SetSheet { sheet: None });
     r.run(Command::SetBooklet { booklet: true });
 
+    // Swatches, schemes and paints (schema 3), appended likewise.
+    let sw_cmyk = SwatchId::new(&mut r.fx.ids);
+    let sw_spot = SwatchId::new(&mut r.fx.ids);
+    let swf = FrameId::new(&mut r.fx.ids);
+    r.run(Command::AddSwatch {
+        swatch: Swatch {
+            id: sw_cmyk,
+            name: "Process Cyan".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(100.0, 0.0, 0.0, 10.0)),
+        },
+    });
+    r.run(Command::AddSwatch {
+        swatch: Swatch {
+            id: sw_spot,
+            name: "Brand Red".into(),
+            value: SwatchValue::Spot {
+                name: "PANTONE 186 C".into(),
+                cmyk: Cmyk::new(0.0, 100.0, 81.0, 4.0),
+            },
+        },
+    });
+    r.run(Command::UpdateSwatch {
+        swatch: Swatch {
+            id: sw_cmyk,
+            name: "Process Cyan".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(90.0, 0.0, 0.0, 0.0)),
+        },
+    });
+    r.run(Command::ApplyScheme {
+        scheme: SchemeId("copper_dawn".into()),
+    });
+    r.run(Command::AddFrame {
+        parent: Parent::Page(page),
+        index: None,
+        frame: {
+            let mut f = Frame::new(
+                swf,
+                Rect::new(50.0, 50.0, 100.0, 80.0),
+                FrameContent::Shape(ShapeFrame {
+                    shape: Shape::Rectangle { corner_radius: 0.0 },
+                }),
+            );
+            f.style.fill = Some(Paint::Gradient {
+                gradient: GradientKind::Linear,
+                stops: vec![
+                    GradientStop {
+                        offset: 0.0,
+                        color: SolidPaint::swatch(sw_cmyk),
+                    },
+                    GradientStop {
+                        offset: 1.0,
+                        color: Color::WHITE.into(),
+                    },
+                ],
+                angle: 45.0,
+            });
+            f
+        },
+        story: None,
+    });
+    r.run(Command::SetFrameStyle {
+        frame: swf,
+        style: FrameStyle {
+            fill: Some(Paint::Swatch {
+                swatch: sw_spot,
+                tint: 50.0,
+            }),
+            ..Default::default()
+        },
+    });
+    r.run(Command::DeleteSwatch {
+        swatch: sw_spot,
+        replace_with: Some(Paint::swatch(sw_cmyk)),
+    });
+
     let actual = serde_json::to_string_pretty(&r.out).unwrap() + "\n";
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/patch_corpus.json");
@@ -1025,4 +1100,196 @@ fn patch_json_matches_the_golden_corpus() {
         "patch JSON drifted from {}; if intended, re-run with PUBRS_BLESS=1",
         path.display()
     );
+}
+
+// ---- swatches, schemes and paints ----
+
+fn rect_with_fill(fx: &mut Fixture, fill: Option<Paint>) -> FrameId {
+    let f = fx.shape(Rect::new(10.0, 10.0, 50.0, 50.0));
+    fx.ed
+        .execute(Command::SetFrameStyle {
+            frame: f,
+            style: FrameStyle {
+                fill,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    f
+}
+
+fn cmyk_swatch(fx: &mut Fixture, name: &str) -> SwatchId {
+    let id = SwatchId::new(&mut fx.ids);
+    fx.ed
+        .execute(Command::AddSwatch {
+            swatch: Swatch {
+                id,
+                name: name.into(),
+                value: SwatchValue::Cmyk(Cmyk::new(0.0, 100.0, 100.0, 0.0)),
+            },
+        })
+        .unwrap();
+    id
+}
+
+#[test]
+fn swatch_commands_undo_exactly() {
+    let mut fx = Fixture::new();
+    let before = fx.ed.doc().clone();
+    let id = cmyk_swatch(&mut fx, "Red");
+    assert_eq!(fx.ed.doc().swatches.len(), 1);
+    fx.ed.undo().unwrap();
+    assert_eq!(*fx.ed.doc(), before);
+    fx.ed.redo().unwrap();
+    assert!(fx.ed.doc().swatch(id).is_some());
+}
+
+#[test]
+fn swatch_names_are_unique_and_values_checked() {
+    let mut fx = Fixture::new();
+    cmyk_swatch(&mut fx, "Red");
+    let dup = Command::AddSwatch {
+        swatch: Swatch {
+            id: SwatchId::new(&mut fx.ids),
+            name: "red".into(),
+            value: SwatchValue::Rgb(Color::BLACK),
+        },
+    };
+    assert!(fx.ed.execute(dup).is_err());
+    let bad = Command::AddSwatch {
+        swatch: Swatch {
+            id: SwatchId::new(&mut fx.ids),
+            name: "Bad".into(),
+            value: SwatchValue::Cmyk(Cmyk::new(101.0, 0.0, 0.0, 0.0)),
+        },
+    };
+    assert!(fx.ed.execute(bad).is_err());
+    let spot = Command::AddSwatch {
+        swatch: Swatch {
+            id: SwatchId::new(&mut fx.ids),
+            name: "Spot".into(),
+            value: SwatchValue::Spot {
+                name: " ".into(),
+                cmyk: Cmyk::new(0.0, 0.0, 0.0, 0.0),
+            },
+        },
+    };
+    assert!(fx.ed.execute(spot).is_err());
+}
+
+#[test]
+fn deleting_a_swatch_in_use_is_refused_with_the_places() {
+    let mut fx = Fixture::new();
+    let id = cmyk_swatch(&mut fx, "Red");
+    let f = rect_with_fill(&mut fx, Some(Paint::swatch(id)));
+    let err = fx
+        .ed
+        .execute(Command::DeleteSwatch {
+            swatch: id,
+            replace_with: None,
+        })
+        .unwrap_err();
+    assert!(err.to_string().contains("fill"), "{err}");
+    // With a replacement the fill is recoloured and the swatch goes.
+    fx.ed
+        .execute(Command::DeleteSwatch {
+            swatch: id,
+            replace_with: Some(Paint::Color(Color::rgb(1, 2, 3))),
+        })
+        .unwrap();
+    assert!(fx.ed.doc().swatches.is_empty());
+    assert_eq!(
+        fx.ed.doc().frame(f).unwrap().style.fill,
+        Some(Paint::Color(Color::rgb(1, 2, 3)))
+    );
+    fx.ed.undo().unwrap();
+    assert_eq!(
+        fx.ed.doc().frame(f).unwrap().style.fill,
+        Some(Paint::swatch(id))
+    );
+}
+
+#[test]
+fn unknown_swatches_and_misplaced_gradients_are_refused() {
+    let mut fx = Fixture::new();
+    let f = rect_with_fill(&mut fx, None);
+    let ghost = Paint::swatch(SwatchId::new(&mut fx.ids));
+    let set = |fill: Option<Paint>, stroke: Option<Stroke>| Command::SetFrameStyle {
+        frame: f,
+        style: FrameStyle {
+            fill,
+            stroke,
+            opacity: 1.0,
+        },
+    };
+    assert!(fx.ed.execute(set(Some(ghost), None)).is_err());
+    let grad = Paint::Gradient {
+        gradient: GradientKind::Radial,
+        stops: vec![
+            GradientStop {
+                offset: 0.0,
+                color: Color::BLACK.into(),
+            },
+            GradientStop {
+                offset: 1.0,
+                color: Color::WHITE.into(),
+            },
+        ],
+        angle: 0.0,
+    };
+    assert!(fx.ed.execute(set(Some(grad.clone()), None)).is_ok());
+    let stroke = Stroke {
+        color: grad,
+        width: 1.0,
+        dash: Dash::Solid,
+    };
+    assert!(fx.ed.execute(set(None, Some(stroke))).is_err());
+}
+
+#[test]
+fn applying_a_scheme_recolours_slot_users_in_one_undo_step() {
+    let mut fx = Fixture::new();
+    fx.ed
+        .execute(Command::ApplyScheme {
+            scheme: SchemeId("lantern_harbor".into()),
+        })
+        .unwrap();
+    assert_eq!(fx.ed.doc().swatches.len(), 7);
+    let f = rect_with_fill(&mut fx, Some(SchemeSlot::Main.paint()));
+    let colour = |ed: &Editor| ed.doc().resolve_solid(&SchemeSlot::Main.paint()).rgba;
+    assert_eq!(colour(&fx.ed), Color::rgb(0x1E, 0x3A, 0x5F));
+    fx.ed
+        .execute(Command::ApplyScheme {
+            scheme: SchemeId("coral_reef".into()),
+        })
+        .unwrap();
+    assert_eq!(colour(&fx.ed), Color::rgb(0x0F, 0x5E, 0x73));
+    assert_eq!(fx.ed.doc().scheme, Some(SchemeId("coral_reef".into())));
+    assert!(fx.ed.doc().frame(f).is_some());
+    fx.ed.undo().unwrap();
+    assert_eq!(colour(&fx.ed), Color::rgb(0x1E, 0x3A, 0x5F));
+    // Scheme slots cannot be deleted; unknown schemes are refused.
+    assert!(
+        fx.ed
+            .execute(Command::DeleteSwatch {
+                swatch: SchemeSlot::Main.swatch_id(),
+                replace_with: None
+            })
+            .is_err()
+    );
+    assert!(
+        fx.ed
+            .execute(Command::ApplyScheme {
+                scheme: SchemeId("nope".into())
+            })
+            .is_err()
+    );
+}
+
+#[test]
+fn old_documents_without_swatches_serialize_unchanged() {
+    let mut ids = SeqIds::new(1);
+    let doc = Document::new(&mut ids, PageSetup::default());
+    let json = serde_json::to_string(&doc).unwrap();
+    assert!(!json.contains("swatches") && !json.contains("scheme"));
 }

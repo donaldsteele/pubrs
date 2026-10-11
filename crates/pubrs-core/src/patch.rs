@@ -14,6 +14,7 @@ use crate::model::{
     Asset, DocMeta, Document, Frame, GridSettings, MasterPage, Page, PageSetup, Story,
 };
 use crate::style::StyleSheet;
+use crate::swatch::Palette;
 
 /// An embedded asset with its bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,6 +41,8 @@ pub struct Patch {
     pub masters: Option<Arc<Vec<MasterPage>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub styles: Option<StyleSheet>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub palette: Option<Palette>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub frames: BTreeMap<FrameId, Option<Arc<Frame>>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -211,6 +214,15 @@ impl Patch {
         let (pf, pb) = changed_arc_pair(&from.pages, &to.pages);
         let (xf, xb) = changed_arc_pair(&from.masters, &to.masters);
         let (yf, yb) = changed_pair(&from.styles, &to.styles);
+        let (cf, cb) = if same(&from.swatches, &to.swatches) && from.scheme == to.scheme {
+            (None, None)
+        } else {
+            let pal = |d: &Document| Palette {
+                swatches: d.swatches.clone(),
+                scheme: d.scheme.clone(),
+            };
+            (Some(pal(to)), Some(pal(from)))
+        };
         let (ff, fb) = diff_map_pair(&from.frames, &to.frames);
         let (tf, tb) = diff_map_pair(&from.stories, &to.stories);
         (
@@ -221,6 +233,7 @@ impl Patch {
                 pages: pf,
                 masters: xf,
                 styles: yf,
+                palette: cf,
                 frames: ff,
                 stories: tf,
                 assets: fa,
@@ -232,6 +245,7 @@ impl Patch {
                 pages: pb,
                 masters: xb,
                 styles: yb,
+                palette: cb,
                 frames: fb,
                 stories: tb,
                 assets: ba,
@@ -288,6 +302,13 @@ impl Patch {
             step_bwd.styles,
             |a, b| a == b,
         );
+        compose_opt(
+            &mut fwd.palette,
+            &mut bwd.palette,
+            step_fwd.palette,
+            step_bwd.palette,
+            |a, b| a == b,
+        );
         compose_map(
             &mut fwd.frames,
             &mut bwd.frames,
@@ -335,6 +356,10 @@ impl Patch {
         if let Some(v) = &self.styles {
             doc.styles = v.clone();
         }
+        if let Some(v) = &self.palette {
+            doc.swatches = v.swatches.clone();
+            doc.scheme = v.scheme.clone();
+        }
         for (k, v) in &self.frames {
             match v {
                 Some(f) => doc.frames.insert(*k, f.clone()),
@@ -373,6 +398,7 @@ impl Patch {
             pages,
             assets: self.assets.keys().copied().collect(),
             styles: self.styles.is_some(),
+            swatches: self.palette.is_some(),
             setup: self.setup.is_some() || self.meta.is_some() || self.grid.is_some(),
         }
     }
@@ -388,5 +414,8 @@ pub struct Touched {
     pub pages: Vec<PageId>,
     pub assets: Vec<AssetId>,
     pub styles: bool,
+    /// The swatch list or colour scheme changed (every page repaints).
+    #[serde(default)]
+    pub swatches: bool,
     pub setup: bool,
 }

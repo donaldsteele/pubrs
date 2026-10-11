@@ -250,8 +250,9 @@ async fn resources_prompts_and_errors() {
     assert!(uris.contains(&format!("pubrs://doc/{id}/page/1.png")));
     assert_eq!(
         h.client.list_all_resource_templates().await.unwrap().len(),
-        3
+        4
     );
+    assert!(uris.contains(&format!("pubrs://doc/{id}/swatches")));
 
     let read = |uri: String| {
         let c = &h.client;
@@ -262,6 +263,20 @@ async fn resources_prompts_and_errors() {
         ResourceContents::TextResourceContents { text, .. } => {
             let v: Value = serde_json::from_str(text).unwrap();
             assert_eq!(v["meta"]["title"], "Res");
+        }
+        other => panic!("expected text, got {other:?}"),
+    }
+    h.call(
+        "swatch_create",
+        json!({"name": "Ink", "value": {"cmyk": {"c": 0, "m": 0, "y": 0, "k": 100}}}),
+    )
+    .await;
+    let sw = read(format!("pubrs://doc/{id}/swatches")).await.unwrap();
+    match &sw.contents[0] {
+        ResourceContents::TextResourceContents { text, .. } => {
+            let v: Value = serde_json::from_str(text).unwrap();
+            assert_eq!(v["swatches"][0]["name"], "Ink");
+            assert_eq!(v["swatches"][0]["screen"], "#000000");
         }
         other => panic!("expected text, got {other:?}"),
     }

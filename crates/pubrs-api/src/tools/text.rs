@@ -1,8 +1,8 @@
 //! Text tools.
 
 use pubrs_core::{
-    Align, CharProps, Color, Command, DocumentId, FrameId, Margins, ParaProps, StoryId, StyleKind,
-    TextFrameProps, VerticalAlign,
+    Align, CharProps, Color, Command, DocumentId, FrameId, Margins, Paint, ParaProps, StoryId,
+    StyleKind, TextFrameProps, VerticalAlign,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -108,8 +108,9 @@ pub struct TextApplyCharStyle {
     pub italic: Option<bool>,
     #[serde(default)]
     pub underline: Option<bool>,
+    /// Text colour: hex or `{"swatch": id, "tint": 0-100}`.
     #[serde(default)]
-    pub color: Option<Color>,
+    pub color: Option<Paint>,
     /// Extra letter spacing in points.
     #[serde(default)]
     pub letter_spacing: Option<f64>,
@@ -218,7 +219,10 @@ pub struct RunOut {
     pub font_size: f64,
     pub bold: bool,
     pub italic: bool,
+    /// Effective colour as hex (swatches resolved).
     pub color: Color,
+    /// Effective colour as stored: hex or a swatch reference.
+    pub color_paint: Paint,
 }
 
 /// A paragraph in `text_get` output.
@@ -551,7 +555,8 @@ impl Session {
                     font_size: a.font_size,
                     bold: a.bold,
                     italic: a.italic,
-                    color: a.color,
+                    color: doc.resolve_ink(a.color).rgba,
+                    color_paint: a.color.into(),
                 });
                 pos += n;
             }

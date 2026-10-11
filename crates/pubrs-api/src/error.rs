@@ -64,12 +64,23 @@ impl From<CommandError> for ApiError {
                 "page" => "list pages with page_list",
                 "story" => "get a frame's story with frame_get or text_get",
                 "style" => "list styles with style_list",
+                "swatch" => "list swatches with swatch_list",
+                "scheme" => "list schemes with scheme_list",
                 "asset" => "place an image with image_place first",
                 "master" => "list masters with doc_info",
                 _ => "check the id",
             },
             CommandError::Locked { .. } => "unlock it first with frame_lock (locked: false)",
+            CommandError::Invalid { message } if message.contains("gradients are only allowed") => {
+                "use a hex colour or {\"swatch\": id} for outlines and text; gradients are for frame fills"
+            }
+            CommandError::Invalid { message } if message.contains("swatch") => {
+                "list swatches with swatch_list, or create one with swatch_create"
+            }
             CommandError::Invalid { .. } => "check the argument ranges in the tool's input schema",
+            CommandError::Conflict { message } if message.contains("in use") => {
+                "pass replace_with (a colour or swatch) to recolour those places, or change them first"
+            }
             CommandError::Conflict { .. } => "use a different name or id",
             CommandError::Internal { .. } => "this is a bug in pubrs; please report it",
         };

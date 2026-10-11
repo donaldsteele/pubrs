@@ -17,6 +17,7 @@ pub mod model;
 pub mod patch;
 pub mod snap;
 pub mod style;
+pub mod swatch;
 pub mod text;
 pub mod validate;
 
@@ -30,11 +31,16 @@ pub use history::{Change, Editor, HistoryItem};
 pub use id::RandomIds;
 pub use id::{
     AssetId, DocumentId, FrameId, GuideId, IdSource, MasterId, PageId, SeqIds, StoryId, StyleId,
+    SwatchId,
 };
 pub use model::*;
 pub use patch::{Patch, Touched};
 pub use style::{
     Align, CharAttrs, CharProps, JustifyLimits, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet,
+};
+pub use swatch::{
+    Cmyk, GradientKind, GradientStop, Ink, InkSpec, Paint, ResolvedGradient, ResolvedInk,
+    ResolvedPaint, Scheme, SchemeId, SchemeSlot, SolidPaint, Swatch, SwatchValue,
 };
 pub use text::RunFormat;
 pub use validate::{Warning, WarningCode};

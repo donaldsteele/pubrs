@@ -9,7 +9,8 @@ use serde_json::Value;
 use crate::error::{ApiError, ApiResult};
 use crate::session::Session;
 use crate::tools::{
-    doc, export, find, frames, history, images, pages, query, sheets, styles, templates, text,
+    color, doc, export, find, frames, history, images, pages, query, sheets, styles, templates,
+    text,
 };
 
 /// One tool.
@@ -217,6 +218,19 @@ pub static TOOLS: &[ToolDef] = &[
         "Rename a style, change its parent, or merge new paragraph/character properties into it. All text using it updates."),
     tool!("style_delete", "Styles", style_delete, styles::StyleDelete => Changed, ro = false, destructive = true, image = None,
         "Delete a style (not the default Normal style). Text using it falls back. Requires confirm: true."),
+    // ---------------------------------------------------------------- colour
+    tool!("swatch_list", "Colour", swatch_list, color::SwatchList => color::SwatchListOut, ro = true, destructive = false, image = None,
+        "List the document's swatches (rgb, cmyk or spot) with their screen colour, where each is used, and the applied colour scheme. Use a swatch anywhere a colour is accepted as {\"swatch\": id, \"tint\": 0-100}."),
+    tool!("swatch_create", "Colour", swatch_create, color::SwatchCreate => color::SwatchCreateOut, ro = false, destructive = false, image = None,
+        "Create a named swatch: value {\"rgb\": \"#1E3A8A\"}, {\"cmyk\": {c,m,y,k}} (0-100) or {\"spot\": {name, cmyk}}. A spot colour must have a CMYK alternative. Returns swatch_id."),
+    tool!("swatch_update", "Colour", swatch_update, color::SwatchUpdate => Changed, ro = false, destructive = false, image = None,
+        "Rename a swatch or change its value; every frame fill, outline and text colour using it recolours at once."),
+    tool!("swatch_delete", "Colour", swatch_delete, color::SwatchDelete => Changed, ro = false, destructive = true, image = None,
+        "Delete a swatch. One that is in use is refused (the error lists where) unless replace_with gives a colour or swatch to use instead. Scheme slot swatches cannot be deleted. Requires confirm: true."),
+    tool!("scheme_list", "Colour", scheme_list, color::SchemeList => color::SchemeListOut, ro = true, destructive = false, image = None,
+        "List the twelve built-in colour schemes (main, accent 1-4, hyperlink, followed hyperlink) and which one the document uses."),
+    tool!("scheme_apply", "Colour", scheme_apply, color::SchemeApply => Changed, ro = false, destructive = false, image = None,
+        "Apply a built-in colour scheme: sets the seven \"Scheme: ...\" slot swatches, so everything that uses them (the built-in templates do) recolours. One undo step."),
     // ---------------------------------------------------------------- images
     tool!("image_place", "Images", image_place, images::ImagePlace => images::ImagePlaceOut, ro = false, destructive = false, image = None,
         "Put an image (file path or base64; PNG, JPEG or SVG) into a picture frame or image placeholder. Returns asset_id and effective print dpi (aim for 150+)."),

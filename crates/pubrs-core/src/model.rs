@@ -9,15 +9,15 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::color::Color;
 use crate::geom::{Margins, PT_PER_INCH, PT_PER_MM, Point, Rect, Size};
 use crate::id::{
     AssetId, DocumentId, FrameId, GuideId, IdSource, MasterId, PageId, StoryId, StyleId,
 };
 use crate::style::{CharProps, ParaProps, StyleSheet};
+use crate::swatch::{Paint, SchemeId, Swatch};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;
@@ -53,6 +53,16 @@ pub struct Document {
     #[serde(skip)]
     #[cfg_attr(feature = "schema", schemars(skip))]
     pub blobs: BTreeMap<AssetId, Blob>,
+    /// Named colours. Empty in documents that never used one.
+    #[serde(default, skip_serializing_if = "swatches_empty")]
+    pub swatches: Arc<Vec<Swatch>>,
+    /// The colour scheme last applied, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<SchemeId>,
+}
+
+fn swatches_empty(s: &Arc<Vec<Swatch>>) -> bool {
+    s.is_empty()
 }
 
 /// Descriptive metadata.
@@ -618,12 +628,12 @@ pub struct GroupFrame {
 }
 
 /// Fill, stroke and opacity of a frame.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct FrameStyle {
-    /// Background fill; none = transparent.
+    /// Background fill (colour, swatch or gradient); none = transparent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fill: Option<Color>,
+    pub fill: Option<Paint>,
     /// Outline; none = no outline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stroke: Option<Stroke>,
@@ -647,10 +657,11 @@ impl Default for FrameStyle {
 }
 
 /// An outline.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Stroke {
-    pub color: Color,
+    /// A colour or a swatch (gradients are not allowed on strokes).
+    pub color: Paint,
     /// Line width in points.
     pub width: f64,
     #[serde(default)]
@@ -852,6 +863,8 @@ impl Document {
             styles: StyleSheet::with_defaults(ids),
             assets: BTreeMap::new(),
             blobs: BTreeMap::new(),
+            swatches: Arc::default(),
+            scheme: None,
         }
     }
 

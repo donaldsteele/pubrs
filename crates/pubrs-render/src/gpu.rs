@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use pubrs_core::{AssetId, Color};
+use pubrs_core::{AssetId, Color, ResolvedPaint};
 use resvg::tiny_skia as ts;
 use vello::kurbo::{self, Shape as _};
 use vello::peniko::{self, Blob, Fill, FontData, ImageAlphaType, ImageBrush, ImageData};
@@ -13,7 +13,7 @@ use crate::images::{ImageContent, ImageResolver};
 use crate::raster::{
     MAX_PIXELS_PER_SIDE, RasterOptions, RenderError, dash_pattern, device_transform, pixel_size,
 };
-use crate::scene::{Affine, Geom, PageScene, Prim};
+use crate::scene::{Affine, Geom, GradientAxis, PageScene, Prim, gradient_axis};
 
 /// GPU set-up failures (the caller falls back to tiny-skia).
 #[derive(Debug, Clone, thiserror::Error)]
@@ -295,9 +295,33 @@ impl GpuRenderer {
         h: u32,
     ) {
         match prim {
-            Prim::Fill { geom, color: c } => {
-                scene.fill(Fill::NonZero, k(t), color(*c), None, &shape(*geom));
-            }
+            Prim::Fill { geom, paint } => match paint {
+                ResolvedPaint::Gradient(g) => {
+                    let (w, h) = geom.size();
+                    let stops: Vec<(f32, peniko::Color)> = g
+                        .stops
+                        .iter()
+                        .map(|(o, c)| (*o as f32, color(c.rgba)))
+                        .collect();
+                    let grad = match gradient_axis(g.kind, g.angle, w, h) {
+                        GradientAxis::Linear { x0, y0, x1, y1 } => {
+                            peniko::Gradient::new_linear((x0, y0), (x1, y1))
+                        }
+                        GradientAxis::Radial { cx, cy, r } => {
+                            peniko::Gradient::new_radial((cx, cy), r as f32)
+                        }
+                    }
+                    .with_stops(stops.as_slice());
+                    scene.fill(Fill::NonZero, k(t), &grad, None, &shape(*geom));
+                }
+                solid => scene.fill(
+                    Fill::NonZero,
+                    k(t),
+                    color(solid.solid_rgba()),
+                    None,
+                    &shape(*geom),
+                ),
+            },
             Prim::Stroke {
                 geom,
                 color: c,
@@ -308,11 +332,11 @@ impl GpuRenderer {
                 if let Some(d) = dash_pattern(*dash, *width) {
                     stroke = stroke.with_dashes(0.0, d);
                 }
-                scene.stroke(&stroke, k(t), color(*c), None, &shape(*geom));
+                scene.stroke(&stroke, k(t), color(c.rgba), None, &shape(*geom));
             }
             Prim::Rect { rect, color: c } => {
                 let r = kurbo::Rect::new(rect.x, rect.y, rect.right(), rect.bottom());
-                scene.fill(Fill::NonZero, k(t), color(*c), None, &r);
+                scene.fill(Fill::NonZero, k(t), color(c.rgba), None, &r);
             }
             Prim::Image {
                 asset,
@@ -353,7 +377,7 @@ impl GpuRenderer {
                 }
                 scene.pop_layer();
             }
-            Prim::Glyphs(run) => {
+            Prim::Glyphs(run, ink) => {
                 let font = FontData::new(run.font.data.clone(), run.font.index);
                 let skew = run
                     .synthetic_skew
@@ -364,7 +388,7 @@ impl GpuRenderer {
                     .transform(k(t))
                     .glyph_transform(skew)
                     .hint(false)
-                    .brush(color(run.color));
+                    .brush(color(ink.rgba));
                 if run.synthetic_bold {
                     let amount = run.font_size * 0.02;
                     draw = draw.font_embolden(vello::FontEmbolden::new(kurbo::Diagonal2::new(

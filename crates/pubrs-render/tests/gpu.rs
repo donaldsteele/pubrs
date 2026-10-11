@@ -44,7 +44,7 @@ fn gpu_matches_software_within_tolerance() {
     b.style(
         r,
         FrameStyle {
-            fill: Some(Color::rgb(30, 120, 220)),
+            fill: Some(Color::rgb(30, 120, 220).into()),
             stroke: None,
             opacity: 1.0,
         },
@@ -56,7 +56,7 @@ fn gpu_matches_software_within_tolerance() {
     b.style(
         e,
         FrameStyle {
-            fill: Some(Color::rgb(220, 40, 40)),
+            fill: Some(Color::rgb(220, 40, 40).into()),
             stroke: None,
             opacity: 0.5,
         },

@@ -50,3 +50,8 @@ Deferred and partial work. Each entry says what is missing and why.
 - Masters, pictures, shapes, tables and colour schemes in `.pub` files are dropped and reported until M32.
 - Linked-chain flow order in 98/2000 `.pub` files is page order; prev/next ids are read only for 2002+.
 - The `.pub` oracle (libmspub) counts a chained story once per frame; recall is measured that way (ADR 0017).
+- Colour (M21): the PDF writes every swatch as its RGB equivalent; DeviceCMYK, Separation and PDF/X come with M22 (the exact values are kept in `ResolvedInk::spec`).
+- Colour (M21): `validate` does not warn about a reference to a missing swatch (it draws magenta); the design checker (M29) should.
+- Colour (M21): the gradient editor in the GUI edits the angle and the first and last stop colours only (custom colours, no swatches or extra stops in the dialog); the API takes up to 16 stops with swatches.
+- Colour (M21): the GPU gradient path (vello) is compile-checked only; CI has no GPU adapter.
+- Colour (M21): the swatch tools take a swatch id or name, but `{swatch: ...}` paints in other tools need the id.

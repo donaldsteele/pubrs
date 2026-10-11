@@ -1,6 +1,6 @@
 # The `.pubrs` file format
 
-Status: version 3 (M14). The model is defined by the Rust types in
+Status: version 4 (M21). The model is defined by the Rust types in
 `crates/pubrs-core/src/model.rs`; a JSON Schema generated from them is
 published with the MCP docs.
 
@@ -23,7 +23,7 @@ Top-level object:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | integer | Currently `3`. Older versions are migrated on load. Newer versions are rejected. |
+| `schema_version` | integer | Currently `4`. Older versions are migrated on load. Newer versions are rejected. |
 | `id` | uuid | Document id. |
 | `meta` | object | `title`, `author`, optional `template`. |
 | `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points); optional `sheet` (see below) and `booklet` (bool, omitted when false). |
@@ -34,10 +34,13 @@ Top-level object:
 | `stories` | object | Story id → story. |
 | `styles` | object | `default_paragraph` (style id) and `styles` (array). |
 | `assets` | object | Asset id → `{id, name, format, pixel_width, pixel_height}`. |
+| `swatches` | array | Optional (omitted when empty). Named colours: `{id, name, value}` (version 4). |
+| `scheme` | string | Optional. Id of the colour scheme last applied (version 4). |
 
 Units are points (1/72 inch). Coordinates have their origin at the top-left
 of the page trim box, x to the right, y down. Colours are `#RRGGBB` or
-`#RRGGBBAA` strings. Ids are UUID strings.
+`#RRGGBBAA` strings, or a paint (see Paint below) wherever a fill, outline or
+text colour is stored. Ids are UUID strings.
 
 ### Frame
 
@@ -107,6 +110,32 @@ version.
 | 1 | The first released shape. |
 | 2 | `setup.sheet` and `setup.booklet` (labels, cards, booklets). Both are optional, so a version 1 file is a valid version 2 file; migration only stamps the version. |
 | 3 | Paragraph fields `hyphenate`, `language` and `justify_limits` (on paragraphs and paragraph styles). All are optional, so version 1 and 2 files are valid version 3 files; migration only stamps the version. |
+| 4 | `swatches` and `scheme` on the document, and paints (swatch references and gradients) wherever a colour is stored. All optional, and a hex string is still a valid paint, so older files are valid version 4 files and are only stamped. |
+
+### Swatches, schemes and paints (version 4)
+
+`swatches` entries are `{"id", "name", "value"}` where `value` is one of:
+
+- `{"rgb": "#RRGGBB"}`
+- `{"cmyk": {"c": 0-100, "m": 0-100, "y": 0-100, "k": 0-100}}`
+- `{"spot": {"name": "PANTONE 186 C", "cmyk": {...}}}` (the CMYK alternative is required)
+
+A **paint** is what `style.fill`, `style.stroke.color` and a run's `color`
+store. It is one of:
+
+- a hex string, `"#1E3A5F"` (the only form before version 4, still valid);
+- `{"swatch": id, "tint": 0-100}` (`tint` defaults to 100 and is omitted at 100);
+- a gradient, **frame fills only**: `{"gradient": "linear"|"radial", "stops": [{"offset": 0-1, "color": hex-or-swatch}], "angle": degrees}`.
+  `angle` is clockwise from left-to-right (linear only). Stops are in increasing offset order, 2 to 16 of them.
+
+Swatch values are resolved when drawing, so editing a swatch recolours
+everything that refers to it without relaying out text. Screen colour for CMYK
+is the plain formula `r = 255 (1 - c)(1 - k)` (likewise g, b); a spot colour
+shows its CMYK alternative; a tint mixes towards white, `rgb' = 255 - t (255 - rgb)`.
+
+`scheme` names one of twelve built-in colour schemes. Applying a scheme sets
+seven swatches with fixed ids, named `Scheme: Main`, `Scheme: Accent 1` to `4`,
+`Scheme: Hyperlink` and `Scheme: Followed Hyperlink`; everything that refers to them recolours.
 
 ### `setup.sheet` and `setup.booklet` (version 2)
 

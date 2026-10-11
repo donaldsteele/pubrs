@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     b.style(
         band,
         FrameStyle {
-            fill: Some(Color::rgb(30, 58, 138)),
+            fill: Some(Color::rgb(30, 58, 138).into()),
             stroke: None,
             opacity: 1.0,
         },
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         props: CharProps {
             font_size: Some(40.0),
             bold: Some(true),
-            color: Some(Color::WHITE),
+            color: Some(Color::WHITE.into()),
             ..Default::default()
         },
     })?;

@@ -68,6 +68,8 @@ pub enum Action {
     Replace,
     ToggleSnap,
     Validate,
+    ColorScheme,
+    ShowSwatches,
     NextPage,
     PreviousPage,
     About,
@@ -242,6 +244,13 @@ pub const MENUS: &[MenuSpec] = &[
             A("Break Link", Action::UnlinkTextFrames),
             Sep,
             A("Paragraph…", Action::Paragraph),
+        ],
+    },
+    MenuSpec {
+        title: "Design",
+        items: &[
+            A("Colour Scheme…", Action::ColorScheme),
+            A("Swatches", Action::ShowSwatches),
         ],
     },
     MenuSpec {

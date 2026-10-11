@@ -580,6 +580,8 @@ pub fn page_document(
         styles: doc.styles.clone(),
         assets,
         blobs: BTreeMap::new(),
+        swatches: doc.swatches.clone(),
+        scheme: doc.scheme.clone(),
     };
     let Some(page) = doc.pages.get(index).cloned() else {
         return shell(
@@ -760,7 +762,7 @@ mod tests {
         b.style(
             box_,
             FrameStyle {
-                fill: Some(Color::rgb(200, 30, 30)),
+                fill: Some(Color::rgb(200, 30, 30).into()),
                 opacity: 0.7,
                 ..Default::default()
             },

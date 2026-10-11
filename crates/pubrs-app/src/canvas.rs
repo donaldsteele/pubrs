@@ -1299,11 +1299,11 @@ pub fn create_frame(app: &mut PubrsApp, tool: Tool, mut r: Rect, owner: Owner) {
                     corner_radius: None,
                     line_direction: line_dir,
                     fill: (tool != Tool::Line).then_some(pubrs_api::tools::OptColor(Some(
-                        Color::rgb(0xDB, 0xEA, 0xFE),
+                        Color::rgb(0xDB, 0xEA, 0xFE).into(),
                     ))),
-                    stroke: Some(pubrs_api::tools::OptColor(Some(Color::rgb(
-                        0x1E, 0x3A, 0x5F,
-                    )))),
+                    stroke: Some(pubrs_api::tools::OptColor(Some(
+                        Color::rgb(0x1E, 0x3A, 0x5F).into(),
+                    ))),
                     stroke_width: Some(if tool == Tool::Line { 2.0 } else { 1.0 }),
                     dash: None,
                     name: None,

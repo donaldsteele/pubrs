@@ -35,8 +35,12 @@ fn render(doc: &Document, page: usize, opts: &RasterOptions) -> Vec<u8> {
 
 fn style(fill: Option<Color>, stroke: Option<(Color, f64, Dash)>, opacity: f64) -> FrameStyle {
     FrameStyle {
-        fill,
-        stroke: stroke.map(|(color, width, dash)| Stroke { color, width, dash }),
+        fill: fill.map(Into::into),
+        stroke: stroke.map(|(color, width, dash)| Stroke {
+            color: color.into(),
+            width,
+            dash,
+        }),
         opacity,
     }
 }
@@ -153,7 +157,7 @@ fn text() {
         start: 0,
         end: 6,
         props: CharProps {
-            color: Some(Color::rgb(180, 83, 9)),
+            color: Some(Color::rgb(180, 83, 9).into()),
             ..Default::default()
         },
     })
@@ -327,7 +331,7 @@ fn master_page_and_bleed() {
             shape: Shape::Rectangle { corner_radius: 0.0 },
         }),
     );
-    f.style.fill = Some(Color::rgb(30, 58, 138));
+    f.style.fill = Some(Color::rgb(30, 58, 138).into());
     b.frame(Parent::Master(master), f, None).unwrap();
     b.exec(Command::SetPageMaster {
         page: p,
@@ -347,7 +351,7 @@ fn master_page_and_bleed() {
         start: 0,
         end: 34,
         props: CharProps {
-            color: Some(Color::WHITE),
+            color: Some(Color::WHITE.into()),
             font_size: Some(14.0),
             ..Default::default()
         },
@@ -546,4 +550,10 @@ fn newsletter_justified_hyphenated() {
         "newsletter_justified_hyphenated",
         &render(&newsletter(true), 0, &opts()),
     );
+}
+
+#[test]
+fn colour() {
+    let doc = common::colour_document();
+    assert_png_golden("colour", &render(&doc, 0, &opts()));
 }

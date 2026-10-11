@@ -9,7 +9,7 @@ use crate::error::IoError;
 type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
-const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2, v2_to_v3];
+const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4];
 
 /// The schema version a document JSON declares (absent = 0).
 pub fn version_of(v: &Value) -> u64 {
@@ -64,6 +64,17 @@ fn v2_to_v3(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(3));
+    Ok(v)
+}
+
+/// Version 4 adds `swatches` and `scheme` to the document and lets fills,
+/// strokes and text colours be a swatch reference or (fills) a gradient. All
+/// are optional with defaults and the old hex strings stay valid, so a
+/// version 3 document only needs its version stamped.
+fn v3_to_v4(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(4));
     Ok(v)
 }
 

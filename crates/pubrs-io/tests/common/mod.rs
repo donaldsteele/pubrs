@@ -90,3 +90,169 @@ pub fn assert_png_golden(name: &str, actual_png: &[u8]) {
         fail(format!("{bad} pixels differ ({:.3}%)", frac * 100.0));
     }
 }
+
+use pubrs_core::*;
+
+/// A page that uses every kind of paint: linear and radial gradients, tints
+/// (25, 50 and 100 percent) of one swatch, a CMYK fill, a spot-colour
+/// outline, scheme-slot fills and text coloured by swatches. It is the
+/// colour golden and the contents of the current schema fixture.
+pub fn colour_document() -> Document {
+    let setup = PageSetup {
+        size: Size::new(300.0, 200.0),
+        margins: Margins::uniform(18.0),
+        bleed: 9.0,
+        ..PageSetup::default()
+    };
+    let mut b = DocBuilder::new(SeqIds::new(2101), setup);
+    let p = b.page(0);
+    let cyan = SwatchId::new(&mut b.ids);
+    let spot = SwatchId::new(&mut b.ids);
+    let brand = SwatchId::new(&mut b.ids);
+    b.exec(Command::ApplyScheme {
+        scheme: SchemeId("copper_dawn".into()),
+    })
+    .unwrap();
+    for (id, name, value) in [
+        (
+            cyan,
+            "Process Cyan",
+            SwatchValue::Cmyk(Cmyk::new(100.0, 10.0, 0.0, 5.0)),
+        ),
+        (
+            spot,
+            "Brand Red",
+            SwatchValue::Spot {
+                name: "PANTONE 186 C".into(),
+                cmyk: Cmyk::new(0.0, 100.0, 81.0, 4.0),
+            },
+        ),
+        (
+            brand,
+            "Brand Blue",
+            SwatchValue::Rgb(Color::rgb(30, 58, 138)),
+        ),
+    ] {
+        b.exec(Command::AddSwatch {
+            swatch: Swatch {
+                id,
+                name: name.into(),
+                value,
+            },
+        })
+        .unwrap();
+    }
+    let rect = |b: &mut DocBuilder<SeqIds>, x: f64, y: f64, w: f64, h: f64, shape: Shape| {
+        b.shape(p, Rect::new(x, y, w, h), shape).unwrap()
+    };
+    let rectangle = Shape::Rectangle { corner_radius: 0.0 };
+    let fill = |b: &mut DocBuilder<SeqIds>, f: FrameId, paint: Paint, stroke: Option<Stroke>| {
+        b.style(
+            f,
+            FrameStyle {
+                fill: Some(paint),
+                stroke,
+                opacity: 1.0,
+            },
+        )
+        .unwrap();
+    };
+    let stops = |a: SolidPaint, z: SolidPaint| {
+        vec![
+            GradientStop {
+                offset: 0.0,
+                color: a,
+            },
+            GradientStop {
+                offset: 1.0,
+                color: z,
+            },
+        ]
+    };
+    // Gradients.
+    let g1 = rect(&mut b, 18.0, 18.0, 120.0, 50.0, rectangle);
+    fill(
+        &mut b,
+        g1,
+        Paint::Gradient {
+            gradient: GradientKind::Linear,
+            stops: stops(
+                Color::rgb(30, 58, 138).into(),
+                Color::rgb(251, 191, 36).into(),
+            ),
+            angle: 20.0,
+        },
+        None,
+    );
+    let g2 = rect(&mut b, 162.0, 18.0, 120.0, 50.0, Shape::Ellipse);
+    fill(
+        &mut b,
+        g2,
+        Paint::Gradient {
+            gradient: GradientKind::Radial,
+            stops: stops(SolidPaint::swatch(spot), Color::WHITE.into()),
+            angle: 0.0,
+        },
+        None,
+    );
+    // Tints of one swatch.
+    for (i, tint) in [25.0, 50.0, 100.0].into_iter().enumerate() {
+        let f = rect(&mut b, 18.0 + 40.0 * i as f64, 80.0, 34.0, 34.0, rectangle);
+        fill(
+            &mut b,
+            f,
+            Paint::Swatch {
+                swatch: brand,
+                tint,
+            },
+            None,
+        );
+    }
+    // A CMYK fill with a spot outline, and a scheme-slot fill.
+    let c = rect(&mut b, 150.0, 80.0, 60.0, 34.0, rectangle);
+    fill(
+        &mut b,
+        c,
+        Paint::swatch(cyan),
+        Some(Stroke {
+            color: Paint::swatch(spot),
+            width: 3.0,
+            dash: Dash::Solid,
+        }),
+    );
+    let s = rect(&mut b, 222.0, 80.0, 60.0, 34.0, rectangle);
+    fill(&mut b, s, SchemeSlot::Main.paint(), None);
+    // Text coloured by swatches.
+    let t = b
+        .text(
+            p,
+            Rect::new(18.0, 126.0, 264.0, 56.0),
+            "Swatches recolour text too.\nScheme accent and a 50% tint.",
+        )
+        .unwrap();
+    let story = b.story_of(t);
+    for (start, end, color) in [
+        (0, 8, Paint::swatch(spot)),
+        (28, 41, SchemeSlot::Accent1.paint()),
+        (
+            48,
+            56,
+            Paint::Swatch {
+                swatch: brand,
+                tint: 50.0,
+            },
+        ),
+    ] {
+        b.exec(Command::ApplyCharProps {
+            story,
+            start,
+            end,
+            props: CharProps {
+                color: Some(color),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+    b.finish()
+}

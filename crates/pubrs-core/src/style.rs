@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::color::Color;
 use crate::id::{IdSource, StyleId};
 use crate::model::{Paragraph, Run};
+use crate::swatch::{Ink, Paint};
 
 /// Font family used when nothing else is specified. Bundled with pubrs.
 pub const DEFAULT_FONT_FAMILY: &str = "Liberation Sans";
@@ -33,7 +34,7 @@ pub struct CharProps {
     pub underline: Option<bool>,
     /// Text colour.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color: Option<Color>,
+    pub color: Option<Paint>,
     /// Extra space between letters in points.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub letter_spacing: Option<f64>,
@@ -51,7 +52,7 @@ impl CharProps {
             bold: other.bold.or(self.bold),
             italic: other.italic.or(self.italic),
             underline: other.underline.or(self.underline),
-            color: other.color.or(self.color),
+            color: other.color.clone().or_else(|| self.color.clone()),
             letter_spacing: other.letter_spacing.or(self.letter_spacing),
         }
     }
@@ -211,7 +212,7 @@ pub struct CharAttrs {
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
-    pub color: Color,
+    pub color: Ink,
     pub letter_spacing: f64,
 }
 
@@ -223,7 +224,7 @@ impl Default for CharAttrs {
             bold: false,
             italic: false,
             underline: false,
-            color: Color::BLACK,
+            color: Ink::Rgba(Color::BLACK),
             letter_spacing: 0.0,
         }
     }
@@ -246,7 +247,7 @@ impl CharAttrs {
         if let Some(v) = p.underline {
             self.underline = v;
         }
-        if let Some(v) = p.color {
+        if let Some(v) = p.color.as_ref().and_then(Paint::ink) {
             self.color = v;
         }
         if let Some(v) = p.letter_spacing {
@@ -393,7 +394,7 @@ impl StyleSheet {
                     bold: Some(false),
                     italic: Some(false),
                     underline: Some(false),
-                    color: Some(Color::BLACK),
+                    color: Some(Paint::Color(Color::BLACK)),
                     letter_spacing: Some(0.0),
                 },
             ),

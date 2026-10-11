@@ -3,14 +3,14 @@
 
 use std::collections::HashMap;
 
-use pubrs_core::{Color, Dash};
+use pubrs_core::{Color, Dash, ResolvedPaint};
 use resvg::tiny_skia as ts;
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::OutlinePen;
 use skrifa::{FontRef, GlyphId, MetadataProvider};
 
 use crate::images::{ImageContent, ImageResolver};
-use crate::scene::{Affine, Geom, Node, PageScene, Prim};
+use crate::scene::{Affine, Geom, GradientAxis, Node, PageScene, Prim, gradient_axis};
 
 /// Largest raster dimension accepted, in pixels.
 pub const MAX_PIXELS_PER_SIDE: u32 = 16_384;
@@ -67,6 +67,54 @@ pub fn device_transform(scene: &PageScene, opts: &RasterOptions) -> Affine {
 pub(crate) fn to_ts(a: Affine) -> ts::Transform {
     let [sx, ky, kx, sy, tx, ty] = a.0.map(|v| v as f32);
     ts::Transform::from_row(sx, ky, kx, sy, tx, ty)
+}
+
+/// A fill paint in frame-local space (the fill transform maps it to device
+/// space). A gradient that cannot be built draws as its first stop.
+fn fill_paint_of(p: &ResolvedPaint, geom: &Geom) -> ts::Paint<'static> {
+    let ResolvedPaint::Gradient(g) = p else {
+        return paint_of(p.solid_rgba());
+    };
+    let stops: Vec<ts::GradientStop> = g
+        .stops
+        .iter()
+        .map(|(o, c)| {
+            ts::GradientStop::new(
+                *o as f32,
+                ts::Color::from_rgba8(c.rgba.r, c.rgba.g, c.rgba.b, c.rgba.a),
+            )
+        })
+        .collect();
+    let (w, h) = geom.size();
+    let shader = match gradient_axis(g.kind, g.angle, w, h) {
+        GradientAxis::Linear { x0, y0, x1, y1 } => ts::LinearGradient::new(
+            ts::Point::from_xy(x0 as f32, y0 as f32),
+            ts::Point::from_xy(x1 as f32, y1 as f32),
+            stops,
+            ts::SpreadMode::Pad,
+            ts::Transform::identity(),
+        ),
+        GradientAxis::Radial { cx, cy, r } => {
+            let c = ts::Point::from_xy(cx as f32, cy as f32);
+            ts::RadialGradient::new(
+                c,
+                0.0,
+                c,
+                r as f32,
+                stops,
+                ts::SpreadMode::Pad,
+                ts::Transform::identity(),
+            )
+        }
+    };
+    match shader {
+        Some(shader) => ts::Paint {
+            shader,
+            anti_alias: true,
+            ..Default::default()
+        },
+        None => paint_of(p.solid_rgba()),
+    }
 }
 
 fn paint_of(c: Color) -> ts::Paint<'static> {
@@ -188,7 +236,7 @@ impl GlyphCache {
     pub fn prepare(&mut self, scene: &PageScene) {
         for node in &scene.nodes {
             for prim in &node.prims {
-                if let Prim::Glyphs(run) = prim {
+                if let Prim::Glyphs(run, _) = prim {
                     let (key, bytes) = (run.font.key(), run.font.bytes());
                     self.upem(key, bytes);
                     for g in &run.glyphs {
@@ -520,7 +568,8 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
     pub fn draw_prim(&self, pm: &mut ts::Pixmap, prim: &Prim, t: Affine, window: Option<Window>) {
         let tt = to_ts(t);
         match prim {
-            Prim::Fill { geom, color } => {
+            Prim::Fill { geom, paint } => {
+                let solid = matches!(paint, ResolvedPaint::Solid(_));
                 if let (
                     Some(w),
                     Geom::Rect {
@@ -529,13 +578,14 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                         radius,
                     },
                 ) = (window, geom)
+                    && solid
                     && *radius <= 0.0
                     && let Some(r) = ts::Rect::from_xywh(0.0, 0.0, *gw as f32, *gh as f32)
                     && let Some(cut) = cut_rect(r, tt, w)
                 {
                     pm.fill_path(
                         &cut,
-                        &paint_of(*color),
+                        &paint_of(paint.solid_rgba()),
                         ts::FillRule::Winding,
                         ts::Transform::identity(),
                         None,
@@ -543,7 +593,13 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                     return;
                 }
                 if let Some(path) = geom_path(*geom) {
-                    pm.fill_path(&path, &paint_of(*color), ts::FillRule::Winding, tt, None);
+                    pm.fill_path(
+                        &path,
+                        &fill_paint_of(paint, geom),
+                        ts::FillRule::Winding,
+                        tt,
+                        None,
+                    );
                 }
             }
             Prim::Stroke {
@@ -560,7 +616,7 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                         }),
                         ..Default::default()
                     };
-                    pm.stroke_path(&path, &paint_of(*color), &stroke, tt, None);
+                    pm.stroke_path(&path, &paint_of(color.rgba), &stroke, tt, None);
                 }
             }
             Prim::Rect { rect, color } => {
@@ -577,14 +633,14 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                     {
                         pm.fill_path(
                             &cut,
-                            &paint_of(*color),
+                            &paint_of(color.rgba),
                             ts::FillRule::Winding,
                             ts::Transform::identity(),
                             None,
                         );
                         return;
                     }
-                    pm.fill_rect(r, &paint_of(*color), tt, None);
+                    pm.fill_rect(r, &paint_of(color.rgba), tt, None);
                 }
             }
             Prim::Image {
@@ -646,7 +702,7 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                     }
                 }
             }
-            Prim::Glyphs(run) => {
+            Prim::Glyphs(run, ink) => {
                 let key = run.font.key();
                 let upem = self.glyphs.cached_upem(key);
                 let k = run.font_size / f64::from(upem);
@@ -654,7 +710,7 @@ impl<R: ImageResolver + ?Sized> Painter<'_, R> {
                 if let Some(skew) = run.synthetic_skew {
                     glyph_space = glyph_space.then(Affine::skew_x(skew));
                 }
-                let paint = paint_of(run.color);
+                let paint = paint_of(ink.rgba);
                 let bold = run.synthetic_bold.then(|| ts::Stroke {
                     width: upem * 0.03,
                     line_join: ts::LineJoin::Round,

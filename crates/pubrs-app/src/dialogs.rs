@@ -22,6 +22,112 @@ pub enum Dialog {
     Paragraph(ParagraphState),
     SaveTemplate(String),
     Message(String, String),
+    /// Design → Colour Scheme…
+    ColorScheme,
+    /// Add or edit a swatch.
+    Swatch(SwatchEditor),
+}
+
+/// What kind of swatch the editor makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SwatchKind {
+    Rgb,
+    Cmyk,
+    Spot,
+}
+
+impl SwatchKind {
+    fn label(self) -> &'static str {
+        match self {
+            SwatchKind::Rgb => "RGB",
+            SwatchKind::Cmyk => "CMYK",
+            SwatchKind::Spot => "Spot (CMYK alternative)",
+        }
+    }
+}
+
+/// State of the swatch editor dialog.
+pub struct SwatchEditor {
+    /// `None` while adding.
+    pub id: Option<pubrs_api::core::SwatchId>,
+    pub name: String,
+    pub kind: SwatchKind,
+    pub rgb: Color32,
+    /// Cyan, magenta, yellow, black: 0 to 100.
+    pub cmyk: [f64; 4],
+    /// The spot ink's name.
+    pub ink: String,
+    pub error: String,
+    focused: bool,
+}
+
+impl SwatchEditor {
+    /// A new swatch of `kind` with a free default name.
+    pub fn add(doc: &Document, kind: SwatchKind) -> Self {
+        let base = match kind {
+            SwatchKind::Rgb => "Colour",
+            SwatchKind::Cmyk => "CMYK",
+            SwatchKind::Spot => "Spot",
+        };
+        let taken = |n: &str| doc.swatches.iter().any(|s| s.name.eq_ignore_ascii_case(n));
+        let name = (1..)
+            .map(|i| format!("{base} {i}"))
+            .find(|n| !taken(n))
+            .unwrap_or_default();
+        let mut e = Self::blank(kind, name);
+        e.ink = format!("{base} ink");
+        e
+    }
+
+    fn blank(kind: SwatchKind, name: String) -> Self {
+        Self {
+            id: None,
+            name,
+            kind,
+            rgb: Color32::from_rgb(0x1E, 0x3A, 0x8A),
+            cmyk: [0.0, 100.0, 100.0, 0.0],
+            ink: String::new(),
+            error: String::new(),
+            focused: false,
+        }
+    }
+
+    pub fn edit(s: &Swatch) -> Self {
+        let mut e = Self::blank(SwatchKind::Rgb, s.name.clone());
+        e.id = Some(s.id);
+        e.name = s.name.clone();
+        match &s.value {
+            SwatchValue::Rgb(c) => {
+                e.kind = SwatchKind::Rgb;
+                e.rgb = Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a);
+            }
+            SwatchValue::Cmyk(c) => {
+                e.kind = SwatchKind::Cmyk;
+                e.cmyk = [c.c, c.m, c.y, c.k];
+            }
+            SwatchValue::Spot { name, cmyk } => {
+                e.kind = SwatchKind::Spot;
+                e.ink.clone_from(name);
+                e.cmyk = [cmyk.c, cmyk.m, cmyk.y, cmyk.k];
+            }
+        }
+        e
+    }
+
+    fn value(&self) -> SwatchValue {
+        let cmyk = Cmyk::new(self.cmyk[0], self.cmyk[1], self.cmyk[2], self.cmyk[3]);
+        match self.kind {
+            SwatchKind::Rgb => {
+                let [r, g, b, a] = self.rgb.to_srgba_unmultiplied();
+                SwatchValue::Rgb(Color::rgba(r, g, b, a))
+            }
+            SwatchKind::Cmyk => SwatchValue::Cmyk(cmyk),
+            SwatchKind::Spot => SwatchValue::Spot {
+                name: self.ink.clone(),
+                cmyk,
+            },
+        }
+    }
 }
 
 /// What the user chose in a dialog this frame.
@@ -404,6 +510,8 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             });
             out
         }
+        Dialog::ColorScheme => scheme_dialog(app, ui),
+        Dialog::Swatch(ed) => swatch_dialog(app, ui, ed),
         Dialog::Message(title, body) => {
             ui.heading(title.as_str());
             ui.label(body.as_str());
@@ -417,11 +525,171 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
 }
 
 // ---------------------------------------------------------------------------
+// Colour scheme and swatches
+
+fn scheme_dialog(app: &mut PubrsApp, ui: &mut egui::Ui) -> Outcome {
+    ui.heading("Colour scheme");
+    ui.label(
+        "Applying a scheme recolours everything that uses the “Scheme:” swatches, \
+         such as the colours in the built-in templates. Undo restores the old colours.",
+    );
+    ui.add_space(6.0);
+    let current = app.doc().and_then(|d| d.scheme.clone());
+    let mut apply = None;
+    egui::ScrollArea::vertical()
+        .max_height(420.0)
+        .show(ui, |ui| {
+            for s in pubrs_api::core::swatch::SCHEMES.iter() {
+                let is_current = current.as_ref().is_some_and(|c| c.0 == s.id);
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [150.0, 20.0],
+                        egui::Label::new(if is_current {
+                            RichText::new(format!("{} (in use)", s.name)).strong()
+                        } else {
+                            RichText::new(s.name)
+                        }),
+                    );
+                    for slot in SchemeSlot::ALL {
+                        crate::panels::chip(ui, s.color(slot));
+                    }
+                    let b = ui
+                        .add_enabled(!is_current, egui::Button::new("Apply"))
+                        .on_disabled_hover_text("This scheme is already applied")
+                        .on_hover_text(format!("Apply the {} colour scheme", s.name));
+                    mark(ui, &format!("scheme-apply-{}", s.id), &b);
+                    if b.clicked() {
+                        apply = Some(s.id);
+                    }
+                });
+            }
+        });
+    if let Some(id) = apply {
+        app.exec(Command::ApplyScheme {
+            scheme: SchemeId(id.to_string()),
+        });
+    }
+    ui.add_space(6.0);
+    let close = ui.button("Close");
+    mark(ui, "scheme-close", &close);
+    if close.clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        Outcome::Close
+    } else {
+        Outcome::Keep
+    }
+}
+
+fn swatch_dialog(app: &mut PubrsApp, ui: &mut egui::Ui, ed: &mut SwatchEditor) -> Outcome {
+    ui.heading(if ed.id.is_some() {
+        "Edit swatch"
+    } else {
+        "New swatch"
+    });
+    let mut save = false;
+    egui::Grid::new("swatch-edit")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("Name");
+            let name = ui.text_edit_singleline(&mut ed.name);
+            if !ed.focused {
+                name.request_focus();
+                ed.focused = true;
+            }
+            if name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                save = true;
+            }
+            ui.end_row();
+            ui.label("Kind");
+            egui::ComboBox::from_id_salt("swatch-kind")
+                .selected_text(ed.kind.label())
+                .show_ui(ui, |ui| {
+                    for k in [SwatchKind::Rgb, SwatchKind::Cmyk, SwatchKind::Spot] {
+                        ui.selectable_value(&mut ed.kind, k, k.label());
+                    }
+                });
+            ui.end_row();
+            if ed.kind == SwatchKind::Rgb {
+                ui.label("Colour");
+                ui.color_edit_button_srgba(&mut ed.rgb);
+                ui.end_row();
+            } else {
+                if ed.kind == SwatchKind::Spot {
+                    ui.label("Ink name");
+                    ui.text_edit_singleline(&mut ed.ink);
+                    ui.end_row();
+                }
+                for (i, label) in ["Cyan", "Magenta", "Yellow", "Black"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    ui.label(label);
+                    ui.add(
+                        egui::DragValue::new(&mut ed.cmyk[i])
+                            .range(0.0..=100.0)
+                            .speed(0.5)
+                            .suffix("%"),
+                    );
+                    ui.end_row();
+                }
+            }
+        });
+    if ed.kind != SwatchKind::Rgb {
+        let v = Cmyk::new(ed.cmyk[0], ed.cmyk[1], ed.cmyk[2], ed.cmyk[3]);
+        ui.horizontal(|ui| {
+            ui.label("On screen");
+            crate::panels::chip(ui, v.to_rgb());
+        });
+        ui.small("CMYK is shown on screen by a simple formula, not colour-managed.");
+    }
+    if !ed.error.is_empty() {
+        ui.colored_label(Color32::from_rgb(0xB9, 0x1C, 0x1C), &ed.error);
+    }
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("Save");
+        mark(ui, "swatch-save", &ok);
+        save |= ok.clicked();
+        if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            out = Outcome::Close;
+        }
+    });
+    if save {
+        let id = ed
+            .id
+            .unwrap_or_else(|| pubrs_api::core::SwatchId::new(app.session.ids()));
+        let swatch = Swatch {
+            id,
+            name: ed.name.clone(),
+            value: ed.value(),
+        };
+        let cmd = if ed.id.is_some() {
+            Command::UpdateSwatch { swatch }
+        } else {
+            Command::AddSwatch { swatch }
+        };
+        app.status = None;
+        if app.exec(cmd) {
+            out = Outcome::Close;
+        } else {
+            ed.error = app
+                .status
+                .take()
+                .map(|(m, _)| m)
+                .unwrap_or_else(|| "could not save the swatch".into());
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Page Setup
 
 use std::collections::HashMap;
 
-use pubrs_api::core::{Command, Document, PageSetup, SheetFill, Size};
+use pubrs_api::core::{
+    Cmyk, Color, Command, Document, PageSetup, SchemeId, SchemeSlot, SheetFill, Size, Swatch,
+    SwatchValue,
+};
 use pubrs_api::io::presets::{SheetPreset, sheet_preset, sheet_presets};
 use pubrs_api::render::impose::{booklet_plan, sheet_plan};
 

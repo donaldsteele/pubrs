@@ -106,7 +106,7 @@ fn rich_document() -> Document {
         kind: PlaceholderKind::Text,
         hint: "Headline".into(),
     });
-    frame.style.fill = Some(Color::rgba(255, 250, 240, 200));
+    frame.style.fill = Some(Color::rgba(255, 250, 240, 200).into());
     run(
         &mut ed,
         Command::AddFrame {
@@ -149,7 +149,7 @@ fn rich_document() -> Document {
             start: 0,
             end: 5,
             props: CharProps {
-                color: Some(Color::rgb(180, 60, 20)),
+                color: Some(Color::rgb(180, 60, 20).into()),
                 italic: Some(true),
                 ..Default::default()
             },
@@ -198,7 +198,7 @@ fn rich_document() -> Document {
             FrameContent::Shape(ShapeFrame { shape }),
         );
         f.style.stroke = Some(Stroke {
-            color: Color::rgb(0, 0, 0),
+            color: Color::rgb(0, 0, 0).into(),
             width: 2.0,
             dash: Dash::Dashed,
         });
@@ -351,8 +351,7 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures")
 }
 
-/// The document `tests/fixtures/schema_v2.pubrs` is written from (bless with
-/// `PUBRS_BLESS=1`): a label page set up for Avery 5160, one record per label.
+/// The document `tests/fixtures/schema_v2.pubrs` was written from: a label page set up for Avery 5160, one record per label.
 fn sheet_document() -> Document {
     let mut b = DocBuilder::new(SeqIds::new(2302), PageSetup::default());
     let preset = pubrs_io::sheet_preset("avery-5160").unwrap();
@@ -402,13 +401,17 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
 
 #[test]
 fn every_schema_fixture_opens_and_round_trips() {
-    let bless = std::env::var_os("PUBRS_BLESS").is_some();
-    // Each fixture is written once by the milestone that introduced its
-    // version and never rewritten except when blessing.
-    let fixtures: [(u32, Document); 2] = [(2, sheet_document()), (3, hyphenation_document())];
+    // A fixture is created only when it is missing and only for the current
+    // schema version; an existing fixture is never rewritten, even when
+    // blessing, so files written by earlier versions stay frozen.
+    let fixtures: [(u32, Document); 3] = [
+        (2, sheet_document()),
+        (3, hyphenation_document()),
+        (4, common::colour_document()),
+    ];
     for (v, doc) in &fixtures {
         let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
-        if bless || !path.exists() {
+        if !path.exists() && *v == SCHEMA_VERSION {
             pubrs_io::save(doc, &path, None).unwrap();
         }
     }
@@ -419,25 +422,74 @@ fn every_schema_fixture_opens_and_round_trips() {
         if !(name.starts_with("schema_v") && name.ends_with(".pubrs")) {
             continue;
         }
+        // The version on disk is the one in the file name: no silent upgrade.
+        let named: u64 = name["schema_v".len()..name.len() - ".pubrs".len()]
+            .parse()
+            .unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("document.json").unwrap(), &mut text)
+            .unwrap();
+        let raw: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(pubrs_io::migrate::version_of(&raw), named, "{name} on disk");
         let doc = pubrs_io::load(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(doc.schema_version, SCHEMA_VERSION, "{name}");
         let again = read_bytes(&write_bytes(&doc, None).unwrap()).unwrap();
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 3, "expected the schema_v1, v2 and v3 fixtures");
+    assert!(n >= 4, "expected the schema_v1 to v4 fixtures");
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v2.pubrs")).unwrap();
     let sheet = doc.setup.sheet.as_ref().expect("v2 fixture uses a sheet");
     assert_eq!(
         (sheet.preset.as_str(), sheet.fill),
         ("avery-5160", SheetFill::Sequence)
     );
+    assert_eq!(doc.setup.sheet, sheet_document().setup.sheet);
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v3.pubrs")).unwrap();
     let story = doc.stories.values().next().unwrap();
     let a = doc.styles.resolve_para(&story.paragraphs[0]);
     assert!(a.hyphenate);
     assert_eq!(a.language, "de-DE");
     assert_eq!(a.justify_limits.unwrap().max_word_space, 1.2);
+    // The current fixture uses swatches, a scheme, tints and gradients.
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v4.pubrs")).unwrap();
+    assert_eq!(doc.scheme, Some(SchemeId("copper_dawn".into())));
+    assert!(doc.swatches.len() >= 10, "scheme slots plus three swatches");
+    let paints: Vec<&Paint> = doc
+        .frames
+        .values()
+        .filter_map(|f| f.style.fill.as_ref())
+        .collect();
+    assert!(paints.iter().any(|p| matches!(
+        p,
+        Paint::Gradient {
+            gradient: GradientKind::Linear,
+            ..
+        }
+    )));
+    assert!(paints.iter().any(|p| matches!(
+        p,
+        Paint::Gradient {
+            gradient: GradientKind::Radial,
+            ..
+        }
+    )));
+    assert!(
+        paints
+            .iter()
+            .any(|p| matches!(p, Paint::Swatch { tint, .. } if *tint == 25.0))
+    );
+    assert!(
+        doc.swatches
+            .iter()
+            .any(|s| matches!(s.value, SwatchValue::Spot { .. }))
+    );
+    assert!(
+        doc.swatches
+            .iter()
+            .any(|s| matches!(s.value, SwatchValue::Cmyk(_)))
+    );
 }
 
 /// The document `tests/fixtures/schema_v3.pubrs` is written from: a
@@ -471,4 +523,27 @@ fn hyphenation_document() -> Document {
     })
     .unwrap();
     b.finish()
+}
+
+/// Old documents keep their hex colours byte for byte: a document with only
+/// hex paints serializes without swatches or scheme, and its colours stay
+/// plain strings.
+#[test]
+fn hex_colours_stay_plain_strings() {
+    let mut b = DocBuilder::new(SeqIds::new(5), PageSetup::default());
+    let p = b.page(0);
+    let f = b
+        .shape(p, Rect::new(0.0, 0.0, 10.0, 10.0), Shape::Ellipse)
+        .unwrap();
+    b.style(
+        f,
+        FrameStyle {
+            fill: Some(Color::rgb(255, 0, 16).into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let json = serde_json::to_string(&b.finish()).unwrap();
+    assert!(json.contains("\"fill\":\"#FF0010\""), "{json}");
+    assert!(!json.contains("swatches") && !json.contains("scheme"));
 }

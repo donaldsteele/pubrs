@@ -73,7 +73,8 @@ fn char_props(span: &CharStyle, dflt: &CharStyle, data: &PubData) -> CharProps {
     p.color = span
         .color
         .or(dflt.color)
-        .and_then(|c| resolve_color(c, &data.palette));
+        .and_then(|c| resolve_color(c, &data.palette))
+        .map(pubrs_core::Paint::Color);
     p
 }
 

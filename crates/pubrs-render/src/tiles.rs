@@ -131,7 +131,7 @@ fn prim_box(prim: &Prim, t: Affine, glyphs: &GlyphCache) -> Option<PixelRect> {
         }
         Prim::Image { clip, .. } => pad(affine_box(t, clip.x, clip.y, clip.right(), clip.bottom())),
         Prim::Rect { rect, .. } => pad(affine_box(t, rect.x, rect.y, rect.right(), rect.bottom())),
-        Prim::Glyphs(run) => {
+        Prim::Glyphs(run, _) => {
             let key = run.font.key();
             let upem = glyphs.cached_upem(key);
             let k = run.font_size / f64::from(upem);

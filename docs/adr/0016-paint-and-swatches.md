@@ -1,0 +1,17 @@
+# 0016 Paint, swatches and resolving colour at draw time
+
+- Context: T13 (M21) adds swatches (RGB, CMYK, spot), colour schemes, tints and gradients. Fills, strokes and text colour used to be hex `Color` values. Commercial output (DeviceCMYK, Separation, PDF/X) is T14 and needs the exact CMYK and spot values, not just a screen colour.
+- Decision:
+  - **Model.** `Document.swatches` (`Arc<Vec<Swatch>>`) and `Document.scheme` are `serde(default, skip_serializing_if)`, so a document that never used one serializes exactly as before. A `Paint` is `#[serde(untagged)]`: the old hex string, `{swatch, tint}`, or (frame fills only) a gradient. Stops are `SolidPaint` (colour or swatch), so a gradient cannot nest by construction. Gradients on strokes and text are refused by the commands with a hint.
+  - **Resolve at draw time.** Layout does not bake swatch values into glyph colours. The parley brush is the `Copy` type `Ink` (`Rgba(Color)` or `Swatch{id, tint}`), carried in `GlyphRun.color` and resolved against `doc.swatches` when the scene is built. A swatch or scheme edit therefore needs a repaint only, and the layout cache key (stylesheet generation plus story equality) already covers text colour references.
+  - **Scene carries the exact definition.** `Prim::Fill/Stroke/Rect/Glyphs` hold a `ResolvedPaint` or `ResolvedInk { rgba, spec: Rgb | Cmyk{cmyk, tint} | Spot{name, cmyk, tint} }`. The raster and GPU renderers use `rgba`; the PDF writer uses `rgba` in T13. T14 switches the PDF to DeviceCMYK and Separation from `spec` without touching layout or the scene builder.
+  - **Screen colour.** Plain formula, no colour management: `r = 255 (1 - c)(1 - k)`, likewise g and b. Spot shows its CMYK alternative (required at creation). A tint mixes towards white: `rgb' = 255 - t (255 - rgb)`.
+  - **Damage.** A change to the swatch list or scheme gives `PageDamage::Full` for every page (rule 6), by comparing `Arc` pointers/equality and through `Touched.swatches`. This is deliberate: swatch references are not frame edits, and a full-page repaint is the same cost as a pan or zoom.
+  - **Schemes.** Twelve built-in schemes (original names and colours) with seven slots. Slots are swatches with fixed ids and names (`Scheme: Main`, `Scheme: Accent 1` to `4`, `Scheme: Hyperlink`, `Scheme: Followed Hyperlink`); `ApplyScheme` writes the slot values (creating missing slots) and sets `Document.scheme` in one undo step. Slot swatches cannot be deleted. The built-in templates use `Main`, `Accent 1` and `Accent 2` for their navy, orange and cream; the default scheme (`lantern_harbor`) holds those exact colours, so template renders are unchanged.
+  - **Gradients.** Linear (angle in degrees clockwise from left-to-right, spanning the box exactly) and radial (centre to farthest corner). tiny-skia shaders in the raster renderer, krilla gradients in the PDF. Tiles stay byte-identical to untiled output (checked in `tiles.rs` with rotated, translucent and off-page gradient frames at an odd dpi).
+  - **Patches.** `Patch.palette` (swatches plus scheme) is the colour part of a patch, so every colour command inverts exactly through the generic diff.
+- Consequence:
+  - Deleting a swatch in use is refused with the places listed unless `replace_with` is given.
+  - The PDF shows swatches as their RGB equivalent until T14.
+  - The GPU backend draws gradients with vello gradient brushes; CI has no GPU adapter, so that path is only compile-checked (TODO).
+  - A scheme change repaints whole pages; pages never need relayout for colour.

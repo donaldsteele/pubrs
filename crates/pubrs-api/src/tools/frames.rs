@@ -3,9 +3,9 @@
 use pubrs_core::align::{AlignEdge, DistributeAxis, align, bounds_of, distribute};
 use pubrs_core::{
     Align, CharProps, Color, Command, Dash, DocumentId, Frame, FrameContent, FrameId, FrameKind,
-    ImageFit, LineDirection, MasterId, Owner, PageId, ParaProps, Paragraph, Parent, Placeholder,
-    PlaceholderKind, Rect, Shape, ShapeFrame, Story, StoryId, Stroke, TextFrame, TextWrap,
-    WrapMode,
+    ImageFit, LineDirection, MasterId, Owner, PageId, Paint, ParaProps, Paragraph, Parent,
+    Placeholder, PlaceholderKind, Rect, Shape, ShapeFrame, Story, StoryId, Stroke, TextFrame,
+    TextWrap, WrapMode,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -49,8 +49,9 @@ pub struct FrameAddText {
     /// Font size in points.
     #[serde(default)]
     pub font_size: Option<f64>,
+    /// Text colour: hex or `{"swatch": id, "tint": 0-100}`.
     #[serde(default)]
-    pub color: Option<Color>,
+    pub color: Option<Paint>,
     #[serde(default)]
     pub align: Option<Align>,
     /// Number of columns (1-12).
@@ -473,7 +474,7 @@ fn base_text_props(req: &FrameAddText) -> (CharProps, ParaProps) {
         CharProps {
             font_family: req.font_family.clone(),
             font_size: req.font_size,
-            color: req.color,
+            color: req.color.clone(),
             ..Default::default()
         },
         ParaProps {
@@ -633,10 +634,10 @@ impl Session {
         let mut frame = Frame::new(fid, rect, FrameContent::Shape(ShapeFrame { shape }));
         frame.name = req.name;
         frame.style.fill = req.fill.and_then(|c| c.0);
-        let default_stroke = (req.shape == ShapeKind::Line).then_some(Color::BLACK);
+        let default_stroke = (req.shape == ShapeKind::Line).then_some(Paint::Color(Color::BLACK));
         let stroke_color = match req.stroke {
             Some(c) => c.0,
-            None if req.stroke_width.is_some() => Some(Color::BLACK),
+            None if req.stroke_width.is_some() => Some(Paint::Color(Color::BLACK)),
             None => default_stroke,
         };
         frame.style.stroke = stroke_color.map(|color| Stroke {
@@ -889,24 +890,28 @@ impl Session {
 
     pub fn frame_set_style(&mut self, req: FrameSetStyle) -> ApiResult<Changed> {
         let f = self.frame(req.doc_id, req.frame_id)?;
-        let mut style = f.style;
+        let mut style = f.style.clone();
         if let Some(fill) = req.fill {
             style.fill = fill.0;
         }
-        let existing = style.stroke;
+        let existing = style.stroke.clone();
         let color = match req.stroke {
             Some(c) => c.0,
             None => existing
-                .map(|s| s.color)
-                .or_else(|| req.stroke_width.map(|_| Color::BLACK)),
+                .as_ref()
+                .map(|s| s.color.clone())
+                .or_else(|| req.stroke_width.map(|_| Paint::Color(Color::BLACK))),
         };
         style.stroke = color.map(|color| Stroke {
             color,
             width: req
                 .stroke_width
-                .or(existing.map(|s| s.width))
+                .or(existing.as_ref().map(|s| s.width))
                 .unwrap_or(1.0),
-            dash: req.dash.or(existing.map(|s| s.dash)).unwrap_or_default(),
+            dash: req
+                .dash
+                .or(existing.as_ref().map(|s| s.dash))
+                .unwrap_or_default(),
         });
         if let Some(o) = req.opacity {
             style.opacity = o;

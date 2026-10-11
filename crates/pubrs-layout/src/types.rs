@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use parley::fontique::Blob;
-use pubrs_core::{Color, FrameId, Rect, StoryId};
+use pubrs_core::{FrameId, Ink, Rect, StoryId};
 
 /// Font bytes and face index, shared with renderers and the PDF writer.
 #[derive(Clone)]
@@ -62,7 +62,7 @@ pub struct PositionedGlyph {
 pub struct GlyphRun {
     pub font: FontHandle,
     pub font_size: f64,
-    pub color: Color,
+    pub color: Ink,
     /// Embolden outlines (no bold face available).
     pub synthetic_bold: bool,
     /// Shear angle in degrees for synthetic italic.
@@ -76,7 +76,7 @@ pub struct GlyphRun {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Decoration {
     pub rect: Rect,
-    pub color: Color,
+    pub color: Ink,
 }
 
 /// One line of text in a frame.

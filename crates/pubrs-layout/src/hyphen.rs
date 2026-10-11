@@ -210,7 +210,7 @@ pub fn is_loose(justified: bool, gap: f64, width: f64, cap_words: f64) -> bool {
 // ---------------------------------------------------------------------
 
 use parley::{BreakLines, BreakReason, Layout, YieldData};
-use pubrs_core::{Color, JustifyLimits};
+use pubrs_core::{Ink, JustifyLimits};
 
 use crate::types::FontHandle;
 
@@ -265,7 +265,7 @@ impl LineCx {
     }
 
     /// Measure `layout` (shaped, not yet broken) over `text`.
-    pub fn new(layout: &mut Layout<Color>, text: &str) -> Self {
+    pub fn new(layout: &mut Layout<Ink>, text: &str) -> Self {
         let mut cx = Self {
             bounds: Vec::new(),
             shy_fonts: HashMap::new(),
@@ -420,7 +420,7 @@ impl LineCx {
     /// justified stretch. The result is recorded in `self.pending`.
     pub fn break_line(
         &mut self,
-        bl: &mut BreakLines<'_, Color>,
+        bl: &mut BreakLines<'_, Ink>,
         p: &BreakParams<'_>,
         text: &str,
         w: f32,

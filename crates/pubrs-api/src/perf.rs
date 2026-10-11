@@ -410,7 +410,7 @@ pub fn build(spec: &PerfSpec) -> ApiResult<(Document, Vec<StoryId>)> {
         b.style(
             band,
             FrameStyle {
-                fill: Some(Color::rgb(120, 40, 110)),
+                fill: Some(Color::rgb(120, 40, 110).into()),
                 stroke: None,
                 opacity: 1.0,
             },

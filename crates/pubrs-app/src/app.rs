@@ -112,6 +112,8 @@ pub struct PubrsApp {
     pub find: crate::find::FindState,
     pub status: Option<(String, Instant)>,
     pub dialog: Option<Dialog>,
+    /// One-shot request to open (or close) the Swatches section.
+    pub swatches_open: Option<bool>,
     native_menu: Option<NativeMenu>,
     menu_tried: bool,
     pub autosave: Autosave,
@@ -172,6 +174,7 @@ impl PubrsApp {
             find: crate::find::FindState::default(),
             status: None,
             dialog: None,
+            swatches_open: None,
             native_menu: None,
             menu_tried: false,
             autosave,
@@ -1153,6 +1156,16 @@ impl PubrsApp {
                     if let Some(v) = self.report(r) {
                         self.dialog = Some(Dialog::Validation(v.warnings));
                     }
+                }
+            }
+            ColorScheme => {
+                if self.doc().is_some() {
+                    self.dialog = Some(Dialog::ColorScheme);
+                }
+            }
+            ShowSwatches => {
+                if self.doc().is_some() {
+                    self.swatches_open = Some(true);
                 }
             }
             About => self.dialog = Some(Dialog::About),

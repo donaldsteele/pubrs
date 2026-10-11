@@ -201,7 +201,7 @@ fn brochure() -> Document {
     b.style(
         bg,
         FrameStyle {
-            fill: Some(Color::rgb(254, 243, 199)),
+            fill: Some(Color::rgb(254, 243, 199).into()),
             stroke: None,
             opacity: 1.0,
         },
@@ -482,4 +482,26 @@ fn sheets_and_booklets_are_imposed_unless_flat() {
         sizes(&booklet, &PdfOptions::default()),
         vec![vec![0.0, 0.0, 1224.0, 792.0]; 2]
     );
+}
+
+/// Gradient fills become PDF shadings; swatch colours are written as their
+/// RGB equivalent (DeviceCMYK and Separation come with the print output
+/// milestone).
+#[test]
+fn gradients_export_as_shadings_and_swatches_as_rgb() {
+    let doc = common::colour_document();
+    let (bytes, parsed) = export(&doc, &PdfOptions::default());
+    assert!(bytes.starts_with(b"%PDF-"));
+    let mut shadings = Vec::new();
+    for o in parsed.objects.values() {
+        let Ok(d) = o.as_dict() else { continue };
+        if let Ok(t) = d.get(b"ShadingType").and_then(Object::as_i64) {
+            shadings.push(t);
+        }
+    }
+    // Axial (2) for the linear gradient, radial (3) for the radial one.
+    assert!(shadings.contains(&2), "{shadings:?}");
+    assert!(shadings.contains(&3), "{shadings:?}");
+    let again = export(&doc, &PdfOptions::default()).0;
+    assert_eq!(bytes.len(), again.len(), "deterministic size");
 }

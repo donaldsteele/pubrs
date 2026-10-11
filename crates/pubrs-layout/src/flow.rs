@@ -12,8 +12,8 @@ use parley::{
     Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
 };
 use pubrs_core::{
-    Align, CharAttrs, Color, Document, Frame, FrameContent, FrameId, Owner, Paragraph, Parent,
-    Rect, Run, StoryId, VerticalAlign, WrapMode,
+    Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, Owner, Paragraph, Parent, Rect,
+    Run, StoryId, VerticalAlign, WrapMode,
 };
 
 use crate::fonts::FontLibrary;
@@ -26,7 +26,7 @@ use crate::types::{
 /// Shapes and flows text. Holds the font library and parley's caches.
 pub struct Layouter {
     pub fonts: FontLibrary,
-    lcx: LayoutContext<Color>,
+    lcx: LayoutContext<Ink>,
 }
 
 impl std::fmt::Debug for Layouter {
@@ -400,7 +400,7 @@ impl Layouter {
                     push_attrs(&mut builder, Some(range.clone()), a);
                 }
             }
-            let mut layout: Layout<Color> = builder.build(text);
+            let mut layout: Layout<Ink> = builder.build(text);
             let justified = pa.align == Align::Justify;
             let limited = justified && pa.justify_limits.is_some();
             let mut lcx =
@@ -721,12 +721,8 @@ fn advance_region(cur: &mut FlowCursor, regions: &[Region]) {
     cur.y = regions.get(cur.region).map_or(0.0, |r| r.y);
 }
 
-fn push_attrs(
-    b: &mut parley::RangedBuilder<'_, Color>,
-    range: Option<Range<usize>>,
-    a: &CharAttrs,
-) {
-    let props: [StyleProperty<'_, Color>; 7] = [
+fn push_attrs(b: &mut parley::RangedBuilder<'_, Ink>, range: Option<Range<usize>>, a: &CharAttrs) {
+    let props: [StyleProperty<'_, Ink>; 7] = [
         StyleProperty::FontFamily(FontFamily::named(&a.font_family)),
         StyleProperty::FontSize(a.font_size as f32),
         StyleProperty::FontWeight(if a.bold {
@@ -757,7 +753,7 @@ fn push_attrs(
 /// skipped (it is not a story character), and `letter` is added per
 /// character for justified lines stretched with letter spacing.
 fn caret_positions(
-    layout: &Layout<Color>,
+    layout: &Layout<Ink>,
     offsets: &ClusterOffsets,
     text: &str,
     shadow: &Shadow,
@@ -806,7 +802,7 @@ fn caret_positions(
 struct ClusterOffsets(Vec<f32>);
 
 impl ClusterOffsets {
-    fn new(layout: &Layout<Color>, text_len: usize) -> Self {
+    fn new(layout: &Layout<Ink>, text_len: usize) -> Self {
         let mut v = vec![0.0f32; text_len + 1];
         for line in layout.lines() {
             let mut base = line.metrics().offset;
@@ -824,7 +820,7 @@ impl ClusterOffsets {
         Self(v)
     }
 
-    fn get(&self, c: &Cluster<'_, Color>) -> f32 {
+    fn get(&self, c: &Cluster<'_, Ink>) -> f32 {
         self.0
             .get(c.text_range().start)
             .copied()
@@ -835,8 +831,8 @@ impl ClusterOffsets {
 /// `cursor.geometry(layout, w).x0` without parley's walk along the line for
 /// every call: the same choice of cluster edge, with the cluster's offset
 /// read from `offsets`.
-fn caret_x(layout: &Layout<Color>, offsets: &ClusterOffsets, cursor: Cursor) -> f64 {
-    let edge = |c: &Cluster<'_, Color>, at_end: bool| {
+fn caret_x(layout: &Layout<Ink>, offsets: &ClusterOffsets, cursor: Cursor) -> f64 {
+    let edge = |c: &Cluster<'_, Ink>, at_end: bool| {
         let mut x = offsets.get(c);
         if at_end {
             x += c.advance();
@@ -1017,7 +1013,7 @@ mod tests {
                     builder.push(StyleProperty::FontWeight(FontWeight::BOLD), at(6)..at(12));
                     builder.push(StyleProperty::FontSize(17.0), at(9)..at(14));
                 }
-                let mut layout: Layout<Color> = builder.build(text);
+                let mut layout: Layout<Ink> = builder.build(text);
                 layout.break_all_lines(Some(110.0));
                 layout.align(align, AlignmentOptions::default());
                 let offsets = ClusterOffsets::new(&layout, text.len());

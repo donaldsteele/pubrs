@@ -3,10 +3,12 @@
 //! Conventions for every tool:
 //! - Lengths are points (1/72 inch). Coordinates have their origin at the
 //!   top-left corner of the page (trim box), x to the right, y down.
-//! - Colours are `#RRGGBB` or `#RRGGBBAA` strings.
+//! - Colours are `#RRGGBB` or `#RRGGBBAA` strings, or `{"swatch": id, "tint": 0-100}`
+//!   (and, for frame fills only, a gradient).
 //! - `doc_id` is optional and defaults to the most recently used document.
 //! - Mutating tools return `doc_id`, `revision` and `affected_ids`.
 
+pub mod color;
 pub mod doc;
 pub mod export;
 pub mod find;
@@ -22,36 +24,46 @@ pub mod text;
 
 use std::borrow::Cow;
 
-use pubrs_core::{Color, Document, Frame, FrameContent, FrameId, FrameKind, Owner, Rect};
+use pubrs_core::{Document, Frame, FrameContent, FrameId, FrameKind, Owner, Paint, Rect};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// A colour or `"none"`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+/// A paint or `"none"`: a hex colour, `{"swatch": id, "tint": 0-100}`, or
+/// (frame fills only) a gradient `{"gradient": "linear"|"radial", "stops":
+/// [{"offset", "color"}], "angle"}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct OptColor(pub Option<Color>);
+pub struct OptColor(pub Option<Paint>);
 
 impl<'de> Deserialize<'de> for OptColor {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(d)?;
-        if s.trim().eq_ignore_ascii_case("none") || s.trim().is_empty() {
+        let v = serde_json::Value::deserialize(d)?;
+        if let Some(s) = v.as_str()
+            && (s.trim().eq_ignore_ascii_case("none") || s.trim().is_empty())
+        {
             return Ok(OptColor(None));
         }
-        s.parse()
-            .map(|c| OptColor(Some(c)))
-            .map_err(serde::de::Error::custom)
+        Paint::deserialize(v)
+            .map(|p| OptColor(Some(p)))
+            .map_err(|e| {
+                serde::de::Error::custom(format!(
+                    "expected \"none\", a hex colour like \"#1E3A8A\", {{\"swatch\": id, \"tint\": 0-100}} or a gradient ({e})"
+                ))
+            })
     }
 }
 
 impl JsonSchema for OptColor {
     fn schema_name() -> Cow<'static, str> {
-        "ColorOrNone".into()
+        "PaintOrNone".into()
     }
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+    fn json_schema(g: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "type": "string",
-            "pattern": "^(none|#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?)$",
-            "description": "\"#RRGGBB\", \"#RRGGBBAA\" or \"none\"."
+            "anyOf": [
+                {"type": "string", "pattern": "^(none|#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?)$"},
+                g.subschema_for::<Paint>()
+            ],
+            "description": "\"none\", \"#RRGGBB\" / \"#RRGGBBAA\", {\"swatch\": id, \"tint\": 0-100}, or (fills only) a gradient."
         })
     }
 }

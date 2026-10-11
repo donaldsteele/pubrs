@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use pubrs_core::{
-    AssetId, Color, Crop, Dash, Document, FrameContent, FrameId, ImageFit, LineDirection, Owner,
-    Rect, Shape,
+    AssetId, Color, Crop, Dash, Document, FrameContent, FrameId, GradientKind, ImageFit,
+    LineDirection, Owner, Rect, ResolvedInk, ResolvedPaint, Shape,
 };
 use pubrs_layout::{DocumentLayout, GlyphRun};
 
@@ -76,16 +76,57 @@ pub enum Geom {
     Line { x0: f64, y0: f64, x1: f64, y1: f64 },
 }
 
+/// Where a gradient runs, in frame-local points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GradientAxis {
+    Linear { x0: f64, y0: f64, x1: f64, y1: f64 },
+    Radial { cx: f64, cy: f64, r: f64 },
+}
+
+/// The gradient line for a `w` x `h` box. Linear gradients run through the
+/// centre at `angle` degrees clockwise from left-to-right and exactly span
+/// the box; radial gradients run from the centre to the farthest corner.
+pub fn gradient_axis(kind: GradientKind, angle: f64, w: f64, h: f64) -> GradientAxis {
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    match kind {
+        GradientKind::Linear => {
+            let (s, c) = angle.to_radians().sin_cos();
+            let half = (w * c.abs() + h * s.abs()) / 2.0;
+            GradientAxis::Linear {
+                x0: cx - c * half,
+                y0: cy - s * half,
+                x1: cx + c * half,
+                y1: cy + s * half,
+            }
+        }
+        GradientKind::Radial => GradientAxis::Radial {
+            cx,
+            cy,
+            r: (w.hypot(h) / 2.0).max(f64::EPSILON),
+        },
+    }
+}
+
+impl Geom {
+    /// Width and height of the shape's box.
+    pub fn size(&self) -> (f64, f64) {
+        match *self {
+            Geom::Rect { w, h, .. } | Geom::Ellipse { w, h } => (w, h),
+            Geom::Line { x0, y0, x1, y1 } => ((x1 - x0).abs(), (y1 - y0).abs()),
+        }
+    }
+}
+
 /// A primitive inside a frame node (frame-local coordinates).
 #[derive(Debug, Clone)]
 pub enum Prim {
     Fill {
         geom: Geom,
-        color: Color,
+        paint: ResolvedPaint,
     },
     Stroke {
         geom: Geom,
-        color: Color,
+        color: ResolvedInk,
         width: f64,
         dash: Dash,
     },
@@ -96,11 +137,13 @@ pub enum Prim {
         transform: Affine,
         clip: Rect,
     },
-    Glyphs(Arc<GlyphRun>),
+    /// A glyph run with its ink resolved against the document's swatches
+    /// (`run.color` is the unresolved reference).
+    Glyphs(Arc<GlyphRun>, ResolvedInk),
     /// A filled rectangle (underlines).
     Rect {
         rect: Rect,
-        color: Color,
+        color: ResolvedInk,
     },
 }
 
@@ -281,12 +324,12 @@ pub fn frame_node_with(
         FrameContent::Shape(s) => geom_of(s.shape, w, h),
         _ => Geom::Rect { w, h, radius: 0.0 },
     };
-    if let Some(fill) = f.style.fill
+    if let Some(fill) = &f.style.fill
         && !matches!(outline, Geom::Line { .. })
     {
         prims.push(Prim::Fill {
             geom: outline,
-            color: fill,
+            paint: doc.resolve_paint(fill),
         });
     }
     match &f.content {
@@ -294,12 +337,12 @@ pub fn frame_node_with(
             if img.asset.is_none() && opts.show_empty_images {
                 prims.push(Prim::Fill {
                     geom: Geom::Rect { w, h, radius: 0.0 },
-                    color: Color::rgb(0xE5, 0xE7, 0xEB),
+                    paint: ResolvedPaint::Solid(Color::rgb(0xE5, 0xE7, 0xEB).into()),
                 });
                 for (x0, y0, x1, y1) in [(0.0, 0.0, w, h), (0.0, h, w, 0.0)] {
                     prims.push(Prim::Stroke {
                         geom: Geom::Line { x0, y0, x1, y1 },
-                        color: Color::rgb(0x9C, 0xA3, 0xAF),
+                        color: Color::rgb(0x9C, 0xA3, 0xAF).into(),
                         width: 1.0,
                         dash: Dash::Solid,
                     });
@@ -322,12 +365,15 @@ pub fn frame_node_with(
             if let Some(ft) = layout.frame(id) {
                 for line in &ft.lines {
                     for run in &line.runs {
-                        prims.push(Prim::Glyphs(Arc::new(run.clone())));
+                        prims.push(Prim::Glyphs(
+                            Arc::new(run.clone()),
+                            doc.resolve_ink(run.color),
+                        ));
                     }
                     for d in &line.decorations {
                         prims.push(Prim::Rect {
                             rect: d.rect,
-                            color: d.color,
+                            color: doc.resolve_ink(d.color),
                         });
                     }
                 }
@@ -336,12 +382,12 @@ pub fn frame_node_with(
         FrameContent::Group(_) => return None,
         FrameContent::Shape(_) => {}
     }
-    if let Some(s) = f.style.stroke
+    if let Some(s) = &f.style.stroke
         && s.width > 0.0
     {
         prims.push(Prim::Stroke {
             geom: outline,
-            color: s.color,
+            color: doc.resolve_solid(&s.color),
             width: s.width,
             dash: s.dash,
         });

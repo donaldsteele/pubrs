@@ -3,10 +3,12 @@
 //! - `pubrs://templates/{name}` — template metadata and placeholders
 //! - `pubrs://doc/{doc_id}` — current document JSON
 //! - `pubrs://doc/{doc_id}/page/{n}.png` — page preview (n is 1-based)
+//! - `pubrs://doc/{doc_id}/swatches` — the document's swatches and colour scheme
 
 use pubrs_api::Session;
 use pubrs_api::core::DocumentId;
 use pubrs_api::render::RasterOptions;
+use pubrs_api::tools::color::SwatchList;
 use pubrs_api::tools::doc::DocRef;
 use rmcp::ErrorData;
 use rmcp::model::{ReadResourceResult, Resource, ResourceContents, ResourceTemplate};
@@ -24,6 +26,11 @@ pub fn templates() -> Vec<ResourceTemplate> {
             .with_mime_type("application/json"),
         ResourceTemplate::new("pubrs://doc/{doc_id}", "document")
             .with_description("The complete document as JSON (same as doc_to_json).")
+            .with_mime_type("application/json"),
+        ResourceTemplate::new("pubrs://doc/{doc_id}/swatches", "swatches")
+            .with_description(
+                "The document's swatches (rgb, cmyk, spot) with screen colours and uses, and the applied colour scheme (same as swatch_list).",
+            )
             .with_mime_type("application/json"),
         ResourceTemplate::new("pubrs://doc/{doc_id}/page/{n}.png", "page preview")
             .with_description("PNG preview of page n (1-based) at 72 dpi.")
@@ -57,6 +64,13 @@ pub fn list(s: &mut Session) -> Vec<Resource> {
         out.push(
             Resource::new(format!("pubrs://doc/{id}"), format!("document {title}"))
                 .with_mime_type("application/json"),
+        );
+        out.push(
+            Resource::new(
+                format!("pubrs://doc/{id}/swatches"),
+                format!("{title} swatches"),
+            )
+            .with_mime_type("application/json"),
         );
         for n in 1..=pages {
             out.push(
@@ -121,6 +135,17 @@ pub fn read(s: &mut Session, uri: &str) -> Result<ReadResourceResult, ErrorData>
                 })
                 .map_err(|e| api(uri, e))?;
             text(serde_json::to_value(out.document).unwrap_or_default())
+        }
+        ["doc", id, "swatches"] => {
+            let doc_id: DocumentId = id
+                .parse()
+                .map_err(|_| not_found(uri, "doc ids are UUIDs (doc_list)"))?;
+            let out = s
+                .swatch_list(SwatchList {
+                    doc_id: Some(doc_id),
+                })
+                .map_err(|e| api(uri, e))?;
+            text(serde_json::to_value(out).unwrap_or_default())
         }
         ["doc", id, "page", file] => {
             let doc_id: DocumentId = id

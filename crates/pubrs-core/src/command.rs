@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bytes::Bytes;
 use crate::geom::{Margins, PT_PER_INCH, Point, Rect, Size};
-use crate::id::{AssetId, FrameId, GuideId, MasterId, PageId, StoryId, StyleId};
+use crate::id::{AssetId, FrameId, GuideId, MasterId, PageId, StoryId, StyleId, SwatchId};
 use crate::model::{
     Asset, Crop, Document, Frame, FrameContent, FrameStyle, GridSettings, Guide, ImageFit,
     MasterPage, Page, Paragraph, Parent, Placeholder, PlaceholderKind, Shape, SheetLayout, Story,
@@ -20,6 +20,7 @@ use crate::model::{
 };
 use crate::patch::Patch;
 use crate::style::{CharProps, ParaProps, Style, StyleKind};
+use crate::swatch::{Paint, SchemeId, Swatch};
 use crate::text::{RunFormat, normalize_paragraph};
 
 /// Largest page or frame dimension accepted (200 inches, the PDF limit).
@@ -120,6 +121,26 @@ pub enum Command {
     },
     SetGrid {
         grid: GridSettings,
+    },
+    // ---- colour ----
+    /// Add a swatch (the id is chosen by the caller).
+    AddSwatch {
+        swatch: Swatch,
+    },
+    /// Change a swatch's name or value; everything using it recolours.
+    UpdateSwatch {
+        swatch: Swatch,
+    },
+    /// Remove a swatch. One that is in use is refused unless `replace_with`
+    /// says what to use instead.
+    DeleteSwatch {
+        swatch: SwatchId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replace_with: Option<Paint>,
+    },
+    /// Set the seven scheme slot swatches from a built-in scheme.
+    ApplyScheme {
+        scheme: SchemeId,
     },
     // ---- pages ----
     AddPage {
@@ -336,6 +357,10 @@ impl Command {
             Self::SetSheet { .. } => "set_sheet",
             Self::SetBooklet { .. } => "set_booklet",
             Self::SetGrid { .. } => "set_grid",
+            Self::AddSwatch { .. } => "add_swatch",
+            Self::UpdateSwatch { .. } => "update_swatch",
+            Self::DeleteSwatch { .. } => "delete_swatch",
+            Self::ApplyScheme { .. } => "apply_scheme",
             Self::AddPage { .. } => "add_page",
             Self::DeletePage { .. } => "delete_page",
             Self::MovePage { .. } => "move_page",
@@ -465,6 +490,62 @@ impl Command {
                     ));
                 }
                 doc.grid = *grid;
+                Ok(())
+            }
+            Self::AddSwatch { swatch } => {
+                swatch.check().map_err(CommandError::invalid)?;
+                if doc.swatch(swatch.id).is_some() {
+                    return Err(CommandError::conflict("swatch id already exists"));
+                }
+                if doc
+                    .swatches
+                    .iter()
+                    .any(|s| s.name.eq_ignore_ascii_case(swatch.name.trim()))
+                {
+                    return Err(CommandError::conflict(format!(
+                        "a swatch named {:?} already exists",
+                        swatch.name
+                    )));
+                }
+                let mut s = swatch.clone();
+                s.name = s.name.trim().to_string();
+                Arc::make_mut(&mut doc.swatches).push(s);
+                Ok(())
+            }
+            Self::UpdateSwatch { swatch } => {
+                swatch.check().map_err(CommandError::invalid)?;
+                if doc.swatch(swatch.id).is_none() {
+                    return Err(CommandError::not_found("swatch", swatch.id));
+                }
+                if doc
+                    .swatches
+                    .iter()
+                    .any(|s| s.id != swatch.id && s.name.eq_ignore_ascii_case(swatch.name.trim()))
+                {
+                    return Err(CommandError::conflict(format!(
+                        "a swatch named {:?} already exists",
+                        swatch.name
+                    )));
+                }
+                let mut s = swatch.clone();
+                s.name = s.name.trim().to_string();
+                if let Some(slot) = Arc::make_mut(&mut doc.swatches)
+                    .iter_mut()
+                    .find(|x| x.id == swatch.id)
+                {
+                    *slot = s;
+                }
+                Ok(())
+            }
+            Self::DeleteSwatch {
+                swatch,
+                replace_with,
+            } => delete_swatch(doc, *swatch, replace_with.as_ref()),
+            Self::ApplyScheme { scheme } => {
+                let Some(sc) = crate::swatch::scheme(&scheme.0) else {
+                    return Err(CommandError::not_found("scheme", scheme));
+                };
+                crate::swatch::apply_scheme(doc, sc);
                 Ok(())
             }
             Self::AddPage { page, index } => {
@@ -687,7 +768,8 @@ impl Command {
                 {
                     return Err(CommandError::invalid("stroke width must be 0..=288pt"));
                 }
-                frame_mut(doc, *frame)?.style = *style;
+                check_frame_style(doc, style)?;
+                frame_mut(doc, *frame)?.style = style.clone();
                 Ok(())
             }
             Self::SetWrap { frame, wrap } => {
@@ -778,7 +860,7 @@ impl Command {
             } => {
                 if let Some(f) = format {
                     check_char_style(doc, f.style)?;
-                    check_char_props(&f.props)?;
+                    check_char_props(doc, &f.props)?;
                 }
                 let s = story_mut(doc, *story)?;
                 check_offset(s, *at)?;
@@ -808,7 +890,7 @@ impl Command {
                 end,
                 props,
             } => {
-                check_char_props(props)?;
+                check_char_props(doc, props)?;
                 let s = story_mut(doc, *story)?;
                 check_range(s, *start, *end)?;
                 s.apply_char_props(*start, *end, props);
@@ -1094,14 +1176,60 @@ fn check_range(s: &Story, start: usize, end: usize) -> CmdResult {
     check_offset(s, end)
 }
 
-fn check_char_props(p: &CharProps) -> CmdResult {
-    if p.is_valid() {
-        Ok(())
-    } else {
-        Err(CommandError::invalid(
+fn check_char_props(doc: &Document, p: &CharProps) -> CmdResult {
+    if !p.is_valid() {
+        return Err(CommandError::invalid(
             "invalid character properties (font size must be 0..1296pt, family non-empty)",
-        ))
+        ));
     }
+    if let Some(c) = &p.color {
+        c.check(doc, false).map_err(CommandError::invalid)?;
+    }
+    Ok(())
+}
+
+/// Fill may be a gradient; the stroke colour may not.
+fn check_frame_style(doc: &Document, style: &FrameStyle) -> CmdResult {
+    if let Some(f) = &style.fill {
+        f.check(doc, true).map_err(CommandError::invalid)?;
+    }
+    if let Some(s) = &style.stroke {
+        s.color.check(doc, false).map_err(CommandError::invalid)?;
+    }
+    Ok(())
+}
+
+fn delete_swatch(doc: &mut Document, id: SwatchId, replace: Option<&Paint>) -> CmdResult {
+    if doc.swatch(id).is_none() {
+        return Err(CommandError::not_found("swatch", id));
+    }
+    if let Some(slot) = crate::swatch::slot_of(id) {
+        return Err(CommandError::invalid(format!(
+            "{:?} is a colour scheme slot and cannot be deleted; apply another scheme to change it",
+            slot.swatch_name()
+        )));
+    }
+    let uses = doc.swatch_uses(id);
+    match replace {
+        None if !uses.is_empty() => {
+            return Err(CommandError::conflict(format!(
+                "swatch is in use ({}); pass replace_with to recolour those places first",
+                uses.join("; ")
+            )));
+        }
+        None => {}
+        Some(r) => {
+            if matches!(r, Paint::Swatch { swatch, .. } if *swatch == id) {
+                return Err(CommandError::invalid(
+                    "replace_with cannot be the swatch itself",
+                ));
+            }
+            r.check(doc, true).map_err(CommandError::invalid)?;
+            doc.replace_swatch_uses(id, r)?;
+        }
+    }
+    Arc::make_mut(&mut doc.swatches).retain(|s| s.id != id);
+    Ok(())
 }
 
 fn check_style_kind(doc: &Document, id: Option<StyleId>, kind: StyleKind) -> CmdResult {
@@ -1130,7 +1258,7 @@ fn check_paragraph(doc: &Document, p: &Paragraph) -> CmdResult {
     }
     for r in &p.runs {
         check_char_style(doc, r.style)?;
-        check_char_props(&r.props)?;
+        check_char_props(doc, &r.props)?;
     }
     Ok(())
 }
@@ -1156,7 +1284,7 @@ fn check_style(doc: &Document, style: &Style) -> CmdResult {
             return Err(CommandError::invalid("based_on would create a cycle"));
         }
     }
-    check_char_props(&style.character)?;
+    check_char_props(doc, &style.character)?;
     if !style.paragraph.is_valid() {
         return Err(CommandError::invalid("invalid paragraph properties"));
     }
@@ -1208,6 +1336,7 @@ fn add_frame(
     if !frame.rotation.is_finite() {
         return Err(CommandError::invalid("rotation must be finite"));
     }
+    check_frame_style(doc, &frame.style)?;
     match &frame.content {
         FrameContent::Group(_) => {
             return Err(CommandError::invalid(

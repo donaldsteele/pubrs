@@ -10,17 +10,20 @@ use krilla::color::{rgb, separation};
 use krilla::geom::{Path, PathBuilder, Point, Rect as KRect, Size, Transform};
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
-use krilla::paint::{Fill, FillRule, LineCap, LineJoin, Stroke, StrokeDash};
+use krilla::paint::{
+    Fill, FillRule, LineCap, LineJoin, LinearGradient, RadialGradient, SpreadMethod, Stop, Stroke,
+    StrokeDash,
+};
 use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId};
 use krilla::{Data, Document};
 use krilla_svg::{SurfaceExt, SvgSettings};
-use pubrs_core::{AssetId, Color, ImageFormat};
+use pubrs_core::{AssetId, Color, ImageFormat, ResolvedInk, ResolvedPaint};
 use pubrs_layout::GlyphRun;
 
 use crate::images::{ImageContent, ImageResolver};
 use crate::raster::dash_pattern;
-use crate::scene::{Affine, Geom, PageScene, Prim};
+use crate::scene::{Affine, Geom, GradientAxis, PageScene, Prim, gradient_axis};
 
 /// How fonts are written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -112,6 +115,56 @@ fn fill_of(c: Color) -> Fill {
     Fill {
         paint: rgb_of(c).into(),
         opacity: alpha_of(c),
+        rule: FillRule::NonZero,
+    }
+}
+
+/// A fill for a resolved paint. T13 writes the RGB equivalent; the exact
+/// CMYK and spot definition stays in `ResolvedInk::spec` for the print
+/// output milestone, which will switch this to DeviceCMYK and Separation.
+fn fill_of_paint(p: &ResolvedPaint, geom: &Geom) -> Fill {
+    let ResolvedPaint::Gradient(g) = p else {
+        return fill_of(p.solid_rgba());
+    };
+    let stops: Vec<Stop> = g
+        .stops
+        .iter()
+        .map(|(o, c)| Stop {
+            offset: NormalizedF32::new(*o as f32).unwrap_or(NormalizedF32::ZERO),
+            color: rgb_of(c.rgba).into(),
+            opacity: alpha_of(c.rgba),
+        })
+        .collect();
+    let (w, h) = geom.size();
+    let paint = match gradient_axis(g.kind, g.angle, w, h) {
+        GradientAxis::Linear { x0, y0, x1, y1 } => LinearGradient {
+            x1: x0 as f32,
+            y1: y0 as f32,
+            x2: x1 as f32,
+            y2: y1 as f32,
+            transform: Transform::identity(),
+            spread_method: SpreadMethod::Pad,
+            stops,
+            anti_alias: true,
+        }
+        .into(),
+        GradientAxis::Radial { cx, cy, r } => RadialGradient {
+            fx: cx as f32,
+            fy: cy as f32,
+            fr: 0.0,
+            cx: cx as f32,
+            cy: cy as f32,
+            cr: r as f32,
+            transform: Transform::identity(),
+            spread_method: SpreadMethod::Pad,
+            stops,
+            anti_alias: true,
+        }
+        .into(),
+    };
+    Fill {
+        paint,
+        opacity: NormalizedF32::ONE,
         rule: FillRule::NonZero,
     }
 }
@@ -315,10 +368,10 @@ fn draw_prim(
     image_cache: &mut HashMap<AssetId, Option<krilla::image::Image>>,
 ) {
     match prim {
-        Prim::Fill { geom, color } => {
+        Prim::Fill { geom, paint } => {
             if let Some(p) = geom_path(*geom) {
                 surface.set_stroke(None);
-                surface.set_fill(Some(fill_of(*color)));
+                surface.set_fill(Some(fill_of_paint(paint, geom)));
                 surface.draw_path(&p);
             }
         }
@@ -331,9 +384,9 @@ fn draw_prim(
             if let Some(p) = geom_path(*geom) {
                 surface.set_fill(None);
                 surface.set_stroke(Some(Stroke {
-                    paint: rgb_of(*color).into(),
+                    paint: rgb_of(color.rgba).into(),
                     width: *width as f32,
-                    opacity: alpha_of(*color),
+                    opacity: alpha_of(color.rgba),
                     dash: dash_pattern(*dash, *width).map(|d| StrokeDash {
                         array: d.into_iter().map(|v| v as f32).collect(),
                         offset: 0.0,
@@ -347,7 +400,7 @@ fn draw_prim(
         Prim::Rect { rect, color } => {
             if let Some(p) = rect_path(rect.x, rect.y, rect.width, rect.height) {
                 surface.set_stroke(None);
-                surface.set_fill(Some(fill_of(*color)));
+                surface.set_fill(Some(fill_of(color.rgba)));
                 surface.draw_path(&p);
             }
         }
@@ -386,7 +439,7 @@ fn draw_prim(
             surface.pop();
             surface.pop();
         }
-        Prim::Glyphs(run) => draw_run(surface, run, opts, fonts),
+        Prim::Glyphs(run, ink) => draw_run(surface, run, ink, opts, fonts),
     }
 }
 
@@ -411,6 +464,7 @@ fn krilla_image(img: &crate::images::RasterImage) -> Option<krilla::image::Image
 fn draw_run(
     surface: &mut Surface<'_>,
     run: &GlyphRun,
+    ink: &ResolvedInk,
     opts: &PdfOptions,
     fonts: &mut HashMap<(u64, u32), Option<Font>>,
 ) {
@@ -448,13 +502,13 @@ fn draw_run(
         origin = Affine::skew_x(skew).then(origin);
     }
     surface.push_transform(&kt(origin));
-    surface.set_fill(Some(fill_of(run.color)));
+    surface.set_fill(Some(fill_of(ink.rgba)));
     if run.synthetic_bold {
         surface.set_stroke(Some(Stroke {
-            paint: rgb_of(run.color).into(),
+            paint: rgb_of(ink.rgba).into(),
             width: (run.font_size * 0.03) as f32,
             line_join: LineJoin::Round,
-            opacity: alpha_of(run.color),
+            opacity: alpha_of(ink.rgba),
             ..Default::default()
         }));
     } else {

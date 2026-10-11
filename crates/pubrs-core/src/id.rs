@@ -127,6 +127,10 @@ typed_id!(
     /// Identifies a ruler guide.
     GuideId
 );
+typed_id!(
+    /// Identifies a colour swatch.
+    SwatchId
+);
 
 #[cfg(test)]
 mod tests {

@@ -5099,5 +5099,672 @@
       }
     },
     "step": "set_booklet"
+  },
+  {
+    "backward": {
+      "palette": {
+        "swatches": []
+      }
+    },
+    "forward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 100.0,
+                "k": 10.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          }
+        ]
+      }
+    },
+    "step": "add_swatch"
+  },
+  {
+    "backward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 100.0,
+                "k": 10.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          }
+        ]
+      }
+    },
+    "forward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 100.0,
+                "k": 10.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "step": "add_swatch"
+  },
+  {
+    "backward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 100.0,
+                "k": 10.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "forward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 90.0,
+                "k": 0.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "step": "update_swatch"
+  },
+  {
+    "backward": {
+      "palette": {
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 90.0,
+                "k": 0.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "forward": {
+      "palette": {
+        "scheme": "copper_dawn",
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 90.0,
+                "k": 0.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c00",
+            "name": "Scheme: Main",
+            "value": {
+              "rgb": "#7A2E1D"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c01",
+            "name": "Scheme: Accent 1",
+            "value": {
+              "rgb": "#E6862B"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c02",
+            "name": "Scheme: Accent 2",
+            "value": {
+              "rgb": "#FBEFE0"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c03",
+            "name": "Scheme: Accent 3",
+            "value": {
+              "rgb": "#4A5A6A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c04",
+            "name": "Scheme: Accent 4",
+            "value": {
+              "rgb": "#B8A05A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c05",
+            "name": "Scheme: Hyperlink",
+            "value": {
+              "rgb": "#1F4E79"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c06",
+            "name": "Scheme: Followed Hyperlink",
+            "value": {
+              "rgb": "#6E3B6E"
+            }
+          }
+        ]
+      }
+    },
+    "step": "apply_scheme"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": null
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": {
+          "content": {
+            "shape": {
+              "corner_radius": 0.0,
+              "kind": "rectangle"
+            },
+            "type": "shape"
+          },
+          "id": "00000000-0000-802a-8000-000000000021",
+          "locked": false,
+          "rect": {
+            "height": 80.0,
+            "width": 100.0,
+            "x": 50.0,
+            "y": 50.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "fill": {
+              "angle": 45.0,
+              "gradient": "linear",
+              "stops": [
+                {
+                  "color": {
+                    "swatch": "00000000-0000-802a-8000-00000000001f"
+                  },
+                  "offset": 0.0
+                },
+                {
+                  "color": "#FFFFFF",
+                  "offset": 1.0
+                }
+              ]
+            },
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      },
+      "pages": [
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000012",
+            "00000000-0000-802a-8000-000000000010",
+            "00000000-0000-802a-8000-000000000021"
+          ],
+          "guides": [
+            {
+              "axis": "vertical",
+              "id": "00000000-0000-802a-8000-00000000000d",
+              "position": 120.0
+            }
+          ],
+          "id": "00000000-0000-802a-8000-000000000002"
+        },
+        {
+          "frames": [
+            "00000000-0000-802a-8000-000000000014",
+            "00000000-0000-802a-8000-000000000017"
+          ],
+          "guides": [],
+          "id": "00000000-0000-802a-8000-00000000000a"
+        }
+      ]
+    },
+    "step": "add_frame"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": {
+          "content": {
+            "shape": {
+              "corner_radius": 0.0,
+              "kind": "rectangle"
+            },
+            "type": "shape"
+          },
+          "id": "00000000-0000-802a-8000-000000000021",
+          "locked": false,
+          "rect": {
+            "height": 80.0,
+            "width": 100.0,
+            "x": 50.0,
+            "y": 50.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "fill": {
+              "angle": 45.0,
+              "gradient": "linear",
+              "stops": [
+                {
+                  "color": {
+                    "swatch": "00000000-0000-802a-8000-00000000001f"
+                  },
+                  "offset": 0.0
+                },
+                {
+                  "color": "#FFFFFF",
+                  "offset": 1.0
+                }
+              ]
+            },
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": {
+          "content": {
+            "shape": {
+              "corner_radius": 0.0,
+              "kind": "rectangle"
+            },
+            "type": "shape"
+          },
+          "id": "00000000-0000-802a-8000-000000000021",
+          "locked": false,
+          "rect": {
+            "height": 80.0,
+            "width": 100.0,
+            "x": 50.0,
+            "y": 50.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "fill": {
+              "swatch": "00000000-0000-802a-8000-000000000020",
+              "tint": 50.0
+            },
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      }
+    },
+    "step": "set_frame_style"
+  },
+  {
+    "backward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": {
+          "content": {
+            "shape": {
+              "corner_radius": 0.0,
+              "kind": "rectangle"
+            },
+            "type": "shape"
+          },
+          "id": "00000000-0000-802a-8000-000000000021",
+          "locked": false,
+          "rect": {
+            "height": 80.0,
+            "width": 100.0,
+            "x": 50.0,
+            "y": 50.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "fill": {
+              "swatch": "00000000-0000-802a-8000-000000000020",
+              "tint": 50.0
+            },
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      },
+      "palette": {
+        "scheme": "copper_dawn",
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 90.0,
+                "k": 0.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "00000000-0000-802a-8000-000000000020",
+            "name": "Brand Red",
+            "value": {
+              "spot": {
+                "cmyk": {
+                  "c": 0.0,
+                  "k": 4.0,
+                  "m": 100.0,
+                  "y": 81.0
+                },
+                "name": "PANTONE 186 C"
+              }
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c00",
+            "name": "Scheme: Main",
+            "value": {
+              "rgb": "#7A2E1D"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c01",
+            "name": "Scheme: Accent 1",
+            "value": {
+              "rgb": "#E6862B"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c02",
+            "name": "Scheme: Accent 2",
+            "value": {
+              "rgb": "#FBEFE0"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c03",
+            "name": "Scheme: Accent 3",
+            "value": {
+              "rgb": "#4A5A6A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c04",
+            "name": "Scheme: Accent 4",
+            "value": {
+              "rgb": "#B8A05A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c05",
+            "name": "Scheme: Hyperlink",
+            "value": {
+              "rgb": "#1F4E79"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c06",
+            "name": "Scheme: Followed Hyperlink",
+            "value": {
+              "rgb": "#6E3B6E"
+            }
+          }
+        ]
+      }
+    },
+    "forward": {
+      "frames": {
+        "00000000-0000-802a-8000-000000000021": {
+          "content": {
+            "shape": {
+              "corner_radius": 0.0,
+              "kind": "rectangle"
+            },
+            "type": "shape"
+          },
+          "id": "00000000-0000-802a-8000-000000000021",
+          "locked": false,
+          "rect": {
+            "height": 80.0,
+            "width": 100.0,
+            "x": 50.0,
+            "y": 50.0
+          },
+          "rotation": 0.0,
+          "style": {
+            "fill": {
+              "swatch": "00000000-0000-802a-8000-00000000001f",
+              "tint": 50.0
+            },
+            "opacity": 1.0
+          },
+          "wrap": {
+            "margin": 0.0,
+            "mode": "none"
+          }
+        }
+      },
+      "palette": {
+        "scheme": "copper_dawn",
+        "swatches": [
+          {
+            "id": "00000000-0000-802a-8000-00000000001f",
+            "name": "Process Cyan",
+            "value": {
+              "cmyk": {
+                "c": 90.0,
+                "k": 0.0,
+                "m": 0.0,
+                "y": 0.0
+              }
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c00",
+            "name": "Scheme: Main",
+            "value": {
+              "rgb": "#7A2E1D"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c01",
+            "name": "Scheme: Accent 1",
+            "value": {
+              "rgb": "#E6862B"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c02",
+            "name": "Scheme: Accent 2",
+            "value": {
+              "rgb": "#FBEFE0"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c03",
+            "name": "Scheme: Accent 3",
+            "value": {
+              "rgb": "#4A5A6A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c04",
+            "name": "Scheme: Accent 4",
+            "value": {
+              "rgb": "#B8A05A"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c05",
+            "name": "Scheme: Hyperlink",
+            "value": {
+              "rgb": "#1F4E79"
+            }
+          },
+          {
+            "id": "70756272-732d-7363-6865-6d652d736c06",
+            "name": "Scheme: Followed Hyperlink",
+            "value": {
+              "rgb": "#6E3B6E"
+            }
+          }
+        ]
+      }
+    },
+    "step": "delete_swatch"
   }
 ]

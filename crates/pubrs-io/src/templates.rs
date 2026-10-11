@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 use pubrs_core::{
     Align, Axis, CharProps, Color, Command, DocBuilder, Document, FrameId, Guide, GuideId,
-    IdSource, Margins, MasterId, MasterPage, Owner, PageId, PageSetup, PageSizePreset, ParaProps,
-    Paragraph, Parent, Placeholder, PlaceholderKind, Rect, Run, SeqIds, Shape, Size, Stroke,
-    TextWrap, VerticalAlign, WrapMode,
+    IdSource, Margins, MasterId, MasterPage, Owner, PageId, PageSetup, PageSizePreset, Paint,
+    ParaProps, Paragraph, Parent, Placeholder, PlaceholderKind, Rect, Run, SchemeSlot, SeqIds,
+    Shape, Size, Stroke, TextWrap, VerticalAlign, WrapMode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,9 +48,12 @@ pub struct TemplateInfo {
 /// Built-in template names.
 pub const BUILTIN: [&str; 4] = ["flyer", "trifold_brochure", "business_card", "newsletter"];
 
-const NAVY: Color = Color::rgb(0x1E, 0x3A, 0x5F);
-const ORANGE: Color = Color::rgb(0xC2, 0x41, 0x0C);
-const CREAM: Color = Color::rgb(0xFF, 0xF7, 0xED);
+// Brand colours are colour-scheme slots, so applying a scheme recolours a
+// template. The default scheme's slot values are the colours these were
+// designed with (NAVY #1E3A5F, ORANGE #C2410C, CREAM #FFF7ED).
+const NAVY: Paint = SchemeSlot::Main.paint();
+const ORANGE: Paint = SchemeSlot::Accent1.paint();
+const CREAM: Paint = SchemeSlot::Accent2.paint();
 const INK: Color = Color::rgb(0x1F, 0x29, 0x37);
 const WHITE: Color = Color::WHITE;
 const SANS: &str = "Liberation Sans";
@@ -89,13 +92,13 @@ struct T {
     b: DocBuilder<SeqIds>,
 }
 
-fn props(family: &str, size: f64, bold: bool, italic: bool, color: Color) -> CharProps {
+fn props(family: &str, size: f64, bold: bool, italic: bool, color: impl Into<Paint>) -> CharProps {
     CharProps {
         font_family: Some(family.into()),
         font_size: Some(size),
         bold: Some(bold),
         italic: Some(italic),
-        color: Some(color),
+        color: Some(color.into()),
         ..Default::default()
     }
 }
@@ -121,12 +124,18 @@ impl T {
         t.b.editor.reset({
             let mut d = t.b.doc().clone();
             d.meta.template = Some(template.into());
+            // The default scheme's slot swatches, with their fixed ids.
+            pubrs_core::swatch::apply_scheme(
+                &mut d,
+                pubrs_core::swatch::scheme(pubrs_core::swatch::DEFAULT_SCHEME)
+                    .expect("default scheme"),
+            );
             d
         });
         t
     }
 
-    fn rect(&mut self, page: PageId, r: Rect, fill: Color) -> FrameId {
+    fn rect(&mut self, page: PageId, r: Rect, fill: impl Into<Paint>) -> FrameId {
         let f = self
             .b
             .shape(page, r, Shape::Rectangle { corner_radius: 0.0 })
@@ -135,7 +144,7 @@ impl T {
             .style(
                 f,
                 pubrs_core::FrameStyle {
-                    fill: Some(fill),
+                    fill: Some(fill.into()),
                     stroke: None,
                     opacity: 1.0,
                 },
@@ -144,7 +153,7 @@ impl T {
         f
     }
 
-    fn line(&mut self, owner: Owner, r: Rect, color: Color, width: f64) -> FrameId {
+    fn line(&mut self, owner: Owner, r: Rect, color: impl Into<Paint>, width: f64) -> FrameId {
         let id = FrameId::new(&mut self.b.ids);
         let mut f = pubrs_core::Frame::new(
             id,
@@ -156,7 +165,7 @@ impl T {
             }),
         );
         f.style.stroke = Some(Stroke {
-            color,
+            color: color.into(),
             width,
             dash: Default::default(),
         });
@@ -943,6 +952,42 @@ mod tests {
                     "{name}: {w:?}"
                 );
             }
+        }
+    }
+
+    /// Brand colours are scheme slots: the default scheme reproduces the
+    /// literal colours the templates were designed with, and applying
+    /// another scheme recolours them.
+    #[test]
+    fn templates_use_scheme_slots_and_recolour() {
+        use pubrs_core::{Color, SchemeId};
+        for name in BUILTIN {
+            let doc = builtin(name).unwrap();
+            assert_eq!(doc.swatches.len(), 7, "{name}");
+            assert_eq!(
+                doc.scheme,
+                Some(SchemeId(pubrs_core::swatch::DEFAULT_SCHEME.into()))
+            );
+            let uses: usize = doc
+                .swatches
+                .iter()
+                .map(|s| doc.swatch_uses(s.id).len())
+                .sum();
+            assert!(uses > 0, "{name} should use scheme slots");
+            // Default values equal the original literals.
+            let slot = |s: SchemeSlot| doc.resolve_solid(&s.paint()).rgba;
+            assert_eq!(slot(SchemeSlot::Main), Color::rgb(0x1E, 0x3A, 0x5F));
+            assert_eq!(slot(SchemeSlot::Accent1), Color::rgb(0xC2, 0x41, 0x0C));
+            assert_eq!(slot(SchemeSlot::Accent2), Color::rgb(0xFF, 0xF7, 0xED));
+            let mut ed = pubrs_core::Editor::new(doc);
+            ed.execute(Command::ApplyScheme {
+                scheme: SchemeId("coral_reef".into()),
+            })
+            .unwrap();
+            assert_eq!(
+                ed.doc().resolve_solid(&SchemeSlot::Main.paint()).rgba,
+                Color::rgb(0x0F, 0x5E, 0x73)
+            );
         }
     }
 

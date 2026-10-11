@@ -87,6 +87,10 @@ struct Data {
     hist: usize,
     matches: usize,
     first_match: Option<(usize, usize)>,
+    swatch: Option<pubrs_api::core::SwatchId>,
+    swatch_name: Option<String>,
+    probe: Option<FrameId>,
+    before: Option<[u8; 4]>,
 }
 
 pub struct SelfTest {
@@ -215,6 +219,27 @@ impl SelfTest {
                 && v.requested.is_none_or(|(k, r)| k == t.key && r == rev)
         });
         canvas && (0..pages.min(8)).all(|i| v.thumbs.get(&i).is_some_and(|t| t.revision == rev))
+    }
+
+    /// The rendered RGBA at page point (`x`, `y`) of the page being shown.
+    fn probe_pixel(app: &mut PubrsApp, x: u32, y: u32) -> Result<[u8; 4], String> {
+        let id = app.doc_id().ok_or("no doc")?;
+        let page = app.view().map_or(0, |v| v.page);
+        let (w, _, px) = app
+            .session
+            .page_rgba(
+                Some(id),
+                page,
+                &RasterOptions {
+                    dpi: 72.0,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| e.message)?;
+        let i = ((y * w + x) * 4) as usize;
+        px.get(i..i + 4)
+            .map(|p| [p[0], p[1], p[2], p[3]])
+            .ok_or_else(|| "probe pixel is off the page".to_string())
     }
 
     fn page_size(app: &PubrsApp) -> Result<(f64, f64), String> {
@@ -1274,6 +1299,148 @@ impl SelfTest {
                 self.ok(format!(
                     "Paragraph dialog (keyboard + mouse): Hyphenate on, {hyphenated} hyphenated line(s) in the layout"
                 ));
+            }
+            55 => {
+                // M21: swatches. Design → Swatches opens the section; "+ CMYK"
+                // opens the editor.
+                if let Some(v) = app.view_mut() {
+                    v.selection.clear();
+                    v.edit = None;
+                }
+                app.run_action(ctx, Action::ShowSwatches);
+                self.wait = 6;
+            }
+            56 => {
+                self.click_target(ctx, "swatch-add-cmyk")?;
+            }
+            57 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Swatch(_))) {
+                    return Err("+ CMYK did not open the swatch editor".into());
+                }
+                self.screenshot(ctx);
+                self.click_target(ctx, "swatch-save")?;
+            }
+            58 => {
+                let doc = app.doc().ok_or("no doc")?;
+                let sw = doc
+                    .swatches
+                    .iter()
+                    .find(|s| matches!(s.value, pubrs_api::core::SwatchValue::Cmyk(_)))
+                    .ok_or("the CMYK swatch was not added")?;
+                if app.dialog.is_some() {
+                    return Err("the swatch editor did not close".into());
+                }
+                self.data.swatch = Some(sw.id);
+                self.data.swatch_name = Some(sw.name.clone());
+                // A probe rectangle on the page, selected, so the properties
+                // panel shows its Fill picker.
+                let doc_id = app.doc_id().ok_or("no doc")?;
+                let page = app.view().map_or(0, |v| v.page);
+                let page_id = app.doc().and_then(|d| d.pages.get(page)).map(|p| p.id);
+                let o = app
+                    .session
+                    .frame_add_shape(pubrs_api::tools::frames::FrameAddShape {
+                        doc_id: Some(doc_id),
+                        page_id,
+                        master_id: None,
+                        shape: pubrs_api::tools::frames::ShapeKind::Rectangle,
+                        x: 20.0,
+                        y: 20.0,
+                        width: 80.0,
+                        height: 50.0,
+                        corner_radius: None,
+                        line_direction: None,
+                        fill: None,
+                        stroke: None,
+                        stroke_width: None,
+                        dash: None,
+                        name: Some("colour probe".into()),
+                    })
+                    .map_err(|e| e.message)?;
+                self.data.probe = Some(o.frame_id);
+                if let Some(v) = app.view_mut() {
+                    v.selection = vec![o.frame_id];
+                }
+                self.wait = 6;
+            }
+            59 => {
+                let f = self.data.probe.ok_or("no probe")?;
+                self.click_target(ctx, &format!("paint-fill-{f}"))?;
+            }
+            60 => {
+                let name = self.data.swatch_name.clone().ok_or("no swatch")?;
+                self.click_target(ctx, &format!("paint-swatch-{name}"))?;
+            }
+            61 => {
+                let f = self.data.probe.ok_or("no probe")?;
+                let sw = self.data.swatch.ok_or("no swatch")?;
+                let fill = app
+                    .doc()
+                    .and_then(|d| d.frame(f))
+                    .and_then(|f| f.style.fill.clone());
+                if fill != Some(pubrs_api::core::Paint::swatch(sw)) {
+                    return Err(format!("the picker set the fill to {fill:?}"));
+                }
+                // CMYK 0/100/100/0 is red by the plain formula.
+                let px = Self::probe_pixel(app, 60, 45)?;
+                if px[..3] != [255, 0, 0] {
+                    return Err(format!("CMYK swatch fill rendered as {px:?}, not red"));
+                }
+                self.ok("created a CMYK swatch in the editor and filled a shape with it from the picker");
+                self.screenshot(ctx);
+                app.run_action(ctx, Action::ColorScheme);
+            }
+            62 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::ColorScheme)) {
+                    return Err("Design > Colour Scheme did not open the dialog".into());
+                }
+                self.screenshot(ctx);
+                self.click_target(ctx, "scheme-apply-coral_reef")?;
+            }
+            63 => {
+                let doc = app.doc().ok_or("no doc")?;
+                if doc.scheme.as_ref().map(|s| s.0.as_str()) != Some("coral_reef")
+                    || doc.swatches.len() < 8
+                {
+                    return Err("applying the scheme did not add its slot swatches".into());
+                }
+                self.click_target(ctx, "scheme-close")?;
+            }
+            64 => {
+                if app.dialog.is_some() {
+                    return Err("the scheme dialog did not close".into());
+                }
+                // Fill the probe with the scheme's main colour from the picker.
+                let f = self.data.probe.ok_or("no probe")?;
+                self.click_target(ctx, &format!("paint-fill-{f}"))?;
+            }
+            65 => {
+                self.click_target(ctx, "paint-swatch-Scheme: Main")?;
+            }
+            66 => {
+                let px = Self::probe_pixel(app, 60, 45)?;
+                if px[..3] != [0x0F, 0x5E, 0x73] {
+                    return Err(format!("scheme main rendered as {px:?}, not Coral Reef's"));
+                }
+                self.data.before = Some(px);
+                app.run_action(ctx, Action::ColorScheme);
+            }
+            67 => {
+                self.click_target(ctx, "scheme-apply-lantern_harbor")?;
+            }
+            68 => {
+                let px = Self::probe_pixel(app, 60, 45)?;
+                if Some(px) == self.data.before || px[..3] != [0x1E, 0x3A, 0x5F] {
+                    return Err(format!("another scheme left the fill at {px:?}"));
+                }
+                self.ok("applied two colour schemes from the dialog: the fill re-rendered in each scheme's colour");
+                self.screenshot(ctx);
+                self.click_target(ctx, "scheme-close")?;
+            }
+            69 => {
+                if app.dialog.is_some() {
+                    return Err("the scheme dialog did not close".into());
+                }
                 return Ok(true);
             }
             _ => return Ok(true),

@@ -104,7 +104,7 @@ fn flyer_flow_save_reopen_equal() {
             style: None,
             font_family: None,
             font_size: None,
-            color: Some(Color::rgb(180, 83, 9)),
+            color: Some(Color::rgb(180, 83, 9).into()),
             align: Some(Align::Center),
             columns: None,
             name: Some("headline".into()),
