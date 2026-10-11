@@ -4,7 +4,7 @@
 //! built-in defaults, the default paragraph style chain, the paragraph's
 //! style chain, the run's character style chain, the run's local props.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::color::Color;
 use crate::id::{IdSource, StyleId};
@@ -105,6 +105,92 @@ pub struct ParaProps {
     /// `{"unbounded": true}` overrides inherited limits with none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub justify_limits: Option<JustifyLimits>,
+    /// Keep the paragraph's last line in the same column or frame as the
+    /// next paragraph's first line (default off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_with_next: Option<bool>,
+    /// Keep every line of the paragraph in one column or frame (default
+    /// off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep_together: Option<bool>,
+    /// Widow and orphan control: the fewest lines of the paragraph left on
+    /// their own at the bottom or top of a column or frame (0-10). `true`
+    /// means 2; `0`, `1` or `false` turns control off (default off).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "de_lines_or_flag"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<LinesOrFlag>"))]
+    pub widow_orphan: Option<u8>,
+    /// Drop cap: the first characters drawn large, sunk into the first
+    /// lines. Unset inherits; `{"lines": 0}` removes one a style sets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drop_cap: Option<DropCap>,
+}
+
+/// Lines kept together by widow and orphan control when it is turned on
+/// without a number.
+pub const DEFAULT_WIDOW_ORPHAN: u8 = 2;
+
+/// A line count, or `true`/`false` for on (with the default count) and off.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum LinesOrFlag {
+    /// `true` = on with 2 lines, `false` = off.
+    Flag(bool),
+    /// Fewest lines (0 or 1 = off).
+    Lines(u8),
+}
+
+fn de_lines_or_flag<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u8>, D::Error> {
+    Ok(Option::<LinesOrFlag>::deserialize(d)?.map(|v| match v {
+        LinesOrFlag::Flag(true) => DEFAULT_WIDOW_ORPHAN,
+        LinesOrFlag::Flag(false) => 0,
+        LinesOrFlag::Lines(n) => n,
+    }))
+}
+
+/// A drop cap: the paragraph's first `chars` characters drawn as one large
+/// glyph run spanning `lines` lines, with those lines indented past it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DropCap {
+    /// Lines the cap spans, from its cap height to the baseline of the
+    /// last (1-10, default 3). 0 removes a drop cap the style sets.
+    #[serde(default = "default_drop_cap_lines")]
+    pub lines: u8,
+    /// Characters drawn as the cap (1-15, default 1).
+    #[serde(default = "default_drop_cap_chars")]
+    pub chars: u8,
+}
+
+fn default_drop_cap_lines() -> u8 {
+    3
+}
+
+fn default_drop_cap_chars() -> u8 {
+    1
+}
+
+impl Default for DropCap {
+    fn default() -> Self {
+        Self {
+            lines: default_drop_cap_lines(),
+            chars: default_drop_cap_chars(),
+        }
+    }
+}
+
+impl DropCap {
+    pub const MAX_LINES: u8 = 10;
+    pub const MAX_CHARS: u8 = 15;
+
+    pub fn is_valid(&self) -> bool {
+        self.lines <= Self::MAX_LINES && (1..=Self::MAX_CHARS).contains(&self.chars)
+    }
 }
 
 /// How far justification may stretch a line before it is left short.
@@ -171,6 +257,10 @@ impl ParaProps {
             hyphenate: other.hyphenate.or(self.hyphenate),
             language: other.language.clone().or_else(|| self.language.clone()),
             justify_limits: other.justify_limits.or(self.justify_limits),
+            keep_with_next: other.keep_with_next.or(self.keep_with_next),
+            keep_together: other.keep_together.or(self.keep_together),
+            widow_orphan: other.widow_orphan.or(self.widow_orphan),
+            drop_cap: other.drop_cap.or(self.drop_cap),
         }
     }
 
@@ -189,6 +279,8 @@ impl ParaProps {
                 .as_deref()
                 .is_none_or(|l| !l.trim().is_empty() && l.len() <= 35)
             && self.justify_limits.is_none_or(|j| j.is_valid())
+            && self.widow_orphan.is_none_or(|n| n <= 10)
+            && self.drop_cap.is_none_or(|d| d.is_valid())
     }
 }
 
@@ -270,6 +362,12 @@ pub struct ParaAttrs {
     pub language: String,
     /// `None` = unbounded justification (v0.1 behaviour, Locked Decision 2).
     pub justify_limits: Option<JustifyLimits>,
+    pub keep_with_next: bool,
+    pub keep_together: bool,
+    /// Fewest lines left alone at a column or frame boundary; 0 or 1 = off.
+    pub widow_orphan: u8,
+    /// `None` = no drop cap (also for `lines: 0`).
+    pub drop_cap: Option<DropCap>,
 }
 
 impl Default for ParaAttrs {
@@ -285,6 +383,10 @@ impl Default for ParaAttrs {
             hyphenate: false,
             language: "en-US".to_string(),
             justify_limits: None,
+            keep_with_next: false,
+            keep_together: false,
+            widow_orphan: 0,
+            drop_cap: None,
         }
     }
 }
@@ -320,6 +422,18 @@ impl ParaAttrs {
         }
         if let Some(v) = p.justify_limits {
             self.justify_limits = (!v.unbounded).then_some(v);
+        }
+        if let Some(v) = p.keep_with_next {
+            self.keep_with_next = v;
+        }
+        if let Some(v) = p.keep_together {
+            self.keep_together = v;
+        }
+        if let Some(v) = p.widow_orphan {
+            self.widow_orphan = v;
+        }
+        if let Some(v) = p.drop_cap {
+            self.drop_cap = (v.lines > 0).then_some(v);
         }
     }
 }

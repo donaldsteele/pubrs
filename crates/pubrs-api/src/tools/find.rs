@@ -186,7 +186,7 @@ impl Session {
                 .or_insert_with(|| story.plain_text().chars().collect());
             let a = h.start.saturating_sub(20);
             let b = (h.end + 20).min(chars.len());
-            let context: String = chars[a..b].iter().collect::<String>().replace('\n', " ");
+            let context = snippet(&chars[a..b]);
             let sl = layout.stories.get(&h.story);
             let shown = |f: &FrameId| {
                 sl.and_then(|s| s.frames.get(f))
@@ -253,5 +253,33 @@ impl Session {
             },
         )?;
         Ok(TextReplaceAllOut { count, change })
+    }
+}
+
+/// A match's surroundings as one line: paragraph, column, frame and page
+/// breaks, line separators and other control characters read as spaces.
+fn snippet(chars: &[char]) -> String {
+    chars
+        .iter()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                *c
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snippet;
+
+    #[test]
+    fn snippets_show_breaks_as_spaces() {
+        let t: Vec<char> = "end\u{c}next\u{e}col\u{1d}frame\npara\u{2028}line\ttab"
+            .chars()
+            .collect();
+        assert_eq!(snippet(&t), "end next col frame para line tab");
     }
 }

@@ -470,3 +470,539 @@ fn wrap_does_not_cut_rotated_text_frame_where_it_does_not_overlap() {
         assert_eq!(a.rect, b.rect);
     }
 }
+
+// ------------------------------------------------- M15: keeps, drop caps, breaks
+
+/// Line height of the default 11 pt text at 1.2.
+const LINE: f64 = 13.2;
+const COL_W: f64 = 240.0;
+
+/// A frame of `cols` columns, each `COL_W` wide and `lines` default lines
+/// tall, holding `text`.
+fn columns_doc(text: &str, cols: u32, lines: usize) -> (DocBuilder<SeqIds>, FrameId, StoryId) {
+    let mut b = builder();
+    let p = b.page(0);
+    let w = 8.0 + f64::from(cols) * COL_W + f64::from(cols - 1) * 12.0;
+    let h = 8.0 + lines as f64 * LINE + 0.5;
+    let f = b.text(p, Rect::new(36.0, 36.0, w, h), text).unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            columns: Some(cols),
+            column_gap: Some(12.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let s = b.story_of(f);
+    (b, f, s)
+}
+
+fn set_para(b: &mut DocBuilder<SeqIds>, s: StoryId, para: usize, props: ParaProps) {
+    let start = b.doc().story(s).unwrap().paragraph_start(para);
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start,
+        end: start,
+        props,
+    })
+    .unwrap();
+}
+
+/// The column of each line of paragraph `para`.
+fn para_columns(doc: &Document, f: FrameId, s: StoryId, para: usize) -> Vec<usize> {
+    let story = doc.story(s).unwrap();
+    let start = story.paragraph_start(para);
+    let end = start + story.paragraphs[para].char_len();
+    layout(doc)
+        .frame(f)
+        .unwrap()
+        .lines
+        .iter()
+        .filter(|l| l.chars.start >= start && l.chars.end <= end)
+        .map(|l| ((l.rect.x - 4.0) / (COL_W + 12.0)).round() as usize)
+        .collect()
+}
+
+/// The shortest start of LOREM that takes exactly `n` lines `COL_W` wide.
+fn text_with_lines(n: usize) -> String {
+    let words: Vec<&str> = LOREM.split(' ').collect();
+    let mut lay = Layouter::new(fonts());
+    for k in 1..=words.len() {
+        let t = words[..k].join(" ");
+        let mut b = builder();
+        let p = b.page(0);
+        let f = b
+            .text(p, Rect::new(0.0, 0.0, COL_W + 8.0, 1000.0), &t)
+            .unwrap();
+        if lay.layout_document(b.doc()).frame(f).unwrap().lines.len() == n {
+            return t;
+        }
+    }
+    panic!("no text of {n} lines");
+}
+
+fn widow_orphan(n: u8) -> ParaProps {
+    ParaProps {
+        widow_orphan: Some(n),
+        ..Default::default()
+    }
+}
+
+/// (chars, rect) of every line: equal fingerprints mean the same layout.
+fn line_boxes(doc: &Document, f: FrameId) -> Vec<(std::ops::Range<usize>, Rect)> {
+    layout(doc)
+        .frame(f)
+        .unwrap()
+        .lines
+        .iter()
+        .map(|l| (l.chars.clone(), l.rect))
+        .collect()
+}
+
+#[test]
+fn orphan_moves_the_paragraph_to_the_next_column() {
+    let body = text_with_lines(4);
+    // Four one-line paragraphs, then a four-line one from the last line of
+    // column 1: one line alone at the bottom.
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nd\n{body}"), 2, 5);
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![0, 1, 1, 1]);
+    set_para(&mut b, s, 4, widow_orphan(2));
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![1, 1, 1, 1]);
+    let lay = layout(b.doc());
+    let first = lay
+        .frame(f)
+        .unwrap()
+        .lines
+        .iter()
+        .find(|l| l.chars.start >= 8)
+        .unwrap();
+    assert!((first.rect.y - 4.0).abs() < 1e-6, "at the top of column 2");
+    // Unset keeps v0.1 layout; 0 and 1 turn control off.
+    set_para(&mut b, s, 4, widow_orphan(1));
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![0, 1, 1, 1]);
+}
+
+#[test]
+fn widow_pulls_a_line_into_the_next_column() {
+    let body = text_with_lines(4);
+    // Two one-line paragraphs, then a four-line one: its last line alone
+    // at the top of column 2.
+    let (mut b, f, s) = columns_doc(&format!("a\nb\n{body}"), 2, 5);
+    assert_eq!(para_columns(b.doc(), f, s, 2), vec![0, 0, 0, 1]);
+    set_para(&mut b, s, 2, widow_orphan(2));
+    assert_eq!(para_columns(b.doc(), f, s, 2), vec![0, 0, 1, 1]);
+    // Three lines each side cannot be had: the paragraph moves whole.
+    set_para(&mut b, s, 2, widow_orphan(3));
+    assert_eq!(para_columns(b.doc(), f, s, 2), vec![1, 1, 1, 1]);
+}
+
+#[test]
+fn keep_with_next_moves_a_heading_to_its_text() {
+    let body = text_with_lines(3);
+    let kwn = ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    };
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nd\nHeading\n{body}"), 2, 5);
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![0]);
+    assert_eq!(para_columns(b.doc(), f, s, 5), vec![1, 1, 1]);
+    set_para(&mut b, s, 4, kwn.clone());
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![1]);
+    assert_eq!(para_columns(b.doc(), f, s, 5), vec![1, 1, 1]);
+    // A run of kept paragraphs moves together.
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nTitle\nHeading\n{body}"), 2, 5);
+    set_para(&mut b, s, 3, kwn.clone());
+    set_para(&mut b, s, 4, kwn);
+    assert_eq!(para_columns(b.doc(), f, s, 3), vec![1]);
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![1]);
+    assert_eq!(para_columns(b.doc(), f, s, 5), vec![1, 1, 1]);
+}
+
+#[test]
+fn keep_together_moves_a_three_line_paragraph() {
+    let body = text_with_lines(3);
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\n{body}\nafter"), 2, 5);
+    assert_eq!(para_columns(b.doc(), f, s, 3), vec![0, 0, 1]);
+    set_para(
+        &mut b,
+        s,
+        3,
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
+    );
+    assert_eq!(para_columns(b.doc(), f, s, 3), vec![1, 1, 1]);
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![1]);
+    // A paragraph taller than a column cannot be kept: laid out as usual.
+    let long = text_with_lines(7);
+    let (mut b, f, s) = columns_doc(&format!("a\n{long}"), 2, 5);
+    let before = line_boxes(b.doc(), f);
+    set_para(
+        &mut b,
+        s,
+        1,
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
+    );
+    let after = line_boxes(b.doc(), f);
+    assert_eq!(before, after, "laid out as usual");
+    assert!(
+        layout(b.doc()).stories[&s].overflow.is_none(),
+        "no text hidden"
+    );
+}
+
+/// Keeps never turn text the usual layout shows into overflow (ADR 0015).
+#[test]
+fn keeps_never_hide_text_at_the_chain_end() {
+    let kwn = ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    };
+    // Heading at the bottom of column 1, its five-line text fills column 2
+    // exactly: moving the heading would push the last line out.
+    let body = text_with_lines(5);
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nd\nHeading\n{body}"), 2, 5);
+    let plain = line_boxes(b.doc(), f);
+    assert!(layout(b.doc()).stories[&s].overflow.is_none());
+    set_para(&mut b, s, 4, kwn.clone());
+    assert_eq!(line_boxes(b.doc(), f), plain);
+    assert!(layout(b.doc()).stories[&s].overflow.is_none());
+    // A single region: nowhere to move to.
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nd\nHeading\n{body}"), 1, 5);
+    let plain = (line_boxes(b.doc(), f), layout(b.doc()).stories[&s].overflow);
+    set_para(&mut b, s, 4, kwn);
+    assert_eq!(
+        (line_boxes(b.doc(), f), layout(b.doc()).stories[&s].overflow),
+        plain
+    );
+    // An orphan move that would push the next paragraph out of the chain:
+    // the story is laid out without keeps instead.
+    let three = text_with_lines(3);
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\nd\n{three}\n{three}"), 2, 5);
+    let plain = line_boxes(b.doc(), f);
+    assert!(layout(b.doc()).stories[&s].overflow.is_none());
+    assert_eq!(para_columns(b.doc(), f, s, 4), vec![0, 1, 1]);
+    set_para(&mut b, s, 4, widow_orphan(2));
+    assert_eq!(line_boxes(b.doc(), f), plain);
+    assert!(layout(b.doc()).stories[&s].overflow.is_none());
+}
+
+#[test]
+fn keeps_never_reach_more_than_one_region_back() {
+    let kwn = ParaProps {
+        keep_with_next: Some(true),
+        ..Default::default()
+    };
+    // A kept paragraph that starts two columns back is not moved.
+    let long = text_with_lines(10);
+    let (mut b, f, s) = columns_doc(&format!("{long}\nNext"), 3, 5);
+    let plain = line_boxes(b.doc(), f);
+    assert_eq!(para_columns(b.doc(), f, s, 1), vec![2]);
+    set_para(&mut b, s, 0, kwn.clone());
+    assert_eq!(line_boxes(b.doc(), f), plain);
+    // A run of kept paragraphs filling a column from its top stays.
+    let (mut b, f, s) = columns_doc("h1\nh2\nh3\nh4\nh5\nNext", 2, 5);
+    let plain = line_boxes(b.doc(), f);
+    for i in 0..5 {
+        set_para(&mut b, s, i, kwn.clone());
+    }
+    assert_eq!(line_boxes(b.doc(), f), plain);
+    // Every rule on every paragraph still terminates and is deterministic.
+    let text = (0..12)
+        .map(|i| LOREM[..40 + i * 23].to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (mut b, f, s) = columns_doc(&text, 3, 6);
+    for i in 0..12 {
+        set_para(
+            &mut b,
+            s,
+            i,
+            ParaProps {
+                keep_with_next: Some(true),
+                keep_together: Some(true),
+                widow_orphan: Some(3),
+                ..Default::default()
+            },
+        );
+    }
+    assert_eq!(line_boxes(b.doc(), f), line_boxes(b.doc(), f));
+}
+
+fn drop_cap(lines: u8, chars: u8) -> ParaProps {
+    ParaProps {
+        drop_cap: Some(pubrs_core::style::DropCap { lines, chars }),
+        ..Default::default()
+    }
+}
+
+/// Cap height of a run's font as a fraction of the em.
+fn cap_ratio(run: &GlyphRun) -> f64 {
+    use skrifa::MetadataProvider;
+    let f = skrifa::FontRef::from_index(run.font.bytes(), run.font.index).unwrap();
+    let m = f.metrics(
+        skrifa::instance::Size::unscaled(),
+        skrifa::instance::LocationRef::default(),
+    );
+    f64::from(m.cap_height.unwrap()) / f64::from(m.units_per_em)
+}
+
+#[test]
+fn drop_cap_indents_its_lines_and_spans_them() {
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 400.0), LOREM)
+        .unwrap();
+    let s = b.story_of(f);
+    set_para(&mut b, s, 0, drop_cap(3, 1));
+    let lay = layout(b.doc());
+    let lines = &lay.frame(f).unwrap().lines;
+    let cap = &lines[0].runs[0];
+    assert_eq!(cap.glyphs.len(), 1);
+    assert_eq!(cap.glyphs[0].text, 0..1, "the cap is the first character");
+    // Cap height from the first line's cap height to the third baseline.
+    let r = cap_ratio(cap);
+    let cap_top = cap.glyphs[0].y - cap.font_size * r;
+    let line_top = lines[0].baseline - 11.0 * r;
+    assert!((cap.glyphs[0].y - lines[2].baseline).abs() < 1e-6);
+    assert!((cap_top - line_top).abs() < 0.01, "{cap_top} vs {line_top}");
+    assert!(cap.font_size > 40.0, "{}", cap.font_size);
+    // The cap's lines start past it; the fourth line does not.
+    let cap_right = cap.glyphs[0].x + cap.glyphs[0].advance;
+    assert!((cap.glyphs[0].x - 4.0).abs() < 1e-6);
+    for l in &lines[..3] {
+        let body_x = l.carets.iter().find(|c| c.0 >= 1).unwrap().1;
+        assert!(body_x >= cap_right + 2.0, "{body_x} vs {cap_right}");
+    }
+    assert!((lines[3].rect.x - 4.0).abs() < 1e-6);
+    assert!((lines[1].rect.x - lines[2].rect.x).abs() < 1e-6);
+    // Offsets stay right: the cap is on line 1 and can be hit.
+    assert_eq!(lines[0].chars.start, 0);
+    assert_eq!(lines[0].carets[0], (0, 4.0));
+    assert_eq!(lines[0].offset_at_x(5.0), 0);
+    assert!(lines[0].carets.windows(2).all(|w| w[0].0 + 1 == w[1].0));
+    assert_eq!(
+        line_texts(b.doc(), lay.frame(f).unwrap())[0].chars().next(),
+        Some('L')
+    );
+    // Two characters make a wider cap.
+    set_para(&mut b, s, 0, drop_cap(3, 2));
+    let lay2 = layout(b.doc());
+    let cap2 = &lay2.frame(f).unwrap().lines[0].runs[0];
+    assert_eq!(cap2.glyphs.len(), 2);
+    assert!(cap2.glyphs[1].x > cap.glyphs[0].x);
+}
+
+#[test]
+fn drop_cap_on_a_short_paragraph_and_at_a_column_end() {
+    // A one-line paragraph keeps the cap's three lines.
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 400.0), "Hi\nNext")
+        .unwrap();
+    let s = b.story_of(f);
+    set_para(&mut b, s, 0, drop_cap(3, 1));
+    let lay = layout(b.doc());
+    let lines = &lay.frame(f).unwrap().lines;
+    assert_eq!(lines.len(), 2);
+    assert!(lines[1].rect.y >= lines[0].rect.y + 3.0 * LINE - 0.01);
+    let cap = &lines[0].runs[0];
+    assert!((cap.glyphs[0].y - (lines[0].baseline + 2.0 * LINE)).abs() < 0.01);
+    // A cap that would hang below the column starts in the next one.
+    let body = text_with_lines(4);
+    let (mut b, f, s) = columns_doc(&format!("a\nb\nc\n{body}"), 2, 5);
+    set_para(&mut b, s, 3, drop_cap(3, 1));
+    assert_eq!(para_columns(b.doc(), f, s, 3).first(), Some(&1));
+    // A paragraph of only the cap character.
+    let (mut b, f, s) = columns_doc("A", 2, 5);
+    set_para(&mut b, s, 0, drop_cap(2, 3));
+    let lay = layout(b.doc());
+    let l = &lay.frame(f).unwrap().lines[0];
+    assert_eq!(l.chars, 0..1);
+    assert_eq!(l.runs[0].glyphs.len(), 1);
+    assert_eq!(l.carets.first().map(|c| c.0), Some(0));
+    assert_eq!(l.carets.last().map(|c| c.0), Some(1));
+    // The cap stops at a line separator or a break character.
+    for sep in ['\u{2028}', '\u{2029}', pubrs_core::text::PAGE_BREAK] {
+        let (mut b, f, s) = columns_doc(&format!("A{sep}bc"), 2, 5);
+        set_para(&mut b, s, 0, drop_cap(2, 3));
+        let lay = layout(b.doc());
+        let cap = &lay.frame(f).unwrap().lines[0].runs[0];
+        assert_eq!(cap.glyphs.len(), 1, "{sep:?}");
+        assert_eq!(cap.glyphs[0].text, 0..1, "{sep:?}");
+    }
+}
+
+/// Story text with `kind`'s break character between "One" and "Two".
+fn with_break(kind: pubrs_core::text::BreakKind) -> String {
+    format!("One{}Two", kind.char())
+}
+
+#[test]
+fn column_break_continues_in_the_next_column() {
+    use pubrs_core::text::BreakKind;
+    let (b, f, s) = columns_doc(&with_break(BreakKind::Column), 2, 5);
+    let doc = b.finish();
+    let lay = layout(&doc);
+    let ft = lay.frame(f).unwrap();
+    assert_eq!(ft.lines.len(), 2);
+    assert_eq!(ft.lines[0].chars, 0..3, "the break belongs to no line");
+    assert_eq!(ft.lines[1].chars, 4..7);
+    assert_eq!(para_columns(&doc, f, s, 0), vec![0, 1]);
+    assert!((ft.lines[1].rect.y - 4.0).abs() < 1e-6);
+    // The break draws nothing; carets sit before and after it.
+    let glyphs: usize = ft
+        .lines
+        .iter()
+        .flat_map(|l| &l.runs)
+        .map(|r| r.glyphs.len())
+        .sum();
+    assert_eq!(glyphs, 6);
+    assert_eq!(ft.lines[0].carets.last().map(|c| c.0), Some(3));
+    assert_eq!(ft.lines[1].carets.first().map(|c| c.0), Some(4));
+    assert!(lay.stories[&s].overflow.is_none());
+    assert_eq!(lay.stories[&s].missing_glyphs, 0);
+}
+
+/// Frames A (two columns) and C on page 1 and B on page 2, linked
+/// A → C → B (or just A → C when `with_b` is false).
+fn chain_doc(text: &str, with_b: bool) -> (Document, [FrameId; 3]) {
+    let mut b = builder();
+    let p1 = b.page(0);
+    let p2 = b.add_page().unwrap();
+    let a = b
+        .text(p1, Rect::new(36.0, 36.0, 300.0, 100.0), text)
+        .unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: a,
+        props: TextFrameProps {
+            columns: Some(2),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let c = b
+        .text(p1, Rect::new(36.0, 200.0, 300.0, 100.0), "")
+        .unwrap();
+    let bb = b.text(p2, Rect::new(36.0, 36.0, 300.0, 100.0), "").unwrap();
+    b.link(a, c).unwrap();
+    if with_b {
+        b.link(c, bb).unwrap();
+    }
+    (b.finish(), [a, c, bb])
+}
+
+#[test]
+fn frame_break_continues_in_the_next_frame() {
+    use pubrs_core::text::BreakKind;
+    let (doc, [a, c, _]) = chain_doc(&with_break(BreakKind::Frame), true);
+    let lay = layout(&doc);
+    assert_eq!(lay.frame(a).unwrap().chars, 0..3);
+    assert_eq!(
+        lay.frame(a).unwrap().lines.len(),
+        1,
+        "not the second column"
+    );
+    assert_eq!(lay.frame(c).unwrap().chars, 4..7);
+}
+
+#[test]
+fn page_break_continues_on_a_later_page() {
+    use pubrs_core::text::BreakKind;
+    let (doc, [a, c, bb]) = chain_doc(&with_break(BreakKind::Page), true);
+    let lay = layout(&doc);
+    assert_eq!(lay.frame(a).unwrap().chars, 0..3);
+    assert!(lay.frame(c).unwrap().lines.is_empty(), "same page: skipped");
+    assert_eq!(lay.frame(bb).unwrap().chars, 4..7);
+    let s = doc.story_of(a).unwrap();
+    assert!(lay.stories[&s].overflow.is_none());
+}
+
+#[test]
+fn page_break_at_the_chain_end_overflows() {
+    use pubrs_core::text::BreakKind;
+    let (doc, [a, c, _]) = chain_doc(&with_break(BreakKind::Page), false);
+    let lay = layout(&doc);
+    let s = doc.story_of(a).unwrap();
+    assert_eq!(lay.frame(a).unwrap().chars, 0..3);
+    assert!(lay.frame(c).unwrap().lines.is_empty());
+    assert_eq!(
+        lay.stories[&s].overflow,
+        Some(Overflow {
+            offset: 4,
+            hidden_chars: 3
+        })
+    );
+    // A column break past the last column of the last frame overflows too.
+    let (b, f, s) = columns_doc(&format!("One{}", BreakKind::Column.char()), 1, 5);
+    let lay = layout(b.doc());
+    assert_eq!(lay.frame(f).unwrap().chars, 0..3);
+    assert_eq!(
+        lay.stories[&s].overflow,
+        Some(Overflow {
+            offset: 4,
+            hidden_chars: 0
+        })
+    );
+}
+
+/// Carets are frame-local like glyphs (before M15 they were measured from
+/// the line's start, so the editing caret sat left of indented text).
+#[test]
+fn carets_are_frame_local_like_glyphs() {
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 100.0), "Indented line")
+        .unwrap();
+    let s = b.story_of(f);
+    set_para(
+        &mut b,
+        s,
+        0,
+        ParaProps {
+            left_indent: Some(20.0),
+            ..Default::default()
+        },
+    );
+    let lay = layout(b.doc());
+    let l = &lay.frame(f).unwrap().lines[0];
+    let g = &l.runs[0].glyphs;
+    assert!((l.carets[0].1 - 24.0).abs() < 1e-6);
+    assert!((l.carets[0].1 - g[0].x).abs() < 1e-6);
+    assert!((l.carets[1].1 - g[1].x).abs() < 1e-6);
+    assert_eq!(l.offset_at_x(g[1].x + 0.1), 1);
+}
+
+/// A bottom-aligned frame lifts a short drop-capped paragraph by its cap,
+/// not just its lines, so the cap does not hang below the frame.
+#[test]
+fn bottom_alignment_counts_the_drop_cap() {
+    let mut b = builder();
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 200.0), "Hi")
+        .unwrap();
+    let s = b.story_of(f);
+    set_para(&mut b, s, 0, drop_cap(3, 1));
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            vertical_align: Some(VerticalAlign::Bottom),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let lay = layout(b.doc());
+    let l = &lay.frame(f).unwrap().lines[0];
+    let cap_base = l.runs[0].glyphs[0].y;
+    assert!(cap_base > l.rect.bottom(), "the cap reaches below its line");
+    assert!((cap_base - 196.0).abs() < 0.01, "{cap_base}");
+}

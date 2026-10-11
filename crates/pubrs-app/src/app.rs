@@ -30,6 +30,11 @@ use crate::selftest::SelfTest;
 use crate::view::DocView;
 use crate::{Args, Outcome};
 
+/// Why Insert → Break is unavailable.
+const NO_CARET: &str = "Click in the text where the break should go first";
+/// Why Text → Drop Cap… is unavailable.
+const NO_PARAGRAPH: &str = "Click in a paragraph or select a text box first";
+
 /// The active creation tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -917,6 +922,54 @@ impl PubrsApp {
 
     // ------------------------------------------------------------ dispatch
 
+    /// Why `action` cannot run now, for its menu item's tooltip; `None`
+    /// when it can.
+    pub fn unavailable(&self, action: Action) -> Option<&'static str> {
+        let editing = self.view().is_some_and(|v| v.edit.is_some());
+        let text_selected = self
+            .doc()
+            .is_some_and(|d| self.selection().iter().any(|f| d.story_of(*f).is_some()));
+        match action {
+            Action::InsertColumnBreak | Action::InsertFrameBreak | Action::InsertPageBreak
+                if !editing =>
+            {
+                Some(NO_CARET)
+            }
+            Action::DropCap if !editing && !text_selected => Some(NO_PARAGRAPH),
+            _ => None,
+        }
+    }
+
+    /// Insert a column, frame or page break at the caret (replacing any
+    /// selected text) as its own undo step.
+    pub fn insert_break(&mut self, kind: pubrs_api::core::text::BreakKind) {
+        let Some(e) = self.view().and_then(|v| v.edit.clone()) else {
+            self.notify(NO_CARET);
+            return;
+        };
+        let (s, t) = e.range();
+        let text = kind.char().to_string();
+        let ok = if s != t {
+            self.exec(Command::ReplaceText {
+                story: e.story,
+                start: s,
+                end: t,
+                text,
+            })
+        } else {
+            self.exec(Command::InsertText {
+                story: e.story,
+                at: s,
+                text,
+                format: None,
+            })
+        };
+        if ok && let Some(ed) = self.view_mut().and_then(|v| v.edit.as_mut()) {
+            ed.set(s + 1, false);
+            ed.goal_x = None;
+        }
+    }
+
     pub fn run_action(&mut self, ctx: &egui::Context, action: Action) {
         use Action::*;
         let editing = self.view().is_some_and(|v| v.edit.is_some());
@@ -1081,6 +1134,19 @@ impl PubrsApp {
                     self.dialog = Some(Dialog::ConfirmDeletePage(page));
                 }
             }
+            InsertColumnBreak | InsertFrameBreak | InsertPageBreak => {
+                use pubrs_api::core::text::BreakKind;
+                let kind = match action {
+                    InsertColumnBreak => BreakKind::Column,
+                    InsertFrameBreak => BreakKind::Frame,
+                    _ => BreakKind::Page,
+                };
+                self.insert_break(kind);
+            }
+            DropCap => match crate::dialogs::DropCapState::for_selection(self) {
+                Some(state) => self.dialog = Some(Dialog::DropCap(state)),
+                None => self.notify(NO_PARAGRAPH),
+            },
             BringToFront => self.zorder(ZAction::BringToFront),
             BringForward => self.zorder(ZAction::BringForward),
             SendBackward => self.zorder(ZAction::SendBackward),

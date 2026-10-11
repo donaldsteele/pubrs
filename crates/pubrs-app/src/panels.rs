@@ -19,7 +19,13 @@ fn menu_items(app: &mut PubrsApp, ui: &mut egui::Ui, items: &[MenuItem]) {
                 if let Some(sc) = keymap::shortcut(*action) {
                     b = b.shortcut_text(ui.ctx().format_shortcut(&sc));
                 }
-                if ui.add(b).clicked() {
+                let why = app.unavailable(*action);
+                let r = ui.add_enabled(why.is_none(), b);
+                let r = match why {
+                    Some(why) => r.on_disabled_hover_text(why),
+                    None => r,
+                };
+                if r.clicked() {
                     let ctx = ui.ctx().clone();
                     app.run_action(&ctx, *action);
                     ui.close();

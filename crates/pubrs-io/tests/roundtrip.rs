@@ -411,11 +411,12 @@ fn every_schema_fixture_opens_and_round_trips() {
     // A fixture is created only when it is missing and only for the current
     // schema version; an existing fixture is never rewritten, even when
     // blessing, so files written by earlier versions stay frozen.
-    let fixtures: [(u32, Document); 4] = [
+    let fixtures: [(u32, Document); 5] = [
         (2, sheet_document()),
         (3, hyphenation_document()),
         (4, common::colour_document()),
         (5, rich_document()),
+        (6, paragraph_controls_document()),
     ];
     for (v, doc) in &fixtures {
         let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -446,7 +447,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 5, "expected the schema_v1 to v5 fixtures");
+    assert!(n >= 6, "expected the schema_v1 to v6 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -467,7 +468,7 @@ fn every_schema_fixture_opens_and_round_trips() {
     assert!(a.hyphenate);
     assert_eq!(a.language, "de-DE");
     assert_eq!(a.justify_limits.unwrap().max_word_space, 1.2);
-    // The current fixture uses swatches, a scheme, tints and gradients.
+    // The schema 4 fixture uses swatches, a scheme, tints and gradients.
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v4.pubrs")).unwrap();
     assert_eq!(doc.scheme, Some(SchemeId("copper_dawn".into())));
     assert!(doc.swatches.len() >= 10, "scheme slots plus three swatches");
@@ -505,6 +506,78 @@ fn every_schema_fixture_opens_and_round_trips() {
             .iter()
             .any(|s| matches!(s.value, SwatchValue::Cmyk(_)))
     );
+    // The current fixture: keeps, widow and orphan control, a drop cap and
+    // one break character of each kind.
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v6.pubrs")).unwrap();
+    let story = doc.stories.values().next().unwrap();
+    let heading = doc.styles.resolve_para(&story.paragraphs[0]);
+    let body = doc.styles.resolve_para(&story.paragraphs[1]);
+    assert!(heading.keep_with_next && !heading.keep_together);
+    assert!(body.keep_together);
+    assert_eq!(body.widow_orphan, 2);
+    assert_eq!(
+        body.drop_cap,
+        Some(pubrs_core::style::DropCap { lines: 3, chars: 2 })
+    );
+    let text = story.plain_text();
+    for k in pubrs_core::text::BreakKind::ALL {
+        assert!(text.contains(k.char()), "{k:?} break survives the file");
+    }
+}
+
+/// The document `tests/fixtures/schema_v6.pubrs` is written from: a
+/// heading kept with its paragraph, a kept-together paragraph with widow
+/// and orphan control and a two-letter drop cap, and one break character
+/// of each kind, across two linked frames on two pages.
+fn paragraph_controls_document() -> Document {
+    use pubrs_core::text::BreakKind;
+    let mut b = DocBuilder::new(SeqIds::new(1502), PageSetup::default());
+    let p = b.page(0);
+    let text = format!(
+        "Spring menu\nOur ovens open at six.{}New loaves daily.{}Pastries{}Order ahead.",
+        BreakKind::Column.char(),
+        BreakKind::Frame.char(),
+        BreakKind::Page.char()
+    );
+    let f = b
+        .text(p, Rect::new(36.0, 36.0, 300.0, 200.0), &text)
+        .unwrap();
+    let p2 = b.add_page().unwrap();
+    let g = b.text(p2, Rect::new(36.0, 36.0, 300.0, 200.0), "").unwrap();
+    b.link(f, g).unwrap();
+    let story = b.story_of(f);
+    b.exec(Command::ApplyParaProps {
+        story,
+        start: 0,
+        end: 0,
+        props: ParaProps {
+            keep_with_next: Some(true),
+            keep_together: Some(false),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::ApplyParaProps {
+        story,
+        start: 12,
+        end: 12,
+        props: ParaProps {
+            keep_together: Some(true),
+            widow_orphan: Some(2),
+            drop_cap: Some(pubrs_core::style::DropCap { lines: 3, chars: 2 }),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            columns: Some(2),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.finish()
 }
 
 /// The document `tests/fixtures/schema_v3.pubrs` is written from: a

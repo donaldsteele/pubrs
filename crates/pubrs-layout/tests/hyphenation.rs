@@ -303,10 +303,19 @@ fn letter_spaced_lines_have_consistent_carets_and_hit_testing() {
             assert_eq!(l.offset_at_x(*x + 0.01), *off);
             assert!((l.caret_x(*off) - *x).abs() < 1e-9);
         }
-        // The line's last caret is at its right edge, inside the column.
-        let last = *xs.last().unwrap();
-        assert!(last <= 200.0 - 4.0 + 0.6, "{last}");
-        assert!(last >= 200.0 - 4.0 - 8.0, "{last}");
+        // The line's text ends at the column's right edge (frame-local x
+        // 196: 200 wide, 4 pt insets; carets are frame-local since M15). A
+        // trailing space hangs past it, so measure before it; a line ending
+        // in a hyphen ends before the hyphen glyph.
+        let chars: Vec<char> = TEXT.chars().collect();
+        let mut end = l.chars.end;
+        while end > l.chars.start && chars[end - 1].is_whitespace() {
+            end -= 1;
+        }
+        let ink = l.caret_x(end);
+        assert!((l.rect.right() - 196.0).abs() < 1e-6, "{:?}", l.rect);
+        assert!(ink <= 196.0 + 0.75, "{ink}");
+        assert!(ink >= 196.0 - 8.0, "{ink}");
         checked += 1;
     }
     assert!(checked >= 3);

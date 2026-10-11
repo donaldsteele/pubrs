@@ -8,12 +8,14 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use parley::{
-    Affinity, Alignment, AlignmentOptions, Cluster, Cursor, FontFamily, FontStyle, FontWeight,
-    Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
+    Affinity, Alignment, AlignmentOptions, BreakReason, Cluster, Cursor, FontFamily, FontStyle,
+    FontWeight, Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
 };
+use pubrs_core::style::DropCap;
+use pubrs_core::text::{BreakKind, is_break};
 use pubrs_core::{
-    Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, Owner, Paragraph, Parent, Rect,
-    Run, StoryId, VerticalAlign, WrapMode,
+    Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, Owner, PageId, ParaAttrs,
+    Paragraph, Parent, Rect, Run, StoryId, VerticalAlign, WrapMode,
 };
 
 use crate::fonts::FontLibrary;
@@ -56,6 +58,10 @@ pub(crate) struct Region {
     h: f64,
     valign: VerticalAlign,
     obstacles: Vec<Obstacle>,
+    /// Rank of the frame's page among the pages of the chain, in document
+    /// order (`None` on a master). Relative, so adding pages elsewhere
+    /// leaves it alone; page breaks compare it.
+    page: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +143,45 @@ struct PlacedLine {
     line: LineBox,
 }
 
+/// The flow state before a paragraph, to rewind to it (keeps).
+#[derive(Debug, Clone, Copy)]
+struct ParaMark {
+    cur: FlowCursor,
+    /// `placed.len()` before the paragraph.
+    placed: usize,
+    /// Story offset of the paragraph's first character.
+    start: usize,
+    keep_with_next: bool,
+}
+
+/// One paragraph to flow, with what stays fixed across its passes.
+#[derive(Clone, Copy)]
+struct ParaJob<'a> {
+    doc: &'a Document,
+    para: &'a Paragraph,
+    pa: &'a ParaAttrs,
+    /// Story offset of the paragraph's first character.
+    start: usize,
+    regions: &'a [Region],
+    /// Apply keeps (off for the fallback layout without them).
+    keeps: bool,
+}
+
+/// A drop cap shaped at its size: glyph runs with x from the cap's left
+/// edge and y from its baseline.
+struct Cap {
+    runs: Vec<GlyphRun>,
+    width: f64,
+    /// x of each character boundary of the cap (`chars + 1` entries).
+    carets: Vec<f64>,
+    /// Lines the cap spans.
+    lines: usize,
+    /// Body line height the cap was sized for.
+    pitch: f64,
+    /// Space between the cap and the text beside it.
+    gap: f64,
+}
+
 /// Character counts at byte positions of one paragraph's text, counted
 /// forward from the previous query. Lines are visited in order, so a
 /// paragraph costs one pass instead of one scan from its start per line.
@@ -178,12 +223,16 @@ pub(crate) struct DocIndex {
     parent: HashMap<FrameId, Parent>,
     /// Paint order per page or master, filled on first use.
     orders: HashMap<Owner, Vec<FrameId>>,
+    /// Index of each page in the document.
+    page_index: HashMap<PageId, usize>,
 }
 
 impl DocIndex {
     pub(crate) fn new(doc: &Document) -> Self {
         let mut parent = HashMap::with_capacity(doc.frames.len());
-        for p in doc.pages.iter() {
+        let mut page_index = HashMap::with_capacity(doc.pages.len());
+        for (i, p) in doc.pages.iter().enumerate() {
+            page_index.insert(p.id, i);
             for f in &p.frames {
                 parent.entry(*f).or_insert(Parent::Page(p.id));
             }
@@ -203,6 +252,7 @@ impl DocIndex {
         Self {
             parent,
             orders: HashMap::new(),
+            page_index,
         }
     }
 
@@ -268,18 +318,45 @@ impl Layouter {
     }
 
     /// Flow one story into `regions` (from [`regions_for`] over its chain).
+    ///
+    /// Keeps never cost visible text (ADR 0015): if paragraphs were moved
+    /// for keeps and the story then overflows, it is flowed again without
+    /// keeps, and that layout is used when it shows more of the story.
     pub(crate) fn flow_story(
         &mut self,
         doc: &Document,
         story_id: StoryId,
         regions: &[Region],
     ) -> StoryLayout {
+        let (out, moved) = self.flow_story_keeps(doc, story_id, regions, true);
+        match out.overflow {
+            Some(o) if moved => {
+                let (plain, _) = self.flow_story_keeps(doc, story_id, regions, false);
+                if plain.overflow.is_none_or(|p| p.offset > o.offset) {
+                    plain
+                } else {
+                    out
+                }
+            }
+            _ => out,
+        }
+    }
+
+    /// Flow one story, with or without keeps; also says whether keeps moved
+    /// any paragraph.
+    fn flow_story_keeps(
+        &mut self,
+        doc: &Document,
+        story_id: StoryId,
+        regions: &[Region],
+        keeps: bool,
+    ) -> (StoryLayout, bool) {
         let mut out = StoryLayout {
             story: Some(story_id),
             ..Default::default()
         };
         let Some(story) = doc.story(story_id) else {
-            return out;
+            return (out, false);
         };
         for f in &story.frames {
             if doc.frame(*f).and_then(|f| f.as_text()).is_some() {
@@ -292,30 +369,81 @@ impl Layouter {
             y: regions.first().map_or(0.0, |r| r.y),
         };
         let mut para_start = 0usize;
-        let last = story.paragraphs.len().saturating_sub(1);
-        for (pi, para) in story.paragraphs.iter().enumerate() {
+        // Keeps rewind to the state before a paragraph (ADR 0015): `marks`
+        // holds it for every paragraph flowed so far, `moved` the
+        // paragraphs already moved for keep with next (each moves once), and
+        // `push` the paragraph to flow again from the top of a region.
+        let paras = &story.paragraphs;
+        let mut marks: Vec<ParaMark> = Vec::with_capacity(paras.len());
+        let mut moved: Vec<usize> = Vec::new();
+        let mut push: Option<(usize, usize)> = None;
+        // After a keep-with-next move: the paragraphs flowed again (first,
+        // last). If one of them overflows, the move is undone.
+        let mut reflow: Option<(usize, usize)> = None;
+        let mut any_moved = false;
+        let mut pi = 0usize;
+        while let Some(para) = paras.get(pi) {
+            let pa = doc.styles.resolve_para(para);
+            marks.truncate(pi);
+            marks.push(ParaMark {
+                cur,
+                placed: placed.len(),
+                start: para_start,
+                keep_with_next: pa.keep_with_next,
+            });
+            let start_at = push.take().filter(|(p, _)| *p == pi).map(|(_, r)| r);
             let overflow = if cur.region >= regions.len() {
                 Some(para_start)
             } else {
-                self.flow_paragraph(
+                let job = ParaJob {
                     doc,
                     para,
-                    para_start,
+                    pa: &pa,
+                    start: para_start,
                     regions,
-                    &mut cur,
-                    &mut placed,
-                    &mut out,
-                    pi == last,
-                )
+                    keeps,
+                };
+                let (of, m) = self.flow_kept(job, &mut cur, &mut placed, &mut out, start_at);
+                any_moved |= m;
+                of
             };
             if let Some(offset) = overflow {
+                if let Some((j, _)) = reflow.take().filter(|(j, i)| (*j..=*i).contains(&pi)) {
+                    // The move pushed a kept paragraph out of the chain:
+                    // flow them where they were (`moved` holds `j`, so it is
+                    // not moved again).
+                    let m = marks[j];
+                    cur = m.cur;
+                    placed.truncate(m.placed);
+                    para_start = m.start;
+                    pi = j;
+                    continue;
+                }
                 out.overflow = Some(Overflow {
                     offset,
                     hidden_chars: story.char_len().saturating_sub(offset),
                 });
                 break;
             }
+            if keeps
+                && let Some((j, region)) = keep_with_next_move(&marks, &placed, regions, &moved)
+            {
+                moved.push(j);
+                any_moved = true;
+                let m = marks[j];
+                cur = m.cur;
+                placed.truncate(m.placed);
+                para_start = m.start;
+                push = Some((j, region));
+                reflow = Some((j, pi));
+                pi = j;
+                continue;
+            }
+            if reflow.is_some_and(|(_, i)| pi >= i) {
+                reflow = None;
+            }
             para_start += para.char_len() + 1;
+            pi += 1;
         }
         apply_vertical_align(regions, &mut placed);
         for p in placed {
@@ -336,6 +464,274 @@ impl Layouter {
                 ft.lines.push(p.line);
             }
         }
+        (out, any_moved)
+    }
+
+    /// Flow one paragraph and apply its own keeps (keep together, widows
+    /// and orphans). When one breaks at a region boundary, the paragraph is
+    /// rewound and flowed again: from the top of the next region, or with a
+    /// region break moved up so the last region gets enough lines. At most
+    /// two such passes. A pass that overflows (the first did not), or a
+    /// keep-together move that still splits the paragraph, is undone: the
+    /// last good pass stands, so keeps never hide text the paragraph showed.
+    /// `start_at` starts the paragraph at the top of that region (keep with
+    /// next moved it there). Also returns whether the paragraph was moved.
+    fn flow_kept(
+        &mut self,
+        job: ParaJob<'_>,
+        cur: &mut FlowCursor,
+        placed: &mut Vec<PlacedLine>,
+        out: &mut StoryLayout,
+        start_at: Option<usize>,
+    ) -> (Option<usize>, bool) {
+        let from = (*cur, placed.len());
+        let (pa, regions) = (job.pa, job.regions);
+        let n = usize::from(pa.widow_orphan);
+        // Break characters place lines on purpose: no keeps across them.
+        let rules = job.keeps
+            && (pa.keep_together || n >= 2)
+            && !job.para.runs.iter().any(|r| r.text.contains(is_break));
+        let of = self.flow_at(job, from, start_at, None, cur, placed, out);
+        if !rules || of.is_some() {
+            return (of, false);
+        }
+        // The last good pass: (start region, forced region break).
+        let mut good: (Option<usize>, Option<usize>) = (start_at, None);
+        for _ in 0..2 {
+            let (push, forced) = good;
+            let lines = &placed[from.1..];
+            let Some(first) = lines.first() else {
+                break;
+            };
+            let r0 = first.region;
+            let n_first = lines.iter().take_while(|l| l.region == r0).count();
+            if n_first == lines.len() {
+                break;
+            }
+            // Moving the paragraph helps only if it does not already start
+            // at the top of its region; it moves one region, once. Keeping
+            // it together needs it to fit in the next region.
+            let can_push = push.is_none()
+                && r0 + 1 < regions.len()
+                && first.line.rect.y > regions[r0].y + 1e-6;
+            let height: f64 = lines.iter().map(|l| l.line.rect.height).sum();
+            let together = can_push
+                && pa.keep_together
+                && regions.get(r0 + 1).is_some_and(|r| height <= r.h + 0.01);
+            let next = if together || (can_push && n_first < n) {
+                (Some(r0 + 1), forced)
+            } else {
+                let total = lines.len();
+                let rl = lines[total - 1].region;
+                let n_last = lines.iter().rev().take_while(|l| l.region == rl).count();
+                if n_last >= n || forced.is_some() {
+                    break;
+                }
+                // Start the last region `n` lines from the end, if the
+                // region before keeps enough lines (all of them may go when
+                // it is a middle region of a long paragraph).
+                let s_last = total - n_last;
+                let r_prev = lines[s_last - 1].region;
+                let s_prev = lines[..s_last]
+                    .iter()
+                    .rposition(|l| l.region != r_prev)
+                    .map_or(0, |i| i + 1);
+                let k = total.saturating_sub(n);
+                if k > s_prev && (s_prev > 0 || k - s_prev >= n) {
+                    (push, Some(k))
+                } else if s_prev == 0 && can_push {
+                    (Some(r0 + 1), None)
+                } else {
+                    break;
+                }
+            };
+            let of = self.flow_at(job, from, next.0, next.1, cur, placed, out);
+            let lines = &placed[from.1..];
+            let split = lines
+                .first()
+                .is_some_and(|f| lines.iter().any(|l| l.region != f.region));
+            if of.is_some() || (together && split) {
+                let of = self.flow_at(job, from, good.0, good.1, cur, placed, out);
+                return (of, good != (start_at, None));
+            }
+            good = next;
+        }
+        (None, good != (start_at, None))
+    }
+
+    /// Rewind to `from` (cursor, placed lines) and flow the paragraph,
+    /// starting at the top of region `push` if given and later, with a
+    /// region break before line `forced` if given.
+    #[allow(clippy::too_many_arguments)]
+    fn flow_at(
+        &mut self,
+        job: ParaJob<'_>,
+        from: (FlowCursor, usize),
+        push: Option<usize>,
+        forced: Option<usize>,
+        cur: &mut FlowCursor,
+        placed: &mut Vec<PlacedLine>,
+        out: &mut StoryLayout,
+    ) -> Option<usize> {
+        *cur = from.0;
+        placed.truncate(from.1);
+        if let Some(t) = push.filter(|t| *t < job.regions.len() && cur.region < *t) {
+            *cur = FlowCursor {
+                region: t,
+                y: job.regions[t].y,
+            };
+        }
+        self.flow_paragraph(
+            job.doc,
+            job.para,
+            job.pa,
+            job.start,
+            job.regions,
+            cur,
+            placed,
+            out,
+            forced,
+        )
+    }
+
+    /// Shape a drop cap: the paragraph's first characters `orig[..cap_b]`
+    /// in the style of `attrs`, sized so its cap height reaches from the
+    /// first line's cap height to the baseline of line `lines` of body text
+    /// in `body`.
+    fn shape_cap(
+        &mut self,
+        orig: &Arc<str>,
+        cap_b: usize,
+        attrs: &CharAttrs,
+        body: &CharAttrs,
+        line_spacing: f64,
+        dc: DropCap,
+    ) -> Option<Cap> {
+        let text = orig.get(..cap_b)?;
+        let lines = usize::from(dc.lines.max(1));
+        let pitch = (body.font_size * line_spacing).max(1.0);
+        // Cap height as a fraction of the font size, from the cap's font.
+        let probe = self.shape_one_line(text, attrs, attrs.font_size);
+        let ratio = probe
+            .first()
+            .and_then(|(f, _)| cap_height_ratio(f))
+            .unwrap_or(0.7);
+        let size = body.font_size + (lines - 1) as f64 * pitch / ratio;
+        let shaped = self.shape_one_line(text, attrs, size);
+        let mut runs = Vec::new();
+        let mut boundaries: Vec<(usize, f64)> = Vec::new();
+        let mut width = 0.0f64;
+        for (font, run) in shaped {
+            let mut glyphs = Vec::new();
+            for (id, x, y, advance, range) in run.glyphs {
+                if !range.is_empty() {
+                    boundaries.push((range.start, x));
+                }
+                glyphs.push(PositionedGlyph {
+                    id,
+                    x,
+                    y,
+                    advance,
+                    text: range,
+                });
+                width = width.max(x + advance);
+            }
+            runs.push(GlyphRun {
+                font,
+                font_size: run.size,
+                color: run.color,
+                synthetic_bold: run.bold,
+                synthetic_skew: run.skew,
+                text: orig.clone(),
+                glyphs,
+            });
+        }
+        boundaries.sort_by_key(|b| b.0);
+        let mut carets = Vec::new();
+        for (b, _) in text.char_indices() {
+            let x = boundaries
+                .iter()
+                .take_while(|c| c.0 <= b)
+                .last()
+                .map_or(0.0, |c| c.1);
+            carets.push(x);
+        }
+        carets.push(width);
+        Some(Cap {
+            runs,
+            width,
+            carets,
+            lines,
+            pitch,
+            gap: body.font_size * 0.25,
+        })
+    }
+
+    /// Shape `text` on one unbroken line in one style at `size`: per glyph
+    /// run its font, and glyphs as (id, x, y from the baseline, advance,
+    /// source bytes).
+    fn shape_one_line(
+        &mut self,
+        text: &str,
+        attrs: &CharAttrs,
+        size: f64,
+    ) -> Vec<(FontHandle, Shaped)> {
+        let mut a = attrs.clone();
+        a.font_size = size;
+        let mut builder = self
+            .lcx
+            .ranged_builder(&mut self.fonts.fcx, text, 1.0, false);
+        push_attrs(&mut builder, None, &a);
+        let mut layout: Layout<Ink> = builder.build(text);
+        layout.break_all_lines(None);
+        let mut out = Vec::new();
+        for line in layout.lines() {
+            let base = line.metrics().baseline;
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(gr) = item else {
+                    continue;
+                };
+                let run = gr.run();
+                let mut ranges: Vec<Range<usize>> = Vec::new();
+                for c in run.visual_clusters() {
+                    let r = c.text_range();
+                    for j in 0..c.glyphs().count() {
+                        ranges.push(if j == 0 { r.clone() } else { r.end..r.end });
+                    }
+                }
+                let positioned: Vec<parley::Glyph> = gr.positioned_glyphs().collect();
+                if ranges.len() != positioned.len() {
+                    ranges = vec![0..0; positioned.len()];
+                }
+                let synth = run.synthesis();
+                let font = run.font();
+                out.push((
+                    FontHandle {
+                        data: font.data.clone(),
+                        index: font.index,
+                    },
+                    Shaped {
+                        size: f64::from(run.font_size()),
+                        color: gr.style().brush,
+                        bold: synth.embolden(),
+                        skew: synth.skew().map(f64::from),
+                        glyphs: positioned
+                            .iter()
+                            .zip(ranges)
+                            .map(|(g, r)| {
+                                (
+                                    g.id,
+                                    f64::from(g.x),
+                                    f64::from(g.y - base),
+                                    f64::from(g.advance),
+                                    r,
+                                )
+                            })
+                            .collect(),
+                    },
+                ));
+            }
+        }
         out
     }
 
@@ -344,17 +740,70 @@ impl Layouter {
         &mut self,
         doc: &Document,
         para: &Paragraph,
+        pa: &ParaAttrs,
         para_start: usize,
         regions: &[Region],
         cur: &mut FlowCursor,
         placed: &mut Vec<PlacedLine>,
         out: &mut StoryLayout,
-        is_last_paragraph: bool,
+        break_before: Option<usize>,
     ) -> Option<usize> {
-        let pa = doc.styles.resolve_para(para);
         let orig: String = para.text();
+        let text_arc: Arc<str> = Arc::from(orig.as_str());
+        // A drop cap takes the paragraph's first characters out of the
+        // lines: `body` is the rest, shaped as usual; the cap is shaped on
+        // its own and drawn on the first line (ADR 0015).
+        let cap_chars = pa.drop_cap.map_or(0, |d| {
+            orig.chars()
+                .take(usize::from(d.chars))
+                .take_while(|c| !ends_line(*c))
+                .count()
+        });
+        let cap_b = if cap_chars == 0 {
+            0
+        } else {
+            orig.char_indices()
+                .nth(cap_chars)
+                .map_or(orig.len(), |(i, _)| i)
+        };
+        let body: &str = &orig[cap_b..];
+        // Resolved formats with their byte ranges in `body`. Runs wholly in
+        // the cap are left out, except the last (an all-cap paragraph still
+        // has a body format).
+        let mut run_attrs: Vec<(Range<usize>, CharAttrs)> = Vec::with_capacity(para.runs.len());
+        let mut b = 0;
+        for r in &para.runs {
+            let e = b + r.text.len();
+            if cap_b == 0 || e > cap_b || e == orig.len() {
+                run_attrs.push((
+                    b.max(cap_b) - cap_b..e.max(cap_b) - cap_b,
+                    doc.styles.resolve_char(para, r),
+                ));
+            }
+            b = e;
+        }
+        let default_attrs = || doc.styles.resolve_char(para, &Run::default());
+        let cap = match pa.drop_cap {
+            Some(dc) if cap_chars > 0 => {
+                let cap_run = para.runs.iter().find(|r| !r.text.is_empty());
+                let attrs =
+                    cap_run.map_or_else(default_attrs, |r| doc.styles.resolve_char(para, r));
+                if !self.fonts.ensure_family(&attrs.font_family) {
+                    out.missing_fonts.insert(attrs.font_family.clone());
+                }
+                let body_attrs = run_attrs
+                    .first()
+                    .map_or_else(default_attrs, |a| a.1.clone());
+                self.shape_cap(&text_arc, cap_b, &attrs, &body_attrs, pa.line_spacing, dc)
+            }
+            _ => None,
+        };
+        let cap_lines = cap.as_ref().map_or(0, |c| c.lines);
+        let cap_indent = cap.as_ref().map_or(0.0, |c| c.width + c.gap);
+        let has_breaks = body.contains(is_break);
         // `text` is what parley shapes: the paragraph with soft hyphens
-        // inserted at hyphenation points (ADR 0014). Story offsets are
+        // inserted at hyphenation points (ADR 0014), and break characters
+        // shaped as "\n" (same byte length, ADR 0015). Story offsets are
         // always counted on `orig`.
         let hy_lang = hyphen::lang_of(&pa.language).filter(|_| pa.hyphenate);
         // If the line analysis cannot follow the paragraph (right-to-left
@@ -362,27 +811,29 @@ impl Layouter {
         // without the inserted soft hyphens (ADR 0014).
         let cur0 = *cur;
         let mut plain = hy_lang.is_none();
-        let (shadow, mut layout, mut lcx, line_infos, placements, overflowed) = 'attempt: loop {
+        let (shadow, mut layout, mut lcx, line_infos, placements, overflowed, cap_at) = 'attempt: loop {
             *cur = cur0;
-            let shadow = match hy_lang.filter(|_| !plain) {
-                Some(lang) => Shadow::hyphenated(&orig, lang),
-                None => Shadow::plain(&orig),
+            let mut shadow = match hy_lang.filter(|_| !plain) {
+                Some(lang) => Shadow::hyphenated(body, lang),
+                None => Shadow::plain(body),
+            };
+            if has_breaks {
+                shadow.text = std::borrow::Cow::Owned(shadow.text.replace(is_break, "\n"));
+            }
+            let breaks = if has_breaks {
+                newline_kinds(&shadow.text, body, &shadow)
+            } else {
+                Vec::new()
             };
             let text: &str = &shadow.text;
-            let mut spans: Vec<(Range<usize>, CharAttrs)> = Vec::new();
-            let mut b = 0;
-            for r in &para.runs {
-                let attrs = doc.styles.resolve_char(para, r);
-                spans.push((
-                    shadow.from_orig(b)..shadow.from_orig(b + r.text.len()),
-                    attrs,
-                ));
-                b += r.text.len();
-            }
+            let spans: Vec<(Range<usize>, &CharAttrs)> = run_attrs
+                .iter()
+                .map(|(r, a)| (shadow.from_orig(r.start)..shadow.from_orig(r.end), a))
+                .collect();
             let first = spans
                 .first()
                 .map(|s| s.1.clone())
-                .unwrap_or_else(|| doc.styles.resolve_char(para, &Run::default()));
+                .unwrap_or_else(default_attrs);
             for (_, a) in &spans {
                 if !self.fonts.ensure_family(&a.font_family) {
                     out.missing_fonts.insert(a.font_family.clone());
@@ -396,7 +847,7 @@ impl Layouter {
             )));
             push_attrs(&mut builder, None, &first);
             for (range, a) in &spans {
-                if !range.is_empty() && *a != first {
+                if !range.is_empty() && **a != first {
                     push_attrs(&mut builder, Some(range.clone()), a);
                 }
             }
@@ -420,6 +871,8 @@ impl Layouter {
             let min_w = (first.font_size * 3.0).max(18.0);
             let mut placements: Vec<(usize, f64, f64)> = Vec::new();
             let mut overflowed = false;
+            // Region and x of the drop cap (set with the first line).
+            let mut cap_at: Option<(usize, f64)> = None;
             {
                 let mut bl = layout.break_lines();
                 bl.state_mut().set_layout_max_advance(max_w);
@@ -427,11 +880,18 @@ impl Layouter {
                 let mut est_h = (first.font_size * pa.line_spacing).max(1.0);
                 let mut retried = false;
                 let mut guard = 0u32;
+                let mut explicit = 0usize;
                 loop {
                     guard += 1;
                     if guard > 100_000 {
                         overflowed = true;
                         break;
+                    }
+                    // A widow fix moves the region break up to this line.
+                    if break_before == Some(placements.len())
+                        && placements.last().is_some_and(|p| p.0 == cur.region)
+                    {
+                        advance_region(cur, regions);
                     }
                     let Some(r) = regions.get(cur.region) else {
                         overflowed = true;
@@ -440,6 +900,17 @@ impl Layouter {
                     let mut y = cur.y;
                     if first_line && y > r.y + 1e-6 {
                         y += pa.space_before;
+                    }
+                    // A drop cap that would hang below the region starts
+                    // the paragraph in the next one.
+                    if first_line
+                        && cap_lines > 1
+                        && y > r.y + 1e-6
+                        && y + cap_lines as f64 * est_h > r.bottom() + 0.01
+                        && cur.region + 1 < regions.len()
+                    {
+                        advance_region(cur, regions);
+                        continue;
                     }
                     let (ax, aw) = match r.available(y, y + est_h, min_w) {
                         Avail::Span(x, w) => (x, w),
@@ -451,12 +922,20 @@ impl Layouter {
                             continue;
                         }
                     };
-                    let indent = pa.left_indent
-                        + if first_line {
-                            pa.first_line_indent
-                        } else {
-                            0.0
-                        };
+                    let indent = if cap.is_some() {
+                        // The first `cap_lines` lines beside the cap make
+                        // room for it; no first-line indent with a cap.
+                        let beside = placements.len() < cap_lines
+                            && cap_at.is_none_or(|(cr, _)| cr == cur.region);
+                        pa.left_indent + if beside { cap_indent } else { 0.0 }
+                    } else {
+                        pa.left_indent
+                            + if first_line {
+                                pa.first_line_indent
+                            } else {
+                                0.0
+                            }
+                    };
                     let x = ax + indent.max(0.0);
                     let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
                     {
@@ -497,10 +976,23 @@ impl Layouter {
                         }
                         line_infos.push(info.unwrap_or_default());
                     }
+                    if first_line && cap.is_some() {
+                        cap_at = Some((cur.region, ax + pa.left_indent.max(0.0)));
+                    }
                     placements.push((cur.region, y, h));
                     cur.y = y + h;
                     first_line = false;
                     est_h = h;
+                    // A line ending at a break character: the next line
+                    // goes where the break sends it.
+                    if d.reason == BreakReason::Explicit {
+                        let kind = breaks.get(explicit).copied().flatten();
+                        explicit += 1;
+                        if let Some(k) = kind {
+                            cur.region = break_target(k, cur.region, regions);
+                            cur.y = regions.get(cur.region).map_or(0.0, |r| r.y);
+                        }
+                    }
                 }
                 bl.finish();
             }
@@ -508,7 +1000,9 @@ impl Layouter {
                 plain = true;
                 continue 'attempt;
             }
-            break (shadow, layout, lcx, line_infos, placements, overflowed);
+            break (
+                shadow, layout, lcx, line_infos, placements, overflowed, cap_at,
+            );
         };
         let text: &str = &shadow.text;
         layout.align(
@@ -519,8 +1013,17 @@ impl Layouter {
             },
         );
 
-        let text_arc: Arc<str> = Arc::from(orig.as_str());
         let n_lines = placements.len();
+        // The cap sits on the baseline of line `cap_lines` when that line is
+        // beside it, else where that line would be.
+        let cap_base = cap.as_ref().zip(cap_at).and_then(|(c, (cr, _))| {
+            let b0 = f64::from(layout.get(0)?.metrics().baseline);
+            let k = c.lines - 1;
+            match (placements.get(k), layout.get(k)) {
+                (Some(p), Some(l)) if p.0 == cr => Some(f64::from(l.metrics().baseline)),
+                _ => Some(b0 + k as f64 * c.pitch),
+            }
+        });
         let mut groups_cache: HashMap<usize, (Vec<ClusterGroup>, usize)> = HashMap::new();
         let mut last_end_byte = 0usize;
         let mut counter = CharCounter::new(text);
@@ -533,14 +1036,23 @@ impl Layouter {
             let tr = line.text_range();
             let (tb0, tb1) = (tr.start.min(text.len()), tr.end.min(text.len()));
             last_end_byte = tb1;
+            // A break character ending the line belongs to no line, like
+            // the "\n" between paragraphs: the caret sits before it at the
+            // end of this line and after it at the start of the next.
+            let te = if has_breaks && tb1 > tb0 && text.as_bytes().get(tb1 - 1) == Some(&b'\n') {
+                tb1 - 1
+            } else {
+                tb1
+            };
             let (c0, c1) = (
                 counter.at(tb0) - shadow.inserted_before(tb0),
-                counter.at(tb1) - shadow.inserted_before(tb1),
+                counter.at(te) - shadow.inserted_before(te),
             );
             let info = line_infos.get(li).copied().unwrap_or_default();
             let letter = info.letter;
             let mut end_x = 0.0f64;
-            let chars = para_start + c0..para_start + c1;
+            let body0 = para_start + cap_chars;
+            let chars = body0 + c0..body0 + c1;
             let mut runs = Vec::new();
             let mut decorations = Vec::new();
             for item in line.items() {
@@ -633,7 +1145,7 @@ impl Layouter {
                             x: f64::from(g.x) + before(r.start),
                             y: f64::from(g.y),
                             advance: f64::from(g.advance),
-                            text: shadow.to_orig(r.start)..shadow.to_orig(r.end),
+                            text: cap_b + shadow.to_orig(r.start)..cap_b + shadow.to_orig(r.end),
                         })
                         .collect(),
                 });
@@ -663,7 +1175,10 @@ impl Layouter {
                 && let Some(last) = runs.last()
             {
                 let mut hr: GlyphRun = last.clone();
-                let (gy, o) = (last.glyphs.last().map_or(0.0, |g| g.y), shadow.to_orig(tb1));
+                let (gy, o) = (
+                    last.glyphs.last().map_or(0.0, |g| g.y),
+                    cap_b + shadow.to_orig(tb1),
+                );
                 hr.font = font;
                 hr.font_size = f64::from(size);
                 hr.glyphs = vec![PositionedGlyph {
@@ -675,28 +1190,65 @@ impl Layouter {
                 }];
                 runs.push(hr);
             }
-            let carets = caret_positions(
+            let mut carets = caret_positions(
                 &layout,
                 &offsets,
                 text,
                 &shadow,
-                tb0..tb1,
-                para_start + c0,
+                tb0..te,
+                body0 + c0,
                 letter,
+                f64::from(m.inline_min_coord),
             );
+            let mut rect = Rect::new(
+                f64::from(m.inline_min_coord),
+                y,
+                info.full_w.map_or(
+                    f64::from(m.inline_max_coord - m.inline_min_coord),
+                    f64::from,
+                ),
+                h,
+            );
+            let mut chars = chars;
+            // The drop cap is drawn by the first line: its glyphs come first,
+            // its characters start the line and have carets across it.
+            if li == 0
+                && let (Some(c), Some((_, cap_x)), Some(base)) = (&cap, cap_at, cap_base)
+            {
+                let mut all: Vec<GlyphRun> = c
+                    .runs
+                    .iter()
+                    .map(|r| {
+                        let mut r = r.clone();
+                        for g in &mut r.glyphs {
+                            g.x += cap_x;
+                            g.y += base;
+                        }
+                        r
+                    })
+                    .collect();
+                all.append(&mut runs);
+                runs = all;
+                let mut cc: Vec<(usize, f64)> = (0..cap_chars)
+                    .map(|k| {
+                        (
+                            para_start + k,
+                            cap_x + c.carets.get(k).copied().unwrap_or(0.0),
+                        )
+                    })
+                    .collect();
+                cc.append(&mut carets);
+                carets = cc;
+                chars.start = para_start;
+                let right = rect.right();
+                rect.x = rect.x.min(cap_x);
+                rect.width = right - rect.x;
+            }
             let ends_paragraph = li + 1 == n_lines && !overflowed;
             placed.push(PlacedLine {
                 region,
                 line: LineBox {
-                    rect: Rect::new(
-                        f64::from(m.inline_min_coord),
-                        y,
-                        info.full_w.map_or(
-                            f64::from(m.inline_max_coord - m.inline_min_coord),
-                            f64::from,
-                        ),
-                        h,
-                    ),
+                    rect,
                     baseline: f64::from(m.baseline),
                     chars,
                     runs,
@@ -707,11 +1259,19 @@ impl Layouter {
             });
         }
         if overflowed {
-            let byte = if n_lines == 0 { 0 } else { last_end_byte };
-            return Some(para_start + counter.at(byte) - shadow.inserted_before(byte));
+            if n_lines == 0 {
+                return Some(para_start);
+            }
+            let byte = last_end_byte;
+            return Some(para_start + cap_chars + counter.at(byte) - shadow.inserted_before(byte));
+        }
+        // A paragraph shorter than its drop cap keeps the cap's lines.
+        if let (Some(c), Some((cr, _)), Some(&(_, y0, _))) = (&cap, cap_at, placements.first())
+            && cur.region == cr
+        {
+            cur.y = cur.y.max(y0 + c.lines as f64 * c.pitch);
         }
         cur.y += pa.space_after;
-        let _ = is_last_paragraph;
         None
     }
 }
@@ -719,6 +1279,124 @@ impl Layouter {
 fn advance_region(cur: &mut FlowCursor, regions: &[Region]) {
     cur.region += 1;
     cur.y = regions.get(cur.region).map_or(0.0, |r| r.y);
+}
+
+/// Glyphs of one shaped run (see [`Layouter::shape_one_line`]).
+struct Shaped {
+    /// The size parley shaped at.
+    size: f64,
+    color: Ink,
+    bold: bool,
+    skew: Option<f64>,
+    /// (glyph id, x, y from the baseline, advance, source bytes).
+    glyphs: Vec<(u32, f64, f64, f64, Range<usize>)>,
+}
+
+/// Cap height as a fraction of the em, from the font's OS/2 table.
+fn cap_height_ratio(font: &FontHandle) -> Option<f64> {
+    use skrifa::MetadataProvider;
+    let f = skrifa::FontRef::from_index(font.bytes(), font.index).ok()?;
+    let m = f.metrics(
+        skrifa::instance::Size::unscaled(),
+        skrifa::instance::LocationRef::default(),
+    );
+    let cap = f64::from(m.cap_height?);
+    let em = f64::from(m.units_per_em);
+    (cap > 0.0 && em > 0.0).then(|| cap / em)
+}
+
+/// Whether `c` ends a line: a break character or one parley treats as a
+/// newline (CR, LF, U+2028, U+2029). A drop cap stops before one.
+fn ends_line(c: char) -> bool {
+    is_break(c) || matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
+}
+
+/// For each character parley ends a line at (a newline: "\n", CR, CR LF,
+/// U+2028, U+2029), in order: the kind of break character shaped as that
+/// "\n", or `None` for a line or paragraph separator in the text.
+fn newline_kinds(text: &str, body: &str, shadow: &Shadow<'_>) -> Vec<Option<BreakKind>> {
+    let mut out = Vec::new();
+    let mut it = text.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        match c {
+            // CR LF is one newline; the LF entry stands for it.
+            '\r' if it.peek().is_some_and(|(_, n)| *n == '\n') => {}
+            '\n' => out.push(
+                body.get(shadow.to_orig(i)..)
+                    .and_then(|s| s.chars().next())
+                    .and_then(BreakKind::of),
+            ),
+            '\r' | '\u{2028}' | '\u{2029}' => out.push(None),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The region the text after a break in region `from` continues in
+/// (`regions.len()` when there is none: the rest overflows). A column break
+/// goes to the next region; a frame break to the next frame of the chain;
+/// a page break to the next frame of the chain on a later page (pages are
+/// never added, ADR 0015).
+fn break_target(kind: BreakKind, from: usize, regions: &[Region]) -> usize {
+    let n = regions.len();
+    let Some(r) = regions.get(from) else {
+        return n;
+    };
+    let later = from + 1..n;
+    match kind {
+        BreakKind::Column => from + 1,
+        BreakKind::Frame => later
+            .into_iter()
+            .find(|j| regions[*j].frame != r.frame)
+            .unwrap_or(n),
+        BreakKind::Page => match r.page {
+            Some(p) => later
+                .into_iter()
+                .find(|j| regions[*j].page.is_some_and(|q| q > p))
+                .unwrap_or(n),
+            None => n,
+        },
+    }
+}
+
+/// Keep with next, checked after the last paragraph in `marks` is flowed:
+/// if it starts in a later region than the paragraph before ends, and that
+/// one keeps with next, the paragraph to flow again and the region to start
+/// it at. It is the first of the run of keep-with-next paragraphs before
+/// the last that start in the region where that run ends, so a paragraph is
+/// never moved more than one region on and the rewind never reaches more
+/// than one region back. Nothing moves when that paragraph is at the top of
+/// its region (the group cannot fit any better), when it has been moved for
+/// this rule already, or when there is no next region.
+fn keep_with_next_move(
+    marks: &[ParaMark],
+    placed: &[PlacedLine],
+    regions: &[Region],
+    moved: &[usize],
+) -> Option<(usize, usize)> {
+    let i = marks.len().checked_sub(1)?;
+    let prev = i.checked_sub(1)?;
+    if !marks[prev].keep_with_next {
+        return None;
+    }
+    let first = placed.get(marks[i].placed)?;
+    let last = placed.get(marks[i].placed.checked_sub(1)?)?;
+    let r = last.region;
+    if first.region == r {
+        return None;
+    }
+    let starts_in_r =
+        |j: usize| marks[j].placed < marks[j + 1].placed && placed[marks[j].placed].region == r;
+    if !starts_in_r(prev) {
+        return None;
+    }
+    let mut j = prev;
+    while j > 0 && marks[j - 1].keep_with_next && starts_in_r(j - 1) {
+        j -= 1;
+    }
+    let at_top = placed[marks[j].placed].line.rect.y <= regions[r].y + 1e-6;
+    (!at_top && r + 1 < regions.len() && !moved.contains(&j)).then_some((j, r + 1))
 }
 
 fn push_attrs(b: &mut parley::RangedBuilder<'_, Ink>, range: Option<Range<usize>>, a: &CharAttrs) {
@@ -751,7 +1429,10 @@ fn push_attrs(b: &mut parley::RangedBuilder<'_, Ink>, range: Option<Range<usize>
 /// are `bytes`; `first` is the story offset of its first character.
 /// `text` is the shadow text: boundaries at an inserted soft hyphen are
 /// skipped (it is not a story character), and `letter` is added per
-/// character for justified lines stretched with letter spacing.
+/// character for justified lines stretched with letter spacing. Positions
+/// are frame-local, like glyphs: parley measures them from the line's
+/// start, `line_x`, which is added.
+#[allow(clippy::too_many_arguments)]
 fn caret_positions(
     layout: &Layout<Ink>,
     offsets: &ClusterOffsets,
@@ -760,6 +1441,7 @@ fn caret_positions(
     bytes: Range<usize>,
     first: usize,
     letter: f64,
+    line_x: f64,
 ) -> Vec<(usize, f64)> {
     let (b0, b1) = (bytes.start, bytes.end);
     let mut boundaries: Vec<usize> = match text.get(b0..b1) {
@@ -786,7 +1468,7 @@ fn caret_positions(
         let cursor = Cursor::from_byte_index(layout, *b, affinity);
         out.push((
             first + k,
-            caret_x(layout, offsets, cursor) + k as f64 * letter,
+            line_x + caret_x(layout, offsets, cursor) + k as f64 * letter,
         ));
         k += 1;
     }
@@ -883,6 +1565,10 @@ pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameI
         let gap = t.column_gap.max(0.0);
         let cw = ((content.width - gap * f64::from(cols - 1)) / f64::from(cols)).max(1.0);
         let obstacles = obstacles_for(doc, index, owner, f);
+        let page = match owner {
+            Owner::Page(p) => index.page_index.get(&p).map(|i| *i as u32),
+            Owner::Master(_) => None,
+        };
         for c in 0..cols {
             out.push(Region {
                 frame: *fid,
@@ -892,8 +1578,18 @@ pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameI
                 h: content.height,
                 valign: t.vertical_align,
                 obstacles: obstacles.clone(),
+                page,
             });
         }
+    }
+    // Page indices become ranks among the chain's pages.
+    let mut pages: Vec<u32> = out.iter().filter_map(|r| r.page).collect();
+    pages.sort_unstable();
+    pages.dedup();
+    for r in &mut out {
+        r.page = r
+            .page
+            .and_then(|p| pages.binary_search(&p).ok().map(|i| i as u32));
     }
     out
 }
@@ -949,10 +1645,16 @@ fn apply_vertical_align(regions: &[Region], placed: &mut [PlacedLine]) {
             VerticalAlign::Middle => 0.5,
             VerticalAlign::Bottom => 1.0,
         };
+        // A drop cap on a paragraph shorter than the cap sits on a baseline
+        // below its lines; its first glyph's baseline counts too. (Other
+        // lines' baselines are inside their boxes, so nothing changes.)
         let bottom = placed
             .iter()
             .filter(|p| p.region == ri)
-            .map(|p| p.line.rect.bottom())
+            .map(|p| {
+                let cap = p.line.runs.first().and_then(|r| r.glyphs.first());
+                cap.map_or(p.line.rect.bottom(), |g| p.line.rect.bottom().max(g.y))
+            })
             .fold(f64::NEG_INFINITY, f64::max);
         if !bottom.is_finite() {
             continue;

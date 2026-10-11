@@ -10,7 +10,7 @@ type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
 const MIGRATIONS: [Step; SCHEMA_VERSION as usize] =
-    [v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5];
+    [v0_to_v1, v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5, v5_to_v6];
 
 /// The schema version a document JSON declares (absent = 0).
 pub fn version_of(v: &Value) -> u64 {
@@ -86,6 +86,18 @@ fn v4_to_v5(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(5));
+    Ok(v)
+}
+
+/// Version 6 adds the paragraph fields `keep_with_next`, `keep_together`,
+/// `widow_orphan` and `drop_cap`, all optional (unset keeps v0.1 layout),
+/// and gives meaning to the column, frame and page break characters
+/// U+000E, U+001D and U+000C in story text (ADR 0015), which older files
+/// cannot contain in practice. Only the version changes.
+fn v5_to_v6(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(6));
     Ok(v)
 }
 

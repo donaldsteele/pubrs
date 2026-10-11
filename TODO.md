@@ -42,6 +42,17 @@ Deferred and partial work. Each entry says what is missing and why.
 - Letter-spaced justification spaces characters, not grapheme clusters, and uses the mean font size of the line for its cap.
 - The Paragraph dialog is under Text → Paragraph… (Ctrl/Cmd+Alt+P); there is no Format menu.
 
+## Paragraph controls and breaks (M15)
+
+- Autoflow (adding pages and linked frames for overflowing text) is not implemented; a page break at the end of a chain overflows.
+- The built-in styles leave `widow_orphan` unset (v0.1 layout, LD2); the M30 templates should enable `widow_orphan = 2` in their body styles.
+- A keep-with-next paragraph that itself spans two columns or frames is not moved, and its last lines are not split off to join the next paragraph (ADR 0015).
+- Keeps (keep together, widows and orphans) are skipped for a paragraph that contains a break character.
+- Keeps never cost visible text: a move that makes its own paragraphs overflow is undone, and when moves push later text out of the chain the whole story is laid out without keeps (all or nothing, ADR 0015). Finer recovery (dropping only the move that hid the text) is not done.
+- With a drop cap, the first word is hyphenated without its cap letters (the patterns see "ourselves" for "Ourselves" with a one-letter cap).
+- A drop cap is drawn in the style of its first character even when its characters differ; right-to-left paragraphs get the cap on the left. Clicks beside the cap on lines 2..N land on those lines (the cap is hit through the first line).
+- Insert ▸ Break ▸ Frame Break has no shortcut (Page: Ctrl/Cmd+Enter, Column: Ctrl/Cmd+Shift+Enter). Drop Cap… is under Text, as there is no Format menu.
+
 ## `.pub` import (M31)
 
 - `.pub` margin guides are not read; imported pages use 36 pt margins.

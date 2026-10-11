@@ -23,7 +23,7 @@ Top-level object:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | integer | Currently `5`. Older versions are migrated on load. Newer versions are rejected. |
+| `schema_version` | integer | Currently `6`. Older versions are migrated on load. Newer versions are rejected. |
 | `id` | uuid | Document id. |
 | `meta` | object | `title`, `author`, optional `template`. |
 | `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points); optional `sheet` (see below) and `booklet` (bool, omitted when false). |
@@ -79,8 +79,11 @@ text colour is stored. Ids are UUID strings.
 `frames` is the linked chain in flow order. Paragraph objects may carry
 overrides `align`, `line_spacing`, `space_before`, `space_after`,
 `first_line_indent`, `left_indent`, `right_indent`, `hyphenate` (bool, default
-false), `language` (BCP 47, default `en-US`) and `justify_limits`
-(`{"max_word_space": 1.33, "letter_spacing": 0.05}`, both optional; see below).
+false), `language` (BCP 47, default `en-US`), `justify_limits`
+(`{"max_word_space": 1.33, "letter_spacing": 0.05}`, both optional; see below),
+`keep_with_next`, `keep_together` (bools, default false), `widow_orphan`
+(lines, default off) and `drop_cap` (`{"lines": 3, "chars": 1}`; see below).
+Run text may contain the column, frame and page break characters (see below).
 Run objects may carry
 `style` (character style id) and overrides `font_family`, `font_size`, `bold`,
 `italic`, `underline`, `color`, `letter_spacing`.
@@ -112,6 +115,7 @@ version.
 | 3 | Paragraph fields `hyphenate`, `language` and `justify_limits` (on paragraphs and paragraph styles). All are optional, so version 1 and 2 files are valid version 3 files; migration only stamps the version. |
 | 4 | `swatches` and `scheme` on the document, and paints (swatch references and gradients) wherever a colour is stored. All optional, and a hex string is still a valid paint, so older files are valid version 4 files and are only stamped. |
 | 5 | `alt_text` on picture frames (written to tagged PDF). Optional and omitted when empty, so older files are valid version 5 files and are only stamped. |
+| 6 | Paragraph fields `keep_with_next`, `keep_together`, `widow_orphan` and `drop_cap` (on paragraphs and paragraph styles), and the break characters U+000E (column), U+001D (frame) and U+000C (page) in run text. All fields are optional and older files hold no break characters, so older files are valid version 6 files; migration only stamps the version. |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -184,3 +188,33 @@ need more is left short. `{}` means both defaults. `"unbounded": true` (inside
 `justify_limits`) means no limits and overrides limits inherited from a
 paragraph style. The last line of a
 paragraph is never stretched.
+
+### Keeps, drop caps and breaks (version 6)
+
+All four paragraph fields are absent in every older file, and **absent means
+the version 5 layout, unchanged** (Locked Decision 2).
+
+- `keep_with_next: true` keeps the paragraph's last line in the same column
+  or frame as the next paragraph's first line; `keep_together: true` keeps
+  all its lines in one column or frame. A paragraph is moved at most one
+  column or frame on, and only when that can help (ADR 0015).
+- `widow_orphan` is the fewest lines of the paragraph left alone at the top
+  (widows) or bottom (orphans) of a column or frame. `0` or `1` turns control
+  off and overrides a style; readers also accept `true` (2 lines) and `false`
+  (0). Writers write the number.
+- `drop_cap: {"lines": n, "chars": k}` draws the first `k` characters (1-15,
+  default 1) as one large glyph run, sized so its cap height reaches from the
+  first line's cap height to the baseline of line `n` (1-10, default 3); those
+  lines are indented past it. `"lines": 0` removes a drop cap set by a style.
+  The characters stay in the story text.
+- Breaks are single characters in run text, so offsets stay in characters:
+
+  | Character | Break | The text after it continues in |
+  | --- | --- | --- |
+  | U+000E | column | the next column, or the next frame of the chain after the last column |
+  | U+001D | frame | the next frame of the chain |
+  | U+000C | page | the next frame of the chain that is on a later page |
+
+  JSON writes them as `"\u000e"`, `"\u001d"` and `"\f"`. They draw nothing.
+  Pages are never added: with no frame to continue in, the rest of the story
+  overflows.

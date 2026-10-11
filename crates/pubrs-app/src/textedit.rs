@@ -180,7 +180,9 @@ pub fn line_edge(
     let (_, l) = lines[line_for(&lines, offset)?];
     Some(if end {
         // Stay before a soft-wrap space so the caret remains on this line.
-        if l.ends_paragraph {
+        // A line ending at a break character ends before it, like a
+        // paragraph's last line.
+        if l.ends_paragraph || ends_at_break(doc, story, l.chars.end) {
             l.chars.end
         } else {
             l.chars.end.saturating_sub(1).max(l.chars.start)
@@ -188,6 +190,19 @@ pub fn line_edge(
     } else {
         l.chars.start
     })
+}
+
+/// Whether the character at story offset `at` is a column, frame or page
+/// break (costs one paragraph, not the story).
+pub fn ends_at_break(doc: &Document, story: StoryId, at: usize) -> bool {
+    let Some(s) = doc.story(story) else {
+        return false;
+    };
+    let (pi, c) = s.locate(at);
+    s.paragraphs
+        .get(pi)
+        .and_then(|p| p.text().chars().nth(c))
+        .is_some_and(pubrs_api::core::text::is_break)
 }
 
 /// Page-space quads highlighting `start..end`.

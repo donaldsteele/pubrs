@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 158974,
+  "bytes": 159213,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 158974,
+  "bytes": 159213,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 60
+  "revision": 64
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 61
+  "revision": 65
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 57
+  "revision": 61
 }
 ```
 
@@ -1519,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 41
 }
 ```
 
@@ -1560,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 38
+  "revision": 42
 }
 ```
 
@@ -1598,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 43
 }
 ```
 
@@ -1637,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 44
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001f",
-  "revision": 54
+  "revision": 58
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 55
+  "revision": 59
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 50
+  "revision": 54
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 51
+  "revision": 55
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 56
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 53
+  "revision": 57
 }
 ```
 
@@ -1911,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 45
 }
 ```
 
@@ -1941,7 +1941,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 45
+  "revision": 49
 }
 ```
 
@@ -1979,7 +1979,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 52
 }
 ```
 
@@ -2019,7 +2019,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 53
 }
 ```
 
@@ -2087,7 +2087,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 57
+  "revision": 61
 }
 ```
 
@@ -2152,7 +2152,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 57,
+  "revision": 61,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2212,7 +2212,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
-  "revision": 56
+  "revision": 60
 }
 ```
 
@@ -2257,7 +2257,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": true,
-  "revision": 28,
+  "revision": 31,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2303,6 +2303,49 @@ Result:
   "overflowing": false,
   "revision": 21,
   "story_id": "00000000-0000-87ea-8000-000000000010"
+}
+```
+
+### `text_insert_break`
+
+Insert a column, frame or page break at a character offset (default: end). A break is one character. column continues in the next column or frame; frame in the next frame of the chain; page in the next frame of the chain on a later page (pages are not added: with none, the rest overflows).
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `kind` | "column" \| "frame" \| "page" | yes | column (continue in the next column or frame), frame (the next frame of the chain) or page (the next frame of the chain on a later page; with none, the rest overflows). |
+| `offset` | integer |  | Character offset (0 = start). Omit to append at the end. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example** — A break is one character in the story (column U+000E, frame U+001D, page U+000C). Without an offset it goes at the end, so what follows starts in the next frame of the chain.
+
+```json
+{
+  "arguments": {
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "kind": "frame"
+  },
+  "name": "text_insert_break"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 220,
+  "overflowing": false,
+  "revision": 29,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
 
@@ -2430,14 +2473,14 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 0,
   "overflowing": false,
-  "revision": 46,
+  "revision": 50,
   "story_id": "00000000-0000-87ea-8000-000000000019"
 }
 ```
 
 ### `text_apply_para_style`
 
-Format paragraphs touching start..end (default all): paragraph style by name (e.g. "Heading 1", "Body"), align left/center/right/justify, line_spacing (multiple of font size), space_before/after and indents in points.
+Format paragraphs touching start..end (default all): paragraph style by name (e.g. "Heading 1", "Body"), align left/center/right/justify, line_spacing (multiple of font size), space_before/after and indents in points, hyphenation, keep_with_next, keep_together, widow_orphan (true = 2 lines) and drop_cap {lines, chars}.
 
 **Arguments**
 
@@ -2445,11 +2488,14 @@ Format paragraphs touching start..end (default all): paragraph style by name (e.
 |---|---|---|---|
 | `align` | "left" \| "center" \| "right" \| "justify" \| null |  | Horizontal paragraph alignment. |
 | `doc_id` | string |  | Document id (default: the most recently used document). |
+| `drop_cap` | object |  | Drop cap `{lines, chars}` (defaults 3 and 1); `{"lines": 0}` removes it. |
 | `end` | integer |  |  |
 | `first_line_indent` | number |  |  |
 | `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
 | `hyphenate` | boolean |  | Break words at hyphenation points on loose lines (default off). |
 | `justify_limits` | object |  | Caps on justified stretch: `{max_word_space, letter_spacing}` (defaults 1.33 and 0.05). Unset leaves it as is (inherited, or unbounded as in v0.1); `{"unbounded": true}` removes limits a paragraph style sets. |
+| `keep_together` | boolean |  | Keep all lines in one column or frame (default off). |
+| `keep_with_next` | boolean |  | Keep the last line in the same column or frame as the next paragraph's first line (default off). |
 | `language` | string |  | BCP 47 language tag for hyphenation (default "en-US"). |
 | `left_indent` | number |  |  |
 | `line_spacing` | number |  | Line height as a multiple of the font size (1.2 = normal). |
@@ -2459,6 +2505,7 @@ Format paragraphs touching start..end (default all): paragraph style by name (e.
 | `start` | integer |  | Paragraphs touching start..end are changed. Default: all paragraphs. |
 | `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
 | `style` | string |  | Paragraph style name or id (e.g. "Heading 1", "Body"). |
+| `widow_orphan` | boolean \| integer |  | Widow and orphan control: `true` (2 lines), a line count, or `false`/0 to turn it off (default off). |
 
 **Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
 
@@ -2598,7 +2645,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "new_story_id": "00000000-0000-87ea-8000-000000000019",
-  "revision": 29
+  "revision": 32
 }
 ```
 
@@ -2851,7 +2898,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 27
+  "revision": 30
 }
 ```
 
@@ -2887,7 +2934,7 @@ Result:
 
 ```json
 {
-  "revision": 29,
+  "revision": 32,
   "styles": [
     {
       "character": {
@@ -2978,7 +3025,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 30,
+  "revision": 33,
   "style_id": "00000000-0000-87ea-8000-00000000001a"
 }
 ```
@@ -3022,7 +3069,34 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 31
+  "revision": 34
+}
+```
+
+**Example** — Headings stay with the paragraph after them, and in one piece.
+
+```json
+{
+  "arguments": {
+    "paragraph": {
+      "keep_together": true,
+      "keep_with_next": true
+    },
+    "style": "Heading 1"
+  },
+  "name": "style_update"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000005"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "revision": 35
 }
 ```
 
@@ -3062,7 +3136,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 32
+  "revision": 36
 }
 ```
 
@@ -3095,7 +3169,7 @@ Result:
 
 ```json
 {
-  "revision": 46,
+  "revision": 50,
   "swatches": [
     {
       "name": "Brand Cyan",
@@ -3160,7 +3234,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42,
+  "revision": 46,
   "swatch_id": "00000000-0000-87ea-8000-00000000001d"
 }
 ```
@@ -3195,7 +3269,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43,
+  "revision": 47,
   "swatch_id": "00000000-0000-87ea-8000-00000000001e"
 }
 ```
@@ -3242,7 +3316,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 44
+  "revision": 48
 }
 ```
 
@@ -3307,7 +3381,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 52
 }
 ```
 
@@ -3428,7 +3502,7 @@ Result:
     "… 3 more"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 47
+  "revision": 51
 }
 ```
 
@@ -3477,7 +3551,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 36
+  "revision": 40
 }
 ```
 
@@ -3519,7 +3593,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 33
+  "revision": 37
 }
 ```
 
@@ -3556,7 +3630,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 33
+  "revision": 37
 }
 ```
 
@@ -3604,7 +3678,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000013",
   "pixel_height": 1200,
   "pixel_width": 1800,
-  "revision": 34
+  "revision": 38
 }
 ```
 
@@ -3642,7 +3716,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 35
+  "revision": 39
 }
 ```
 
@@ -4015,11 +4089,11 @@ Result:
 
 ```json
 {
-  "bytes": 94785,
+  "bytes": 94850,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -4040,11 +4114,11 @@ Result:
 
 ```json
 {
-  "bytes": 514376,
+  "bytes": 514441,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -4082,7 +4156,7 @@ Result:
 
 ```json
 {
-  "bytes": 668402,
+  "bytes": 668545,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4090,7 +4164,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -4130,12 +4204,12 @@ Result:
 
 ```json
 {
-  "bytes": 22771,
+  "bytes": 23361,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 59,
+  "revision": 63,
   "width": 596
 }
 ```
@@ -4176,8 +4250,8 @@ Result:
   "height": 351,
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
-  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAe0UlEQVR4nO2d… (10596 characters)",
-  "revision": 59,
+  "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAf3ElEQVR4nO2d… (10952 characters)",
+  "revision": 63,
   "width": 249
 }
 ```
@@ -4218,7 +4292,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 58
+  "revision": 62
 }
 ```
 
@@ -4256,7 +4330,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -4309,9 +4383,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 52 more"
+    "… 56 more"
   ],
-  "revision": 57
+  "revision": 61
 }
 ```
 
@@ -4493,7 +4567,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 5,
+    "schema_version": 6,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -4551,13 +4625,16 @@ Result:
         "paragraphs": [
           {
             "align": "justify",
+            "drop_cap": {
+              "chars": 1,
+              "lines": 3
+            },
             "hyphenate": true,
             "justify_limits": {
               "letter_spacing": 0.05,
               "max_word_space": 1.33
             },
-            "language": "en-US",
-            "…": "3 more keys"
+            "…": "6 more keys"
           },
           {
             "align": "justify",
@@ -4566,8 +4643,8 @@ Result:
               "letter_spacing": 0.05,
               "max_word_space": 1.33
             },
-            "language": "en-US",
-            "…": "3 more keys"
+            "keep_together": true,
+            "…": "5 more keys"
           }
         ]
       },
@@ -4579,13 +4656,16 @@ Result:
         "paragraphs": [
           {
             "align": "justify",
+            "drop_cap": {
+              "chars": 1,
+              "lines": 3
+            },
             "hyphenate": true,
             "justify_limits": {
               "letter_spacing": 0.05,
               "max_word_space": 1.33
             },
-            "language": "en-US",
-            "…": "3 more keys"
+            "…": "6 more keys"
           }
         ]
       }
@@ -4645,7 +4725,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -4678,13 +4758,20 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 59,
+  "revision": 63,
   "warnings": [
     {
       "code": "overflow",
       "frame": "00000000-0000-87ea-8000-00000000000f",
       "hint": "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames",
       "message": "31 characters do not fit in the text frame chain",
+      "…": "1 more keys"
+    },
+    {
+      "code": "overflow",
+      "frame": "00000000-0000-87ea-8000-000000000015",
+      "hint": "enlarge the frame, reduce the text or font size, or link another frame with text_link_frames",
+      "message": "0 characters do not fit in the text frame chain",
       "…": "1 more keys"
     }
   ]

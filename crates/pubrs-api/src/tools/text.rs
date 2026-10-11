@@ -1,5 +1,7 @@
 //! Text tools.
 
+use pubrs_core::style::{DEFAULT_WIDOW_ORPHAN, DropCap, LinesOrFlag};
+use pubrs_core::text::BreakKind;
 use pubrs_core::{
     Align, CharProps, Color, Command, DocumentId, FrameId, Margins, Paint, ParaProps, StoryId,
     StyleKind, TextFrameProps, VerticalAlign,
@@ -160,6 +162,36 @@ pub struct TextApplyParaStyle {
     /// Caps on justified stretch: `{max_word_space, letter_spacing}` (defaults 1.33 and 0.05). Unset leaves it as is (inherited, or unbounded as in v0.1); `{"unbounded": true}` removes limits a paragraph style sets.
     #[serde(default)]
     pub justify_limits: Option<pubrs_core::JustifyLimits>,
+    /// Keep the last line in the same column or frame as the next
+    /// paragraph's first line (default off).
+    #[serde(default)]
+    pub keep_with_next: Option<bool>,
+    /// Keep all lines in one column or frame (default off).
+    #[serde(default)]
+    pub keep_together: Option<bool>,
+    /// Widow and orphan control: `true` (2 lines), a line count, or `false`/0 to turn it off (default off).
+    #[serde(default)]
+    pub widow_orphan: Option<LinesOrFlag>,
+    /// Drop cap `{lines, chars}` (defaults 3 and 1); `{"lines": 0}` removes it.
+    #[serde(default)]
+    pub drop_cap: Option<DropCap>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextInsertBreak {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    #[serde(default)]
+    pub frame_id: Option<FrameId>,
+    #[serde(default)]
+    pub story_id: Option<StoryId>,
+    /// column (continue in the next column or frame), frame (the next frame of the chain) or page (the next frame of the chain on a later page; with none, the rest overflows).
+    pub kind: BreakKind,
+    /// Character offset (0 = start). Omit to append at the end.
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -374,6 +406,32 @@ impl Session {
         self.text_out(story, change)
     }
 
+    pub fn text_insert_break(&mut self, req: TextInsertBreak) -> ApiResult<TextChangeOut> {
+        let story = self.resolve_story(req.doc_id, req.frame_id, req.story_id)?;
+        let len = self
+            .get(req.doc_id)?
+            .doc()
+            .story(story)
+            .map_or(0, |s| s.char_len());
+        let at = req.offset.unwrap_or(len);
+        if at > len {
+            return Err(ApiError::invalid(
+                format!("offset {at} is outside the story (length {len})"),
+                "use text_get to see character offsets",
+            ));
+        }
+        let change = self.exec(
+            req.doc_id,
+            Command::InsertText {
+                story,
+                at,
+                text: req.kind.char().to_string(),
+                format: None,
+            },
+        )?;
+        self.text_out(story, change)
+    }
+
     pub fn text_replace_range(&mut self, req: TextReplaceRange) -> ApiResult<TextChangeOut> {
         let story = self.resolve_story(req.doc_id, req.frame_id, req.story_id)?;
         let change = self.exec(
@@ -482,7 +540,23 @@ impl Session {
             hyphenate: req.hyphenate,
             language: req.language,
             justify_limits: req.justify_limits,
+            keep_with_next: req.keep_with_next,
+            keep_together: req.keep_together,
+            widow_orphan: req.widow_orphan.map(|w| match w {
+                LinesOrFlag::Flag(true) => DEFAULT_WIDOW_ORPHAN,
+                LinesOrFlag::Flag(false) => 0,
+                LinesOrFlag::Lines(n) => n,
+            }),
+            drop_cap: req.drop_cap,
         };
+        if props.widow_orphan.is_some_and(|n| n > 10)
+            || props.drop_cap.is_some_and(|d| !d.is_valid())
+        {
+            return Err(ApiError::invalid(
+                "invalid keep or drop cap settings",
+                "widow_orphan is true, false or 0-10 lines; drop_cap lines are 0-10 and chars 1-15",
+            ));
+        }
         if props != ParaProps::default() {
             commands.push(Command::ApplyParaProps {
                 story,

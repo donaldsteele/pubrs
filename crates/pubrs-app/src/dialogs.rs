@@ -20,6 +20,7 @@ pub enum Dialog {
     Recovery(Vec<Recoverable>),
     PageSetup(PageSetupState),
     Paragraph(ParagraphState),
+    DropCap(DropCapState),
     SaveTemplate(String),
     Message(String, String),
     /// Design → Colour Scheme…
@@ -352,6 +353,7 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         }
         Dialog::PageSetup(state) => page_setup_ui(app, ui, state),
         Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
+        Dialog::DropCap(state) => drop_cap_ui(app, ui, state),
         Dialog::Print(printers, options) => {
             ui.heading("Print");
             if let Some(note) = app.doc().and_then(imposition_note) {
@@ -1125,7 +1127,15 @@ fn paint_preview(ui: &mut egui::Ui, st: &PageSetupState, setup: &PageSetup, page
 // ---------------------------------------------------------------------
 // Paragraph
 
+use pubrs_api::core::style::{DEFAULT_WIDOW_ORPHAN, DropCap};
 use pubrs_api::core::{JustifyLimits, ParaAttrs, ParaProps, StoryId};
+
+/// The Paragraph dialog's tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParaTab {
+    Spacing,
+    Keeps,
+}
 
 /// Languages with bundled hyphenation patterns, as (BCP 47 tag, name).
 const LANGUAGES: [(&str, &str); 6] = [
@@ -1154,6 +1164,11 @@ pub struct ParagraphState {
     limit: bool,
     word_pct: f64,
     letter_pct: f64,
+    pub tab: ParaTab,
+    keep_with_next: bool,
+    keep_together: bool,
+    widow_orphan: bool,
+    widow_lines: u8,
 }
 
 impl ParagraphState {
@@ -1188,6 +1203,15 @@ impl ParagraphState {
             limit: initial.justify_limits.is_some(),
             word_pct: lim.max_word_space * 100.0,
             letter_pct: lim.letter_spacing * 100.0,
+            tab: ParaTab::Spacing,
+            keep_with_next: initial.keep_with_next,
+            keep_together: initial.keep_together,
+            widow_orphan: initial.widow_orphan >= 2,
+            widow_lines: if initial.widow_orphan >= 2 {
+                initial.widow_orphan
+            } else {
+                DEFAULT_WIDOW_ORPHAN
+            },
             initial,
         })
     }
@@ -1223,6 +1247,23 @@ impl ParagraphState {
             hyphenate: (self.hyphenate != i.hyphenate).then_some(self.hyphenate),
             language: (self.language != i.language).then(|| self.language.clone()),
             justify_limits: limits,
+            keep_with_next: (self.keep_with_next != i.keep_with_next)
+                .then_some(self.keep_with_next),
+            keep_together: (self.keep_together != i.keep_together).then_some(self.keep_together),
+            widow_orphan: {
+                let new = if self.widow_orphan {
+                    self.widow_lines
+                } else {
+                    0
+                };
+                let old = if i.widow_orphan >= 2 {
+                    i.widow_orphan
+                } else {
+                    0
+                };
+                (new != old).then_some(new)
+            },
+            drop_cap: None,
         }
     }
 }
@@ -1243,6 +1284,86 @@ fn paragraph_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ParagraphState) 
         mark(ui, name, &resp);
         ui.end_row();
     };
+    ui.horizontal(|ui| {
+        for (tab, label, name) in [
+            (ParaTab::Spacing, "Indents and Spacing", "tab-spacing"),
+            (ParaTab::Keeps, "Keeps", "tab-keeps"),
+        ] {
+            let r = ui.selectable_value(&mut st.tab, tab, label);
+            mark(ui, name, &r);
+        }
+    });
+    ui.separator();
+    if st.tab == ParaTab::Keeps {
+        keeps_ui(ui, st);
+    } else {
+        spacing_ui(ui, st, num);
+    }
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            let props = st.props();
+            if props == ParaProps::default()
+                || app.exec(Command::ApplyParaProps {
+                    story: st.story,
+                    start: st.start,
+                    end: st.end,
+                    props,
+                })
+            {
+                out = Outcome::Close;
+            }
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+/// The Keeps tab: how the paragraph breaks across columns and frames.
+fn keeps_ui(ui: &mut egui::Ui, st: &mut ParagraphState) {
+    let r = ui.checkbox(&mut st.keep_with_next, "Keep with next");
+    mark(ui, "keep-with-next", &r);
+    r.on_hover_text("The last line stays in the same column or frame as the next paragraph");
+    let r = ui.checkbox(&mut st.keep_together, "Keep lines together");
+    mark(ui, "keep-together", &r);
+    r.on_hover_text("The paragraph is not split across columns or frames when it fits in one");
+    ui.horizontal(|ui| {
+        let r = ui.checkbox(&mut st.widow_orphan, "Widow and orphan control");
+        mark(ui, "widow-orphan", &r);
+        r.on_hover_text(
+            "No fewer than this many lines alone at the bottom or top of a column or frame",
+        );
+        let lines = ui.add_enabled(
+            st.widow_orphan,
+            egui::DragValue::new(&mut st.widow_lines)
+                .range(2..=10)
+                .suffix(" lines"),
+        );
+        mark(ui, "widow-lines", &lines);
+        lines.on_disabled_hover_text("Turn on widow and orphan control first");
+    });
+}
+
+/// The Indents and Spacing tab, with hyphenation and justification limits.
+fn spacing_ui(
+    ui: &mut egui::Ui,
+    st: &mut ParagraphState,
+    num: impl Fn(&mut egui::Ui, &str, &str, &mut f64, std::ops::RangeInclusive<f64>, &str),
+) {
     egui::Grid::new("paragraph-grid")
         .num_columns(2)
         .show(ui, |ui| {
@@ -1347,6 +1468,101 @@ fn paragraph_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ParagraphState) 
                 );
             });
     }
+}
+
+// ---------------------------------------------------------------------
+// Drop cap
+
+/// The Drop Cap dialog's edits for the caret's paragraph, the selected
+/// paragraphs, or every paragraph of the selected text box.
+pub struct DropCapState {
+    story: StoryId,
+    start: usize,
+    end: usize,
+    /// The first paragraph's text, for the preview.
+    sample: String,
+    on: bool,
+    lines: u8,
+    chars: u8,
+    initial: Option<DropCap>,
+}
+
+impl DropCapState {
+    pub fn for_selection(app: &PubrsApp) -> Option<Self> {
+        let doc = app.doc()?;
+        let edit = app.view().and_then(|v| v.edit.as_ref());
+        let story = match edit {
+            Some(e) => e.story,
+            None => app.selection().iter().find_map(|f| doc.story_of(*f))?,
+        };
+        let s = doc.story(story)?;
+        let (start, end) = match edit {
+            Some(e) => e.range(),
+            None => (0, s.char_len()),
+        };
+        let para = &s.paragraphs[s.locate(start).0];
+        let initial = doc.styles.resolve_para(para).drop_cap;
+        let dc = initial.unwrap_or_default();
+        Some(Self {
+            story,
+            start,
+            end,
+            sample: para.text(),
+            // Opening the dialog is asking for a drop cap.
+            on: true,
+            lines: dc.lines.max(1),
+            chars: dc.chars,
+            initial,
+        })
+    }
+
+    /// The override to apply, if anything changed.
+    fn props(&self) -> Option<ParaProps> {
+        let new = self.on.then_some(DropCap {
+            lines: self.lines,
+            chars: self.chars,
+        });
+        (new != self.initial).then(|| ParaProps {
+            // `lines: 0` also removes a drop cap the style sets.
+            drop_cap: Some(new.unwrap_or(DropCap { lines: 0, chars: 1 })),
+            ..Default::default()
+        })
+    }
+}
+
+fn drop_cap_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut DropCapState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Drop Cap");
+    let r = ui.checkbox(&mut st.on, "Drop cap");
+    mark(ui, "drop-cap", &r);
+    r.on_hover_text("Draw the first letters large, sunk into the first lines");
+    egui::Grid::new("drop-cap-grid")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label("Lines");
+            let r = ui.add_enabled(
+                st.on,
+                egui::DragValue::new(&mut st.lines).range(1..=DropCap::MAX_LINES),
+            );
+            mark(ui, "drop-lines", &r);
+            r.on_hover_text(
+                "Lines the letter spans, from the first line's top to the last one's baseline",
+            )
+            .on_disabled_hover_text("Turn on the drop cap first");
+            ui.end_row();
+            ui.label("Letters");
+            let r = ui.add_enabled(
+                st.on,
+                egui::DragValue::new(&mut st.chars).range(1..=DropCap::MAX_CHARS),
+            );
+            mark(ui, "drop-chars", &r);
+            r.on_hover_text("How many of the first characters are drawn large")
+                .on_disabled_hover_text("Turn on the drop cap first");
+            ui.end_row();
+        });
+    drop_cap_preview(ui, st);
     ui.add_space(8.0);
     let (enter, escape) = ui.input(|i| {
         (
@@ -1360,17 +1576,21 @@ fn paragraph_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ParagraphState) 
         let ok = ui.button("OK");
         mark(ui, "ok", &ok);
         if ok.clicked() || (enter && !editing) {
-            let props = st.props();
-            if props == ParaProps::default()
-                || app.exec(Command::ApplyParaProps {
-                    story: st.story,
-                    start: st.start,
-                    end: st.end,
-                    props,
-                })
-            {
-                out = Outcome::Close;
-            }
+            out = match st.props() {
+                Some(props) => {
+                    if app.exec(Command::ApplyParaProps {
+                        story: st.story,
+                        start: st.start,
+                        end: st.end,
+                        props,
+                    }) {
+                        Outcome::Close
+                    } else {
+                        Outcome::Keep
+                    }
+                }
+                None => Outcome::Close,
+            };
         }
         let c = ui.button("Cancel");
         mark(ui, "cancel", &c);
@@ -1587,4 +1807,49 @@ fn export_dialog(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ExportState) ->
         }
     }
     Outcome::Keep
+}
+
+/// A sketch of the paragraph: the cap in the dialog's font spanning
+/// `lines` lines, with bars for the text beside and below it.
+fn drop_cap_preview(ui: &mut egui::Ui, st: &DropCapState) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(240.0, 96.0), egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    let v = ui.visuals();
+    p.rect_filled(rect, 4.0, v.extreme_bg_color);
+    let pitch = 13.0;
+    let inner = rect.shrink(8.0);
+    let ink = v.strong_text_color();
+    let bar = v.weak_text_color();
+    let rows = ((inner.height() / pitch) as usize).max(1);
+    let (lines, cap_w) = if st.on {
+        let lines = usize::from(st.lines).min(rows);
+        let text: String = st.sample.chars().take(usize::from(st.chars)).collect();
+        let text = if text.trim().is_empty() {
+            "A".to_string()
+        } else {
+            text
+        };
+        // Cap height is about 0.7 of the font size.
+        let size = 9.0 + (lines as f32 - 1.0) * pitch / 0.7;
+        let galley = p.layout_no_wrap(text, egui::FontId::proportional(size), ink);
+        let baseline = inner.top() + (lines as f32 - 1.0) * pitch + 10.0;
+        let w = galley.size().x;
+        let ascent = galley.rows.first().map_or(size, |r| r.row.size.y * 0.8);
+        p.galley(egui::pos2(inner.left(), baseline - ascent), galley, ink);
+        (lines, w + 4.0)
+    } else {
+        (0, 0.0)
+    };
+    for k in 0..rows {
+        let y = inner.top() + k as f32 * pitch + 6.0;
+        let x0 = inner.left() + if k < lines { cap_w } else { 0.0 };
+        let x1 = inner.right() - if k + 1 == rows { 60.0 } else { 0.0 };
+        if x1 > x0 {
+            p.rect_filled(
+                egui::Rect::from_min_max(egui::pos2(x0, y), egui::pos2(x1, y + 3.0)),
+                1.0,
+                bar,
+            );
+        }
+    }
 }

@@ -10,6 +10,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::StyleId;
 
+/// Column break (U+000E): the text after it continues in the next column,
+/// or the next frame of the chain (ADR 0015).
+pub const COLUMN_BREAK: char = '\u{e}';
+/// Frame break (U+001D): the text after it continues in the next frame of
+/// the chain.
+pub const FRAME_BREAK: char = '\u{1d}';
+/// Page break (U+000C, form feed): the text after it continues in the next
+/// frame of the chain that is on a later page.
+pub const PAGE_BREAK: char = '\u{c}';
+
+/// A break character in story text. Each is one character, so text offsets
+/// stay in characters; it draws nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BreakKind {
+    /// Continue in the next column (or the next frame after the last).
+    Column,
+    /// Continue in the next frame of the chain.
+    Frame,
+    /// Continue in the next frame of the chain on a later page.
+    Page,
+}
+
+impl BreakKind {
+    pub const ALL: [BreakKind; 3] = [BreakKind::Column, BreakKind::Frame, BreakKind::Page];
+
+    /// The character stored in the story.
+    pub fn char(self) -> char {
+        match self {
+            BreakKind::Column => COLUMN_BREAK,
+            BreakKind::Frame => FRAME_BREAK,
+            BreakKind::Page => PAGE_BREAK,
+        }
+    }
+
+    /// The kind of break `c` is, if it is one.
+    pub fn of(c: char) -> Option<BreakKind> {
+        match c {
+            COLUMN_BREAK => Some(BreakKind::Column),
+            FRAME_BREAK => Some(BreakKind::Frame),
+            PAGE_BREAK => Some(BreakKind::Page),
+            _ => None,
+        }
+    }
+}
+
+/// Whether `c` is a column, frame or page break character.
+pub fn is_break(c: char) -> bool {
+    BreakKind::of(c).is_some()
+}
+
 /// The formatting of a run, without its text.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -42,7 +94,8 @@ fn char_to_byte(s: &str, chars: usize) -> usize {
     s.char_indices().nth(chars).map_or(s.len(), |(b, _)| b)
 }
 
-/// Normalise line endings to `\n`.
+/// Normalise line endings to `\n`. Break characters ([`BreakKind`]) are
+/// kept: a form feed in pasted text becomes a page break.
 pub fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n").replace('\r', "\n")
 }
@@ -315,7 +368,9 @@ fn is_word(c: char) -> bool {
 /// Find `query` in `text`; returns half-open char-offset ranges, in order,
 /// non-overlapping. `limit` restricts matches to lie inside `start..end`.
 /// Paragraph breaks are `\n`, so a match only spans paragraphs when the query
-/// contains `\n`. An empty query matches nothing.
+/// contains `\n`; likewise a match only spans a column, frame or page break
+/// when the query contains that break character, and a break is never part
+/// of a word. An empty query matches nothing.
 pub fn find_matches(
     text: &str,
     query: &str,
@@ -531,5 +586,48 @@ mod tests {
     fn crlf_is_normalised() {
         let s = story("a\r\nb\rc");
         assert_eq!(s.plain_text(), "a\nb\nc");
+    }
+
+    #[test]
+    fn break_characters_are_single_characters() {
+        for k in BreakKind::ALL {
+            assert_eq!(BreakKind::of(k.char()), Some(k));
+            assert_eq!(k.char().len_utf8(), 1, "same byte length as \\n");
+            assert!(is_break(k.char()));
+            assert_eq!(
+                normalize_newlines(&k.char().to_string()),
+                k.char().to_string()
+            );
+        }
+        assert!(!is_break('\n') && !is_break('a'));
+        let mut s = story("Hello world");
+        s.insert_text(5, &PAGE_BREAK.to_string(), None);
+        assert_eq!(s.paragraphs.len(), 1, "a break is not a paragraph");
+        assert_eq!(s.char_len(), 12);
+        assert_eq!(s.plain_text(), "Hello\u{c} world");
+        s.insert_text(0, &format!("{COLUMN_BREAK}{FRAME_BREAK}"), None);
+        assert_eq!(s.char_len(), 14);
+        s.delete_range(0, 2);
+        s.delete_range(5, 6);
+        assert_eq!(s.plain_text(), "Hello world");
+        let json = serde_json::to_string(&story("a\u{c}b\u{e}c\u{1d}d")).unwrap();
+        let back: Story = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.plain_text(), "a\u{c}b\u{e}c\u{1d}d");
+    }
+
+    #[test]
+    fn find_treats_breaks_as_non_word_characters() {
+        let o = FindOptions {
+            whole_word: true,
+            ..Default::default()
+        };
+        let t = "end\u{c}start\u{e}x";
+        assert_eq!(find_matches(t, "end", o, None), vec![(0, 3)]);
+        assert_eq!(find_matches(t, "start", o, None), vec![(4, 9)]);
+        assert!(find_matches(t, "endstart", FindOptions::default(), None).is_empty());
+        assert_eq!(
+            find_matches(t, "d\u{c}s", FindOptions::default(), None),
+            vec![(2, 5)]
+        );
     }
 }

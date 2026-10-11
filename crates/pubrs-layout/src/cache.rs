@@ -74,7 +74,13 @@ impl PartialEq for SharedStory {
 ///   page or master with wrap on and another story, mapped through the text
 ///   frame's position and rotation and outset by the wrap margin). A
 ///   frame's page position and rotation enter only through obstacles, since
-///   layout output is frame-local.
+///   layout output is frame-local. Each region also carries the rank of its
+///   frame's page among the chain's pages (page breaks compare it), so
+///   reordering the chain's pages recomposes the story and adding or moving
+///   other pages does not.
+/// - **Keeps, drop caps and breaks** (M15) read only the story's paragraph
+///   properties and text and the regions above, so they need no field of
+///   their own.
 ///
 /// When the flow starts reading something new, add it here; the
 /// verification mode and `tests/cache.rs` fail until it is.

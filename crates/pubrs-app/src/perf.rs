@@ -21,6 +21,9 @@ pub struct Totals {
     /// The worst frame's UI time minus its command and layout time: what
     /// the canvas, panels and texture uploads cost on the UI thread.
     pub overhead_max: Duration,
+    /// The second-worst frame's figure: the worst with one outlier (a
+    /// scheduler stall on a shared CI runner) set aside.
+    pub overhead_second: Duration,
     pub command: Duration,
     pub layout: Duration,
     /// Pages rasterised synchronously on the UI thread.
@@ -121,7 +124,12 @@ impl FrameStats {
             t.frames += 1;
             t.ui += spent;
             t.ui_max = t.ui_max.max(spent);
-            t.overhead_max = t.overhead_max.max(overhead);
+            if overhead > t.overhead_max {
+                t.overhead_second = t.overhead_max;
+                t.overhead_max = overhead;
+            } else {
+                t.overhead_second = t.overhead_second.max(overhead);
+            }
         });
         self.frame_cpu += Duration::from_secs_f32(frame_cpu.unwrap_or(0.0));
         for c in ctx.repaint_causes() {

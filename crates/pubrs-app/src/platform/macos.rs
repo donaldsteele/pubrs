@@ -1,7 +1,7 @@
 //! macOS: native menu bar (NSMenu via muda) and printing through
 //! NSPrintOperation on the exported PDF (PDFKit).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use eframe::egui::{Key, KeyboardShortcut};
@@ -72,7 +72,9 @@ fn code_for(key: Key) -> Option<Code> {
         Key::B => Code::KeyB,
         Key::D => Code::KeyD,
         Key::E => Code::KeyE,
+        Key::F => Code::KeyF,
         Key::G => Code::KeyG,
+        Key::H => Code::KeyH,
         Key::I => Code::KeyI,
         Key::L => Code::KeyL,
         Key::N => Code::KeyN,
@@ -89,6 +91,7 @@ fn code_for(key: Key) -> Option<Code> {
         Key::Minus => Code::Minus,
         Key::OpenBracket => Code::BracketLeft,
         Key::CloseBracket => Code::BracketRight,
+        Key::Enter => Code::Enter,
         _ => return None,
     })
 }
@@ -112,6 +115,8 @@ fn accelerator(s: KeyboardShortcut) -> Option<Accelerator> {
 pub struct NativeMenu {
     _menu: Menu,
     ids: HashMap<MenuId, Action>,
+    /// Actions whose shortcut is a key equivalent of their menu item.
+    accelerated: HashSet<Action>,
 }
 
 impl NativeMenu {
@@ -160,7 +165,16 @@ impl NativeMenu {
         }
         menu.init_for_nsapp();
         tracing::info!("native macOS menu bar installed");
-        Some(Self { _menu: menu, ids })
+        let accelerated = ids
+            .values()
+            .copied()
+            .filter(|a| shortcut(*a).and_then(accelerator).is_some())
+            .collect();
+        Some(Self {
+            _menu: menu,
+            ids,
+            accelerated,
+        })
     }
 
     /// Actions chosen from the menu since the last call.
@@ -176,6 +190,28 @@ impl NativeMenu {
 
     /// True if `action` is reachable through a native menu shortcut.
     pub fn handles(&self, action: Action) -> bool {
-        self.ids.values().any(|a| *a == action)
+        self.accelerated.contains(&action)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every Cmd shortcut in the keymap becomes a key equivalent of its
+    /// native menu item; otherwise the menu would claim the action and the
+    /// key would reach the canvas instead (Cmd+Enter typed a paragraph
+    /// break before M15's fix).
+    #[test]
+    fn every_command_shortcut_has_a_key_equivalent() {
+        for (sc, action) in crate::keymap::shortcut_actions() {
+            if sc.modifiers.command {
+                assert!(
+                    accelerator(sc).is_some(),
+                    "{action:?}: no native key equivalent for {sc:?}"
+                );
+            }
+        }
+        assert!(accelerator(shortcut(Action::InsertPageBreak).expect("shortcut")).is_some());
     }
 }

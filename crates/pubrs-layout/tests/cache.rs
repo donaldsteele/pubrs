@@ -197,7 +197,7 @@ struct Op {
 
 fn op() -> impl Strategy<Value = Op> {
     (
-        0u8..22,
+        0u8..25,
         0usize..8,
         0usize..8,
         0usize..200,
@@ -410,6 +410,34 @@ fn command(ids: &mut SeqIds, ed: &Editor, op: &Op) -> Option<Command> {
         18 => Command::SetMargins {
             margins: Margins::uniform(x.abs() / 10.0),
         },
+        // M15: keeps, widows and orphans, drop caps; break characters; page order.
+        19 => Command::ApplyParaProps {
+            story,
+            start: at,
+            end,
+            props: ParaProps {
+                keep_with_next: Some(op.flag),
+                keep_together: Some(op.b.is_multiple_of(2)),
+                widow_orphan: Some((op.b % 4) as u8),
+                drop_cap: (!op.b.is_multiple_of(3)).then_some(pubrs_core::style::DropCap {
+                    lines: (op.b % 4) as u8,
+                    chars: 1 + (op.c % 3) as u8,
+                }),
+                ..Default::default()
+            },
+        },
+        20 => Command::InsertText {
+            story,
+            at,
+            text: pubrs_core::text::BreakKind::ALL[op.b % 3]
+                .char()
+                .to_string(),
+            format: None,
+        },
+        21 => Command::MovePage {
+            page: pick(&pages, op.b)?,
+            index: op.c % pages.len().max(1),
+        },
         _ => return None,
     })
 }
@@ -442,4 +470,69 @@ proptest! {
             check(&mut cache, &mut lay, ed.doc());
         }
     }
+}
+
+/// M15: keeps, widow and orphan control, drop caps and break characters
+/// are story inputs: toggling each recomposes only its story, the result
+/// equals a full layout, and toggling back gives the first layout again.
+/// Page breaks read the order of the chain's pages, which moving another
+/// page leaves alone.
+#[test]
+fn keeps_drop_caps_and_breaks_recompose_only_their_story() {
+    let mut t = two_stories();
+    let (mut lay, mut cache) = (layouter(), StoryLayoutCache::new());
+    let start = check(&mut cache, &mut lay, t.ed.doc());
+    let variants = [
+        ParaProps {
+            keep_with_next: Some(true),
+            ..Default::default()
+        },
+        ParaProps {
+            keep_together: Some(true),
+            ..Default::default()
+        },
+        ParaProps {
+            widow_orphan: Some(2),
+            ..Default::default()
+        },
+        ParaProps {
+            drop_cap: Some(pubrs_core::style::DropCap { lines: 3, chars: 2 }),
+            ..Default::default()
+        },
+    ];
+    for props in variants {
+        t.ed.execute(Command::ApplyParaProps {
+            story: t.a,
+            start: 0,
+            end: 0,
+            props,
+        })
+        .unwrap();
+        check(&mut cache, &mut lay, t.ed.doc());
+        assert_eq!(cache.stats().recomposed, 1);
+        t.ed.undo().unwrap();
+        assert_eq!(check(&mut cache, &mut lay, t.ed.doc()), start);
+    }
+    for kind in pubrs_core::text::BreakKind::ALL {
+        t.ed.execute(Command::InsertText {
+            story: t.b,
+            at: 20,
+            text: kind.char().to_string(),
+            format: None,
+        })
+        .unwrap();
+        check(&mut cache, &mut lay, t.ed.doc());
+        assert_eq!(cache.stats().recomposed, 1);
+        t.ed.undo().unwrap();
+        assert_eq!(check(&mut cache, &mut lay, t.ed.doc()), start);
+    }
+    let page = t.ed.doc().pages[0].id;
+    t.ed.execute(Command::AddPage {
+        page: Page::new(PageId::new(&mut SeqIds::new(77_000))),
+        index: Some(0),
+    })
+    .unwrap();
+    check(&mut cache, &mut lay, t.ed.doc());
+    assert_eq!(cache.stats().recomposed, 0, "page ranks are relative");
+    assert_ne!(t.ed.doc().pages[0].id, page);
 }

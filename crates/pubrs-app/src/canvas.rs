@@ -937,7 +937,10 @@ fn handle_input(
     if ctx.text_edit_focused() || !canvas_focus {
         return;
     }
-    if app.view().is_some_and(|v| v.edit.is_some()) {
+    if app.dialog.is_some() {
+        // A modal dialog (Paragraph…, Drop Cap… opened while editing) owns
+        // the keyboard: its Enter must not also type a paragraph break.
+    } else if app.view().is_some_and(|v| v.edit.is_some()) {
         ctx.memory_mut(|m| {
             m.set_focus_lock_filter(
                 canvas_id,
@@ -1082,7 +1085,11 @@ fn text_keys(
                         let f = e.frame;
                         app.select(vec![f]);
                     }
-                    egui::Key::Enter => edit_insert(app, &e, "\n"),
+                    // Cmd/Ctrl+Enter is a page break (a shortcut), not a
+                    // paragraph break.
+                    egui::Key::Enter if types_paragraph_break(modifiers) => {
+                        edit_insert(app, &e, "\n")
+                    }
                     egui::Key::Tab => edit_insert(app, &e, "\t"),
                     egui::Key::Backspace => edit_delete(app, &e, false, word, &chars),
                     egui::Key::Delete => edit_delete(app, &e, true, word, &chars),
@@ -1147,6 +1154,14 @@ fn text_keys(
 }
 
 /// Replace the selection (or insert at the caret) with `text`.
+/// Whether Enter with `m` held types a paragraph break while editing.
+/// With Cmd or Ctrl it is the page-break shortcut instead: egui consumes
+/// it on Windows and Linux, and on macOS the native menu takes it, but a
+/// stray event must still not split the paragraph.
+fn types_paragraph_break(m: egui::Modifiers) -> bool {
+    !(m.command || m.ctrl || m.mac_cmd)
+}
+
 pub fn edit_insert(app: &mut PubrsApp, e: &TextEdit, text: &str) {
     let text = text.replace('\r', "");
     let n = text.chars().count();
@@ -1438,5 +1453,70 @@ mod view_key_tests {
         assert_eq!(texture_dpi(144.0, 3000, 2000, 8192), 144.0);
         let dpi = texture_dpi(144.0, 10_000, 2000, 8192);
         assert!(dpi < 144.0 && 10_000.0 * dpi / 144.0 <= 8190.0, "{dpi}");
+    }
+}
+
+#[cfg(test)]
+mod enter_tests {
+    use eframe::egui::{Context, Event, Key, Modifiers, RawInput};
+
+    use super::types_paragraph_break;
+    use crate::keymap::{Action, shortcut_actions};
+
+    #[test]
+    fn only_plain_or_shifted_enter_types_a_paragraph_break() {
+        assert!(types_paragraph_break(Modifiers::NONE));
+        assert!(types_paragraph_break(Modifiers::SHIFT));
+        assert!(!types_paragraph_break(Modifiers::COMMAND));
+        assert!(!types_paragraph_break(Modifiers::CTRL));
+        assert!(!types_paragraph_break(Modifiers::MAC_CMD));
+        assert!(!types_paragraph_break(
+            Modifiers::COMMAND | Modifiers::SHIFT
+        ));
+    }
+
+    /// The egui path (Windows, Linux, and macOS without the native menu):
+    /// Cmd/Ctrl+Enter and Cmd/Ctrl+Shift+Enter are consumed as the page
+    /// and column break shortcuts, so the canvas never sees the Enter.
+    #[test]
+    fn command_enter_is_consumed_as_a_break_shortcut() {
+        for (mods, want) in [
+            (Modifiers::COMMAND, Action::InsertPageBreak),
+            (
+                Modifiers::COMMAND | Modifiers::SHIFT,
+                Action::InsertColumnBreak,
+            ),
+        ] {
+            let ctx = Context::default();
+            let mut raw = RawInput::default();
+            raw.events.push(Event::Key {
+                key: Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: mods,
+            });
+            let mut out = ctx.run_ui(raw, |ui| {
+                let ctx = ui.ctx().clone();
+                let hit = shortcut_actions()
+                    .into_iter()
+                    .find(|(sc, _)| ctx.input_mut(|i| i.consume_shortcut(sc)))
+                    .map(|(_, a)| a);
+                assert_eq!(hit, Some(want));
+                let left = ctx.input(|i| {
+                    i.events.iter().any(|e| {
+                        matches!(
+                            e,
+                            Event::Key {
+                                key: Key::Enter,
+                                ..
+                            }
+                        )
+                    })
+                });
+                assert!(!left, "{want:?}: the Enter key is still queued");
+            });
+            out.textures_delta.clear();
+        }
     }
 }

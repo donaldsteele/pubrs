@@ -557,3 +557,64 @@ fn colour() {
     let doc = common::colour_document();
     assert_png_golden("colour", &render(&doc, 0, &opts()));
 }
+
+/// M15: a two-column page with a heading kept with its paragraph, a
+/// three-line drop cap, and a column break starting the second column.
+#[test]
+fn paragraph_controls_drop_cap_and_column_break() {
+    let text = format!(
+        "Harvest notes\nThe orchard volunteers gathered early on Saturday, sorting apples \
+and pears for the market stall while the bakers prepared fresh loaves for the morning \
+crowd.{}Next week: jam-making in the village hall, from ten until noon.",
+        pubrs_core::text::COLUMN_BREAK
+    );
+    let mut b = DocBuilder::new(SeqIds::new(15), small_page());
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(18.0, 18.0, 264.0, 164.0), &text)
+        .unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            columns: Some(2),
+            column_gap: Some(10.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let s = b.story_of(f);
+    b.exec(Command::ApplyCharProps {
+        story: s,
+        start: 0,
+        end: 13,
+        props: CharProps {
+            bold: Some(true),
+            font_size: Some(13.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start: 0,
+        end: 0,
+        props: ParaProps {
+            keep_with_next: Some(true),
+            space_after: Some(4.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start: 14,
+        end: 14,
+        props: ParaProps {
+            drop_cap: Some(pubrs_core::style::DropCap { lines: 3, chars: 1 }),
+            widow_orphan: Some(2),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    assert_png_golden("paragraph_controls", &render(&b.finish(), 0, &opts()));
+}
