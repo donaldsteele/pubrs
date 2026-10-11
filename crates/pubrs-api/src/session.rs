@@ -9,7 +9,7 @@ use pubrs_core::{
     RandomIds, SeqIds, StoryId, StyleId, StyleKind,
 };
 use pubrs_io::ExportContext;
-use pubrs_layout::{DocumentLayout, FontLibrary};
+use pubrs_layout::{CacheStats, DocumentLayout, FontLibrary, StoryLayoutCache};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,10 @@ pub struct OpenDoc {
     pub doc_id: DocumentId,
     pub editor: Editor,
     pub path: Option<PathBuf>,
+    /// The layout of the current revision, once computed.
     layout: Option<(u64, Arc<DocumentLayout>)>,
+    /// Per-story layouts reused across revisions (ADR 0012).
+    stories: StoryLayoutCache,
 }
 
 impl OpenDoc {
@@ -159,6 +162,7 @@ impl Session {
                 editor,
                 path,
                 layout: None,
+                stories: StoryLayoutCache::new(),
             },
         );
         self.order.push(doc_id);
@@ -249,7 +253,9 @@ impl Session {
         Ok(changed(id, &change))
     }
 
-    /// Layout of a document, recomputed when its revision changed.
+    /// Layout of a document, brought up to date when its revision changed:
+    /// only stories whose inputs changed are laid out again (the document's
+    /// [`StoryLayoutCache`]; fonts and shaping caches are shared).
     pub fn layout(&mut self, doc_id: Option<DocumentId>) -> ApiResult<Arc<DocumentLayout>> {
         let id = self.resolve(doc_id)?;
         let open = self.docs.get_mut(&id).expect("resolved");
@@ -259,9 +265,37 @@ impl Session {
         {
             return Ok(l.clone());
         }
-        let layout = Arc::new(self.ctx.layout(open.editor.doc()));
+        let layout = Arc::new(
+            open.stories
+                .layout(&mut self.ctx.layouter, open.editor.doc()),
+        );
         open.layout = Some((rev, layout.clone()));
         Ok(layout)
+    }
+
+    /// What the last incremental layout of a document did (stories
+    /// recomposed and reused, time spent on cache keys).
+    pub fn layout_stats(&self, doc_id: Option<DocumentId>) -> ApiResult<CacheStats> {
+        Ok(self.get(doc_id)?.stories.stats())
+    }
+
+    /// A document borrowed together with the session's render caches, so
+    /// export and drawing need no copy of the document.
+    pub(crate) fn doc_with_caches(&mut self, doc_id: DocumentId) -> ApiResult<DocWithCaches<'_>> {
+        let open = self.docs.get(&doc_id).ok_or_else(|| {
+            ApiError::not_found(
+                "document",
+                &doc_id.to_string(),
+                "list open documents with doc_list",
+            )
+        })?;
+        Ok(DocWithCaches {
+            doc: open.doc(),
+            revision: open.revision(),
+            ctx: &mut self.ctx,
+            rasterizer: &mut self.rasterizer,
+            software: self.config.software_rendering,
+        })
     }
 
     /// Fresh id from the session's id source.
@@ -377,6 +411,17 @@ impl Session {
             )),
         }
     }
+}
+
+/// A borrowed document plus the mutable caches that draw it (see
+/// [`Session::doc_with_caches`]).
+pub(crate) struct DocWithCaches<'a> {
+    pub doc: &'a Document,
+    pub revision: u64,
+    pub ctx: &'a mut ExportContext,
+    pub rasterizer: &'a mut Option<pubrs_render::Rasterizer>,
+    /// `SessionConfig::software_rendering`.
+    pub software: bool,
 }
 
 /// Convert an editor change into the API's change report.

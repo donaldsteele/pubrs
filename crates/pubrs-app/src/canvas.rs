@@ -1,9 +1,11 @@
 //! The page canvas: rendering, overlays and direct manipulation.
 
+use std::collections::BTreeMap;
+
 use eframe::egui::{self, Color32, Pos2, Sense, Stroke, Vec2};
 use pubrs_api::core::{
-    Color, Command, Document, FrameContent, FrameId, FrameKind, LineDirection, Owner, Point, Rect,
-    RunFormat,
+    Color, Command, Document, Frame, FrameContent, FrameId, FrameKind, LineDirection, Owner, Point,
+    Rect, RunFormat, Story, StoryId,
 };
 use pubrs_api::render::RasterOptions;
 use pubrs_api::tools::frames::{FrameAddImage, FrameAddShape, FrameAddText, ShapeKind};
@@ -67,15 +69,93 @@ fn welcome(app: &mut PubrsApp, ui: &mut egui::Ui) {
     });
 }
 
+/// The part of a document the canvas reads for one page: the page and its
+/// master, every frame on them (with group members), the stories their text
+/// frames show and the frames of those chains, plus the selected frames and
+/// the story being edited. Built each egui frame instead of a copy of the
+/// whole document, so its cost follows the page, not the publication (plan
+/// Locked Decision 3). Image assets stay out: the page itself is drawn from
+/// the session's texture.
+fn page_snapshot(
+    doc: &Document,
+    page_index: usize,
+    selection: &[FrameId],
+    editing: Option<StoryId>,
+) -> Document {
+    fn add_story(
+        doc: &Document,
+        story: StoryId,
+        frames: &mut BTreeMap<FrameId, Frame>,
+        stories: &mut BTreeMap<StoryId, Story>,
+    ) {
+        if stories.contains_key(&story) {
+            return;
+        }
+        let Some(s) = doc.story(story) else { return };
+        for f in &s.frames {
+            if let Some(frame) = doc.frame(*f) {
+                frames.entry(*f).or_insert_with(|| frame.clone());
+            }
+        }
+        stories.insert(story, s.clone());
+    }
+    let page = doc.pages[page_index].clone();
+    let masters: Vec<_> = page
+        .master
+        .and_then(|m| doc.master(m))
+        .cloned()
+        .into_iter()
+        .collect();
+    let mut frames = BTreeMap::new();
+    let mut stories = BTreeMap::new();
+    let seeds = page
+        .frames
+        .iter()
+        .chain(masters.iter().flat_map(|m| m.frames.iter()))
+        .chain(selection);
+    for id in seeds.flat_map(|f| doc.descendants(*f)) {
+        let Some(f) = doc.frame(id) else { continue };
+        frames.insert(id, f.clone());
+        if let Some(t) = f.as_text() {
+            add_story(doc, t.story, &mut frames, &mut stories);
+        }
+    }
+    if let Some(s) = editing {
+        add_story(doc, s, &mut frames, &mut stories);
+    }
+    Document {
+        schema_version: doc.schema_version,
+        id: doc.id,
+        meta: doc.meta.clone(),
+        setup: doc.setup,
+        grid: doc.grid,
+        pages: vec![page],
+        masters,
+        frames,
+        stories,
+        styles: doc.styles.clone(),
+        assets: BTreeMap::new(),
+        blobs: BTreeMap::new(),
+    }
+}
+
 fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
     let Some(doc_id) = app.doc_id() else { return };
     let Ok(open) = app.session.get(Some(doc_id)) else {
         return;
     };
-    let doc: Document = open.doc().clone();
     let revision = open.revision();
-    let page_index = app.view().map_or(0, |v| v.page).min(doc.pages.len() - 1);
-    let page = doc.pages[page_index].clone();
+    let page_index = app
+        .view()
+        .map_or(0, |v| v.page)
+        .min(open.doc().pages.len() - 1);
+    let doc: Document = {
+        let view = app.view();
+        let selection = view.map_or(&[][..], |v| v.selection.as_slice());
+        let editing = view.and_then(|v| v.edit.as_ref().map(|e| e.story));
+        page_snapshot(open.doc(), page_index, selection, editing)
+    };
+    let page = doc.pages[0].clone();
     let owner = Owner::Page(page.id);
     let (pw, ph, bleed) = (
         doc.setup.size.width as f32,

@@ -160,13 +160,13 @@ impl Session {
     ) -> ApiResult<(u32, u32, Vec<u8>)> {
         let layout = self.layout(doc_id)?;
         let id = self.resolve(doc_id)?;
-        let doc = self.get(Some(id))?.doc().clone();
+        let parts = self.doc_with_caches(id)?;
         let scene = pubrs_render::SceneOptions {
             show_empty_images: preview,
         };
-        let pm = self
+        let pm = parts
             .ctx
-            .render_page_with(&doc, &layout, index, opts, scene)?;
+            .render_page_with(parts.doc, &layout, index, opts, scene)?;
         let (w, h) = (pm.width(), pm.height());
         let png = pm
             .encode_png()
@@ -184,9 +184,9 @@ impl Session {
     ) -> ApiResult<(u32, u32, Vec<u8>)> {
         let layout = self.layout(doc_id)?;
         let id = self.resolve(doc_id)?;
-        let doc = self.get(Some(id))?.doc().clone();
+        let parts = self.doc_with_caches(id)?;
         let scene = pubrs_render::build_page_scene_with(
-            &doc,
+            parts.doc,
             &layout,
             index,
             pubrs_render::SceneOptions {
@@ -196,12 +196,12 @@ impl Session {
         .ok_or_else(|| {
             ApiError::not_found("page", &index.to_string(), "list pages with page_list")
         })?;
-        self.ctx.images.sync(&doc);
-        let software = self.config.software_rendering;
-        let r = self
+        parts.ctx.images.sync(parts.doc);
+        let software = parts.software;
+        let r = parts
             .rasterizer
             .get_or_insert_with(|| new_rasterizer(software));
-        r.render_rgba(&scene, &self.ctx.images, opts)
+        r.render_rgba(&scene, &parts.ctx.images, opts)
             .map_err(|e| ApiError::new("export_failed", e.to_string(), "try a smaller zoom"))
     }
 
@@ -232,7 +232,9 @@ impl Session {
 
     pub fn export_pdf(&mut self, req: ExportPdf) -> ApiResult<ExportPdfOut> {
         let id = self.resolve(req.doc_id)?;
-        let doc = self.get(Some(id))?.doc().clone();
+        let layout = self.layout(Some(id))?;
+        let parts = self.doc_with_caches(id)?;
+        let doc = parts.doc;
         let opts = PdfOptions {
             bleed: req.bleed.unwrap_or(doc.setup.bleed > 0.0),
             crop_marks: req.crop_marks,
@@ -243,7 +245,8 @@ impl Session {
             title: None,
             author: None,
         };
-        let pdf = self.ctx.export_pdf(&doc, &opts)?;
+        let pdf = parts.ctx.export_pdf_with(doc, &layout, &opts)?;
+        let (page_count, revision) = (doc.pages.len(), parts.revision);
         let path = match &req.path {
             Some(p) => Some(self.resolve_path(p)),
             None => self.default_path(Some(id), "pdf"),
@@ -255,9 +258,9 @@ impl Session {
             doc_id: id,
             path: path.as_ref().map(|p| p.display().to_string()),
             bytes: pdf.len() as u64,
-            page_count: doc.pages.len(),
+            page_count,
             base64: (path.is_none() || req.return_base64).then(|| b64(&pdf)),
-            revision: self.get(Some(id))?.revision(),
+            revision,
         })
     }
 

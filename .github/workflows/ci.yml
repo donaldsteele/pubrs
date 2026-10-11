@@ -43,10 +43,13 @@ jobs:
       - name: core builds without default features
         run: cargo build -p pubrs-core --no-default-features
       - name: tests (unit, goldens, PDF, MCP integration)
+        # Every incremental layout is checked against a full layout (ADR 0012).
+        env:
+          PUBRS_LAYOUT_VERIFY: "1"
         run: cargo test --workspace
-      - name: Performance table (Linux, 16 pages, informational)
+      - name: Performance budgets (Linux, 50 pages, enforced)
         if: runner.os == 'Linux'
-        run: cargo run --release -p pubrs-cli -- perf --pages 16 --runs 3
+        run: cargo run --release -p pubrs-cli -- perf --pages 50 --runs 5 --check
       - name: Golden images byte-identical on this OS?
         shell: bash
         run: |

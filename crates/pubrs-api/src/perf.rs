@@ -8,8 +8,9 @@
 //! through `DocBuilder` commands, so building also measures the command path.
 //!
 //! Rows carry stable machine keys (`keystroke.total`, ...) so budgets can be
-//! attached by key. Budgets are informational until `enforced` is set;
-//! [`PerfReport::check`] fails only on enforced budgets that were exceeded.
+//! attached by key and page count ([`BUDGETS`]). Budgets are informational
+//! until `enforced` is set; [`PerfReport::check`] fails only on enforced
+//! budgets that were exceeded.
 
 use std::fmt;
 use std::time::Instant;
@@ -20,10 +21,10 @@ use pubrs_render::raster::RasterOptions;
 use crate::error::{ApiError, ApiResult};
 use crate::{Session, SessionConfig};
 
-/// The page count the budgets below were recorded at.
+/// The page count the informational budgets were recorded at (M9).
 pub const BUDGET_PAGES: usize = 16;
 
-/// An upper bound on one measurement, valid for [`BUDGET_PAGES`] pages only.
+/// An upper bound on one measurement at one page count (see [`BUDGETS`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Budget {
     /// Milliseconds the row's median must stay under.
@@ -50,22 +51,49 @@ pub const BUDGET_KEYSTROKE_COMMAND_MS: f64 = 5.0;
 /// Recorded 2026-10-10 (measured; bound is about 2x or more). Not yet enforced.
 pub const BUDGET_RENDER_100_MS: f64 = 50.0;
 
-fn budget_for(key: &str, pages: usize) -> Option<Budget> {
-    if pages != BUDGET_PAGES {
-        return None;
-    }
-    let max_ms = match key {
-        "keystroke.total" => BUDGET_KEYSTROKE_TOTAL_MS,
-        "keystroke.layout" => BUDGET_KEYSTROKE_LAYOUT_MS,
-        "keystroke.render" => BUDGET_KEYSTROKE_RENDER_MS,
-        "keystroke.command" => BUDGET_KEYSTROKE_COMMAND_MS,
-        "render.100" => BUDGET_RENDER_100_MS,
-        _ => return None,
-    };
-    Some(Budget {
+const fn info(max_ms: f64) -> Budget {
+    Budget {
         max_ms,
         enforced: false,
-    })
+    }
+}
+
+const fn enforced(max_ms: f64) -> Budget {
+    Budget {
+        max_ms,
+        enforced: true,
+    }
+}
+
+/// Every budget: (page count, row key, bound). A row gets a budget only at
+/// the page count listed. Plan Locked Decision 3: a budget is loosened only
+/// by an ADR in `docs/adr/` that gives the measurement.
+pub const BUDGETS: &[(usize, &str, Budget)] = &[
+    // 16 pages (M9 baseline, informational): recorded 2026-10-10 before the
+    // story layout cache; see the constants above.
+    (16, "keystroke.total", info(BUDGET_KEYSTROKE_TOTAL_MS)),
+    (16, "keystroke.layout", info(BUDGET_KEYSTROKE_LAYOUT_MS)),
+    (16, "keystroke.render", info(BUDGET_KEYSTROKE_RENDER_MS)),
+    (16, "keystroke.command", info(BUDGET_KEYSTROKE_COMMAND_MS)),
+    (16, "render.100", info(BUDGET_RENDER_100_MS)),
+    // 50 pages, enforced in CI (Linux job, `perf --pages 50 --runs 5 --check`)
+    // since M11. Incremental layout recomposes the one edited story. The
+    // development machine measures about 7 ms layout and 31 ms total, of
+    // which about 23 ms is the re-render (ADR 0012). The M9 CI run showed the
+    // runner about 1.15x slower for layout and 1.35x slower for raster.
+    (50, "keystroke.layout", enforced(25.0)),
+    (50, "keystroke.total", enforced(60.0)),
+    // 200 pages, enforced on the development machine (16 cores) since M11.
+    // Layout per keystroke stays near the cost of one story however long the
+    // publication is: measured 8.5 ms, of which 1.4 ms builds the cache keys.
+    (200, "keystroke.layout", enforced(20.0)),
+];
+
+fn budget_for(key: &str, pages: usize) -> Option<Budget> {
+    BUDGETS
+        .iter()
+        .find(|(p, k, _)| *p == pages && *k == key)
+        .map(|(_, _, b)| *b)
 }
 
 /// What to build and how often to repeat each measurement.
@@ -540,6 +568,7 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         .get(stories.len() / 2)
         .ok_or_else(|| ApiError::internal("the test document has no stories"))?;
     let (mut t_exec, mut t_layout, mut t_raster, mut t_total) = (vec![], vec![], vec![], vec![]);
+    let (mut t_keys, mut recomposed) = (vec![], 0);
     for k in 0..runs {
         let t0 = Instant::now();
         let len = s
@@ -561,6 +590,9 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
         let t1 = Instant::now();
         s.layout(Some(doc_id))?;
         let t2 = Instant::now();
+        let stats = s.layout_stats(Some(doc_id))?;
+        t_keys.push(stats.key_time.as_secs_f64() * 1000.0);
+        recomposed = recomposed.max(stats.recomposed);
         s.page_rgba(Some(doc_id), mid, &opts(144.0))?;
         let t3 = Instant::now();
         t_exec.push((t1 - t0).as_secs_f64() * 1000.0);
@@ -577,9 +609,19 @@ pub fn run(spec: PerfSpec) -> ApiResult<PerfReport> {
     push(
         &mut rep,
         "keystroke.layout",
-        "keystroke: relayout (whole document)".into(),
+        "keystroke: relayout (changed stories only)".into(),
         median(t_layout),
     );
+    push(
+        &mut rep,
+        "keystroke.layout.keys",
+        "keystroke: layout cache keys (all stories, part of relayout)".into(),
+        median(t_keys),
+    );
+    rep.notes.push(format!(
+        "stories recomposed per keystroke: {recomposed} of {}",
+        doc.stories.len()
+    ));
     push(
         &mut rep,
         "keystroke.render",

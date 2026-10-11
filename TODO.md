@@ -14,6 +14,7 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Partial features
 
 - Text wrap: `square` and `top_bottom` only, around bounding boxes. Contour ("tight") wrap and text on both sides of an obstacle are not implemented (ADR 0006).
+- Two edit-time paths still copy more than the edit: the `validate` tool clones the whole document (`crates/pubrs-api/src/tools/query.rs`), and the canvas page snapshot clones every story shown on the page each frame (`crates/pubrs-app/src/canvas.rs`). The design checker (M29) and the render worker (M13) replace them.
 - Right-to-left scripts: shaping works through parley, but caret/hit-testing assumes left-to-right lines.
 - Characters no bundled or installed font covers render as .notdef boxes; `validate` does not yet name them (layout counts them in `missing_glyphs`).
 - GUI: copy/paste of frames works within one publication only (no cross-document or OS-clipboard frame paste).

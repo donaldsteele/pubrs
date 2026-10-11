@@ -60,6 +60,39 @@ state.
 - Text positions in commands and the API are character offsets (Unicode
   scalar values) into the story's plain text, paragraphs joined by `\n`.
 
+## Layout pipeline
+
+`pubrs-layout` turns stories into positioned glyph runs, frame-local
+(relative to each frame's unrotated rect; renderers apply position and
+rotation).
+
+1. **Regions.** `regions_for` splits each text frame of a story's chain into
+   column regions (frame size minus insets, columns and gap). Each region
+   carries its vertical alignment and the wrap obstacles over it: frames
+   painted above it on the same page or master with wrap on and another story,
+   mapped through the text frame's position and rotation and outset by the wrap
+   margin (`obstacles_for`). A `DocIndex` built once per pass answers
+   `owner_of` and `paint_order`, so this costs O(frames).
+2. **Flow.** Each paragraph is one parley layout (ADR 0007), shaped with its
+   resolved paragraph and character styles and broken line by line into the
+   current region around the obstacles. Text that does not fit is reported as
+   overflow. Each line records its story character range and a caret x for
+   every character boundary, computed from one table of cluster offsets per
+   paragraph.
+3. **Cache.** `StoryLayoutCache` (one per open document; ADR 0012) keeps an
+   `Arc<StoryLayout>` per story with the inputs it was made from: the story,
+   a stylesheet generation, a font fingerprint, the chain's text frames and
+   the regions above. Each pass builds every story's key (`story_key`) and
+   compares it by equality. Only stories whose key changed are recomposed, so
+   a keystroke costs about one story whatever the page count. The resulting
+   `DocumentLayout` shares the cached stories.
+   `PUBRS_LAYOUT_VERIFY=1` re-lays out from scratch after every pass and
+   panics on any difference.
+4. **Use.** `Session::layout` returns the cached layout of the current
+   revision. Rendering, PDF export, the canvas overlays (`textedit.rs`) and
+   the text tools read it. `Layouter::layout_document` (from scratch) remains
+   for one-shot exports and tests.
+
 ## Rendering paths
 
 - Raster: tiny-skia, deterministic, used for PNG export, previews, golden
@@ -79,8 +112,10 @@ fonts in `tests/fonts/`.
 ## The API layer
 
 `pubrs-api::Session` owns open documents (keyed by a per-session `doc_id`),
-one `Editor` per document, a layout cache keyed by revision, and the shared
-export caches (fonts, decoded images, glyph outlines). Every operation is a
+one `Editor` per document, a per-document story layout cache (see "Layout
+pipeline") plus the layout of the current revision, and the shared export
+caches (fonts, decoded images, glyph outlines). Export and drawing borrow the
+document next to these caches; they never copy it. Every operation is a
 typed method `fn tool_name(&mut self, Request) -> ApiResult<Response>`; request
 and response types derive `JsonSchema`, so the JSON Schemas published over MCP
 come straight from the Rust types.
@@ -123,7 +158,10 @@ API call or a `Command` executed through `Session::exec` (typing uses
 `exec_coalesced` so a burst of keystrokes is one undo step). Pages are
 rendered by `Session::page_rgba` (vello on the GPU when available, else
 tiny-skia) into a texture; selection handles, guides, the text caret and
-selection are egui overlays computed from the layout (`textedit.rs`).
+selection are egui overlays computed from the layout (`textedit.rs`). Each
+egui frame, the canvas reads a snapshot of the current page only (the page,
+its master, their frames, the stories they show, the selection and the story
+being edited), never a copy of the whole document.
 
 - `keymap.rs` is the single table of actions, shortcuts (`Modifiers::COMMAND`
   = Cmd on macOS, Ctrl elsewhere) and menus; the egui menu bar and the native

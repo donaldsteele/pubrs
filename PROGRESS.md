@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** Phase 2, M11 (T3) Incremental layout, per the plan on branch `plan/publisher-parity`.
+**Next step:** Phase 2, M12 (T4) Commands cost what they change, per the plan on branch `plan/publisher-parity`.
 
 
 ## Phase 2: Publisher parity
@@ -23,8 +23,9 @@ Plan: `~/.claude/plans/pubrs-publisher-parity.md`, branch `plan/publisher-parity
 
 | Milestone | Status | Notes |
 |-----------|--------|-------|
-| M9 Performance harness in the tree | done | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
+| M9 Performance harness in the tree | done; CI green (run 38110112006) | `pubrs perf` (crates/pubrs-api/src/perf.rs), informational budgets, CI table on Linux; +1 CLI test (129 tests total, was 128) |
 | M10 Robustness and guard rails | done | panic rollback (`CommandError::Internal`), proptest suites (undo/redo, save/load, loader fuzz), wrap around rotated text frames fixed, workspace lints (`unsafe_code` deny, `unwrap_used`, `dbg_macro`, `todo`, `undocumented_unsafe_blocks`), crate layering test; +12 tests (141 tests total, was 129) |
+| M11 Incremental layout | done | `StoryLayoutCache` (per-story snapshot keys compared by equality, ADR 0012), `PUBRS_LAYOUT_VERIFY=1`, carets from one cluster-offset table per paragraph (bit-identical to parley), no whole-document clones in export or the canvas, budgets keyed by page count and enforced (CI: `perf --pages 50 --check`); keystroke layout 8.54 ms at 200 pages (budget 20); +7 layout tests (148 tests total, was 141) |
 
 ### Baseline performance (M9)
 
@@ -44,6 +45,22 @@ Release build, software raster, 16-core Linux box, median ms. `pubrs perf --page
 | save | 3.54 | 7.89 | 28.49 |
 | open | 1.47 | 3.56 | 15.57 |
 | PDF export | 441.53 | 559.58 | 1071.18 |
+
+### After M11 (incremental layout)
+
+Same machine and command, `--runs 5`. Full table and before/after: `demos/m11_incremental_layout.md`.
+
+| Measurement | 16 pages | 50 pages | 200 pages |
+|-------------|---------:|---------:|----------:|
+| layout (warm, all stories) | 21.27 | 68.07 | 282.78 |
+| keystroke: command | 0.19 | 0.51 | 2.25 |
+| keystroke: layout | 6.83 | 7.23 | 8.54 |
+| of which cache keys | 0.10 | 0.32 | 1.41 |
+| keystroke: render | 22.74 | 23.59 | 23.16 |
+| keystroke: total | 29.77 | 31.32 | 33.97 |
+| PDF export | 412.14 | 477.31 | 774.00 |
+
+Layout per keystroke at 200 pages on the development machine: 8.54 ms (budget 20 ms, enforced by `perf --pages 200 --check`). At 50 pages: layout 7.23 ms (budget 25) and total 31.32 ms (budget 60), enforced in CI.
 
 ## Verification per milestone
 

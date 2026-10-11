@@ -95,9 +95,20 @@ impl ExportContext {
         opts: &PdfOptions,
     ) -> Result<Vec<u8>, ExportError> {
         let layout = self.layout(doc);
+        self.export_pdf_with(doc, &layout, opts)
+    }
+
+    /// Export every page to PDF with a layout the caller already has (for
+    /// example a session's incremental one).
+    pub fn export_pdf_with(
+        &mut self,
+        doc: &Document,
+        layout: &DocumentLayout,
+        opts: &PdfOptions,
+    ) -> Result<Vec<u8>, ExportError> {
         self.images.sync(doc);
         let scenes: Vec<_> = (0..doc.pages.len())
-            .filter_map(|i| build_page_scene(doc, &layout, i))
+            .filter_map(|i| build_page_scene(doc, layout, i))
             .collect();
         let mut opts = opts.clone();
         if opts.title.is_none() && !doc.meta.title.is_empty() {

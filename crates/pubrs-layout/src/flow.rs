@@ -8,12 +8,12 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use parley::{
-    Affinity, Alignment, AlignmentOptions, Cursor, FontFamily, FontStyle, FontWeight, Layout,
-    LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
+    Affinity, Alignment, AlignmentOptions, Cluster, Cursor, FontFamily, FontStyle, FontWeight,
+    Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
 };
 use pubrs_core::{
-    Align, CharAttrs, Color, Document, Frame, FrameId, Paragraph, Rect, Run, StoryId,
-    VerticalAlign, WrapMode,
+    Align, CharAttrs, Color, Document, Frame, FrameContent, FrameId, Owner, Paragraph, Parent,
+    Rect, Run, StoryId, VerticalAlign, WrapMode,
 };
 
 use crate::fonts::FontLibrary;
@@ -36,15 +36,18 @@ impl std::fmt::Debug for Layouter {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Obstacle {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Obstacle {
     rect: Rect,
     mode: WrapMode,
 }
 
 /// A rectangle text can flow into: one column of one frame (frame-local).
-#[derive(Debug, Clone)]
-struct Region {
+/// With the story and the styles, the regions are all a story's flow reads
+/// from the document, so they are part of the cache key
+/// ([`crate::cache::StoryKey`]).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Region {
     frame: FrameId,
     x: f64,
     y: f64,
@@ -133,9 +136,94 @@ struct PlacedLine {
     line: LineBox,
 }
 
-fn byte_to_char(text: &str, byte: usize) -> usize {
-    let b = byte.min(text.len());
-    text[..b].chars().count()
+/// Character counts at byte positions of one paragraph's text, counted
+/// forward from the previous query. Lines are visited in order, so a
+/// paragraph costs one pass instead of one scan from its start per line.
+struct CharCounter<'t> {
+    text: &'t str,
+    byte: usize,
+    chars: usize,
+}
+
+impl<'t> CharCounter<'t> {
+    fn new(text: &'t str) -> Self {
+        Self {
+            text,
+            byte: 0,
+            chars: 0,
+        }
+    }
+
+    /// Characters before `byte` (clamped to the text length).
+    fn at(&mut self, byte: usize) -> usize {
+        let b = byte.min(self.text.len());
+        if b < self.byte {
+            self.byte = 0;
+            self.chars = 0;
+        }
+        self.chars += self.text[self.byte..b].chars().count();
+        self.byte = b;
+        self.chars
+    }
+}
+
+/// Lookups the flow needs that are linear on [`Document`] (the owner of a
+/// frame, the paint order of a page), built once per layout pass in
+/// O(frames) and answering exactly as [`Document::owner_of`] and
+/// [`Document::paint_order`] do.
+pub(crate) struct DocIndex {
+    /// First parent of each frame, in `Document::parent_of` precedence:
+    /// pages in order, then masters, then groups in id order.
+    parent: HashMap<FrameId, Parent>,
+    /// Paint order per page or master, filled on first use.
+    orders: HashMap<Owner, Vec<FrameId>>,
+}
+
+impl DocIndex {
+    pub(crate) fn new(doc: &Document) -> Self {
+        let mut parent = HashMap::with_capacity(doc.frames.len());
+        for p in &doc.pages {
+            for f in &p.frames {
+                parent.entry(*f).or_insert(Parent::Page(p.id));
+            }
+        }
+        for m in &doc.masters {
+            for f in &m.frames {
+                parent.entry(*f).or_insert(Parent::Master(m.id));
+            }
+        }
+        for g in doc.frames.values() {
+            if let FrameContent::Group(group) = &g.content {
+                for c in &group.children {
+                    parent.entry(*c).or_insert(Parent::Group(g.id));
+                }
+            }
+        }
+        Self {
+            parent,
+            orders: HashMap::new(),
+        }
+    }
+
+    /// Same answer as [`Document::owner_of`].
+    fn owner_of(&self, frame: FrameId) -> Option<Owner> {
+        let mut current = frame;
+        for _ in 0..64 {
+            match *self.parent.get(&current)? {
+                Parent::Page(p) => return Some(Owner::Page(p)),
+                Parent::Master(m) => return Some(Owner::Master(m)),
+                Parent::Group(g) => current = g,
+            }
+        }
+        None
+    }
+
+    /// Same answer as [`Document::paint_order`].
+    fn paint_order(&mut self, doc: &Document, owner: Owner) -> &[FrameId] {
+        self.orders
+            .entry(owner)
+            .or_insert_with(|| doc.paint_order(owner))
+    }
 }
 
 fn to_parley_align(a: Align) -> Alignment {
@@ -155,18 +243,36 @@ impl Layouter {
         }
     }
 
-    /// Lay out every story.
+    /// Lay out every story from scratch. Interactive callers use
+    /// [`crate::cache::StoryLayoutCache`], which gives the same result and
+    /// recomposes only the stories whose inputs changed.
     pub fn layout_document(&mut self, doc: &Document) -> DocumentLayout {
-        let ids: Vec<StoryId> = doc.stories.keys().copied().collect();
+        let mut index = DocIndex::new(doc);
         let mut out = DocumentLayout::default();
-        for id in ids {
-            out.stories.insert(id, self.layout_story(doc, id));
+        for (id, story) in &doc.stories {
+            let regions = regions_for(doc, &mut index, &story.frames);
+            out.stories
+                .insert(*id, Arc::new(self.flow_story(doc, *id, &regions)));
         }
         out
     }
 
     /// Lay out one story across its frame chain.
     pub fn layout_story(&mut self, doc: &Document, story_id: StoryId) -> StoryLayout {
+        let regions = match doc.story(story_id) {
+            Some(story) => regions_for(doc, &mut DocIndex::new(doc), &story.frames),
+            None => Vec::new(),
+        };
+        self.flow_story(doc, story_id, &regions)
+    }
+
+    /// Flow one story into `regions` (from [`regions_for`] over its chain).
+    pub(crate) fn flow_story(
+        &mut self,
+        doc: &Document,
+        story_id: StoryId,
+        regions: &[Region],
+    ) -> StoryLayout {
         let mut out = StoryLayout {
             story: Some(story_id),
             ..Default::default()
@@ -174,7 +280,6 @@ impl Layouter {
         let Some(story) = doc.story(story_id) else {
             return out;
         };
-        let regions = regions_for(doc, &story.frames);
         for f in &story.frames {
             if doc.frame(*f).and_then(|f| f.as_text()).is_some() {
                 out.frames.insert(*f, FrameText::default());
@@ -195,7 +300,7 @@ impl Layouter {
                     doc,
                     para,
                     para_start,
-                    &regions,
+                    regions,
                     &mut cur,
                     &mut placed,
                     &mut out,
@@ -211,7 +316,7 @@ impl Layouter {
             }
             para_start += para.char_len() + 1;
         }
-        apply_vertical_align(&regions, &mut placed);
+        apply_vertical_align(regions, &mut placed);
         for p in placed {
             let frame = regions[p.region].frame;
             out.missing_glyphs += p
@@ -366,6 +471,8 @@ impl Layouter {
         let n_lines = placements.len();
         let mut groups_cache: HashMap<usize, (Vec<ClusterGroup>, usize)> = HashMap::new();
         let mut last_end_byte = 0usize;
+        let mut counter = CharCounter::new(&text);
+        let offsets = ClusterOffsets::new(&layout, text.len());
         for (li, line) in layout.lines().enumerate() {
             let Some(&(region, y, h)) = placements.get(li) else {
                 break;
@@ -374,8 +481,8 @@ impl Layouter {
             let tr = line.text_range();
             let (tb0, tb1) = (tr.start.min(text.len()), tr.end.min(text.len()));
             last_end_byte = tb1;
-            let chars =
-                para_start + byte_to_char(&text, tb0)..para_start + byte_to_char(&text, tb1);
+            let (c0, c1) = (counter.at(tb0), counter.at(tb1));
+            let chars = para_start + c0..para_start + c1;
             let mut runs = Vec::new();
             let mut decorations = Vec::new();
             for item in line.items() {
@@ -469,7 +576,7 @@ impl Layouter {
                     });
                 }
             }
-            let carets = caret_positions(&layout, &text, tb0, tb1, para_start);
+            let carets = caret_positions(&layout, &offsets, &text, tb0..tb1, para_start + c0);
             let ends_paragraph = li + 1 == n_lines && !overflowed;
             placed.push(PlacedLine {
                 region,
@@ -491,7 +598,7 @@ impl Layouter {
         }
         if overflowed {
             let byte = if n_lines == 0 { 0 } else { last_end_byte };
-            return Some(para_start + byte_to_char(&text, byte));
+            return Some(para_start + counter.at(byte));
         }
         cur.y += pa.space_after;
         let _ = is_last_paragraph;
@@ -534,22 +641,26 @@ fn push_attrs(
     }
 }
 
-/// Caret x for each character boundary on a line.
+/// Caret x for each character boundary of the line whose paragraph bytes
+/// are `bytes`; `first` is the story offset of its first character.
 fn caret_positions(
     layout: &Layout<Color>,
+    offsets: &ClusterOffsets,
     text: &str,
-    b0: usize,
-    b1: usize,
-    para_start: usize,
+    bytes: Range<usize>,
+    first: usize,
 ) -> Vec<(usize, f64)> {
-    let mut out = Vec::new();
-    let mut boundaries: Vec<usize> = text
-        .char_indices()
-        .map(|(i, _)| i)
-        .filter(|i| *i >= b0 && *i < b1)
-        .collect();
+    let (b0, b1) = (bytes.start, bytes.end);
+    let mut boundaries: Vec<usize> = match text.get(b0..b1) {
+        Some(line) => line.char_indices().map(|(i, _)| b0 + i).collect(),
+        None => text
+            .char_indices()
+            .map(|(i, _)| i)
+            .filter(|i| *i >= b0 && *i < b1)
+            .collect(),
+    };
     boundaries.push(b1);
-    let base = byte_to_char(text, b0);
+    let mut out = Vec::with_capacity(boundaries.len());
     for (k, b) in boundaries.iter().enumerate() {
         let at_end = *b == b1 && *b != b0;
         let affinity = if at_end {
@@ -557,26 +668,102 @@ fn caret_positions(
         } else {
             Affinity::Downstream
         };
-        let bb = Cursor::from_byte_index(layout, *b, affinity).geometry(layout, 1.0);
-        out.push((para_start + base + k, bb.x0));
+        let cursor = Cursor::from_byte_index(layout, *b, affinity);
+        out.push((first + k, caret_x(layout, offsets, cursor)));
     }
     out
 }
 
-/// Frame regions of a chain: each text frame's content box split into columns.
-fn regions_for(doc: &Document, frames: &[FrameId]) -> Vec<Region> {
+/// Leading-edge x of every cluster of a laid-out paragraph, indexed by the
+/// cluster's first text byte. Equal, bit for bit, to what
+/// `Cluster::visual_offset` returns: the line offset, plus the advance of
+/// each earlier run, plus the advance of each earlier cluster of the run,
+/// added in that order. One pass per line instead of one per caret.
+/// (Layouts here hold no inline boxes, so every line item is a run.)
+struct ClusterOffsets(Vec<f32>);
+
+impl ClusterOffsets {
+    fn new(layout: &Layout<Color>, text_len: usize) -> Self {
+        let mut v = vec![0.0f32; text_len + 1];
+        for line in layout.lines() {
+            let mut base = line.metrics().offset;
+            for run in line.runs() {
+                let mut x = base;
+                for c in run.visual_clusters() {
+                    if let Some(slot) = v.get_mut(c.text_range().start) {
+                        *slot = x;
+                    }
+                    x += c.advance();
+                }
+                base += run.advance();
+            }
+        }
+        Self(v)
+    }
+
+    fn get(&self, c: &Cluster<'_, Color>) -> f32 {
+        self.0
+            .get(c.text_range().start)
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+/// `cursor.geometry(layout, w).x0` without parley's walk along the line for
+/// every call: the same choice of cluster edge, with the cluster's offset
+/// read from `offsets`.
+fn caret_x(layout: &Layout<Color>, offsets: &ClusterOffsets, cursor: Cursor) -> f64 {
+    let edge = |c: &Cluster<'_, Color>, at_end: bool| {
+        let mut x = offsets.get(c);
+        if at_end {
+            x += c.advance();
+        }
+        f64::from(x)
+    };
+    let last_line = || {
+        layout
+            .get(layout.len().saturating_sub(1))
+            .map_or(0.0, |l| f64::from(l.metrics().offset))
+    };
+    match cursor.visual_clusters(layout) {
+        [Some(left), Some(right)] => {
+            if !left.is_end_of_line() {
+                edge(&left, true)
+            } else if left.is_soft_line_break() {
+                let upstream = cursor.affinity() == Affinity::Upstream;
+                if left.is_rtl() != upstream {
+                    edge(&left, true)
+                } else {
+                    edge(&right, false)
+                }
+            } else {
+                edge(&right, false)
+            }
+        }
+        [Some(left), None] if left.is_hard_line_break() => last_line(),
+        [Some(left), _] => edge(&left, true),
+        [_, Some(right)] => edge(&right, false),
+        _ => last_line(),
+    }
+}
+
+/// Frame regions of a chain: each text frame's content box split into
+/// columns, with the wrap obstacles over it. The layout flows into exactly
+/// these values, and the cache key ([`crate::cache::StoryKey`]) compares
+/// them, so the two cannot disagree.
+pub(crate) fn regions_for(doc: &Document, index: &mut DocIndex, frames: &[FrameId]) -> Vec<Region> {
     let mut out = Vec::new();
     for fid in frames {
         let Some(f) = doc.frame(*fid) else { continue };
         let Some(t) = f.as_text() else { continue };
-        if doc.owner_of(*fid).is_none() {
+        let Some(owner) = index.owner_of(*fid) else {
             continue;
-        }
+        };
         let content = Rect::new(0.0, 0.0, f.rect.width, f.rect.height).inset(&t.insets);
         let cols = t.columns.max(1);
         let gap = t.column_gap.max(0.0);
         let cw = ((content.width - gap * f64::from(cols - 1)) / f64::from(cols)).max(1.0);
-        let obstacles = obstacles_for(doc, *fid);
+        let obstacles = obstacles_for(doc, index, owner, f);
         for c in 0..cols {
             out.push(Region {
                 frame: *fid,
@@ -592,17 +779,12 @@ fn regions_for(doc: &Document, frames: &[FrameId]) -> Vec<Region> {
     out
 }
 
-/// Frames above `frame` on the same page whose wrap setting pushes text away.
-fn obstacles_for(doc: &Document, frame: FrameId) -> Vec<Obstacle> {
-    let Some(owner) = doc.owner_of(frame) else {
-        return Vec::new();
-    };
-    let Some(tf) = doc.frame(frame) else {
-        return Vec::new();
-    };
+/// Frames above text frame `tf` on its page (or master) `owner` whose wrap
+/// setting pushes text away.
+fn obstacles_for(doc: &Document, index: &mut DocIndex, owner: Owner, tf: &Frame) -> Vec<Obstacle> {
     let story = tf.as_text().map(|t| t.story);
-    let order = doc.paint_order(owner);
-    let Some(pos) = order.iter().position(|f| *f == frame) else {
+    let order = index.paint_order(doc, owner);
+    let Some(pos) = order.iter().position(|f| *f == tf.id) else {
         return Vec::new();
     };
     order[pos + 1..]
@@ -673,5 +855,76 @@ fn apply_vertical_align(regions: &[Region], placed: &mut [PlacedLine]) {
                 d.rect.y += dy;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    /// `caret_x` must give exactly what parley's `Cursor::geometry` gives, for
+    /// every boundary and both affinities, in wrapped, aligned, mixed-style,
+    /// combining-mark and right-to-left text.
+    #[test]
+    fn caret_x_matches_parley_cursor_geometry() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fonts");
+        let mut lay = Layouter::new(FontLibrary::from_dir(&dir).expect("test fonts"));
+        let texts = [
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.",
+            "Cafe\u{301} na\u{ef}ve  double  spaces and a verylongwordthatmustbreakacrosslines.",
+            "Mixed \u{5e9}\u{5dc}\u{5d5}\u{5dd} \u{5e2}\u{5d5}\u{5dc}\u{5dd} and English, then \u{627}\u{644}\u{639}\u{631}\u{628}\u{64a}\u{629} text.",
+            "",
+            "x",
+        ];
+        let aligns = [
+            Alignment::Left,
+            Alignment::Center,
+            Alignment::Right,
+            Alignment::Justify,
+        ];
+        let mut checked = 0;
+        for text in texts {
+            for align in aligns {
+                let mut builder = lay.lcx.ranged_builder(&mut lay.fonts.fcx, text, 1.0, false);
+                builder.push_default(StyleProperty::FontSize(12.0));
+                let at = |n: usize| text.char_indices().nth(n).map_or(text.len(), |(i, _)| i);
+                if text.len() > 12 {
+                    builder.push(StyleProperty::FontWeight(FontWeight::BOLD), at(6)..at(12));
+                    builder.push(StyleProperty::FontSize(17.0), at(9)..at(14));
+                }
+                let mut layout: Layout<Color> = builder.build(text);
+                layout.break_all_lines(Some(110.0));
+                layout.align(align, AlignmentOptions::default());
+                let offsets = ClusterOffsets::new(&layout, text.len());
+                let bounds = text.char_indices().map(|(i, _)| i).chain([text.len()]);
+                for b in bounds {
+                    for affinity in [Affinity::Downstream, Affinity::Upstream] {
+                        let cursor = Cursor::from_byte_index(&layout, b, affinity);
+                        let want = cursor.geometry(&layout, 1.0).x0;
+                        let got = caret_x(&layout, &offsets, cursor);
+                        assert_eq!(
+                            got.to_bits(),
+                            want.to_bits(),
+                            "{text:?} {align:?} byte {b} {affinity:?}: {got} != {want}"
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 500);
+    }
+
+    #[test]
+    fn char_counter_counts_forward_and_back() {
+        let text = "a\u{e9}\u{5d0}b";
+        let mut c = CharCounter::new(text);
+        assert_eq!(c.at(0), 0);
+        assert_eq!(c.at(1), 1);
+        assert_eq!(c.at(5), 3);
+        assert_eq!(c.at(3), 2);
+        assert_eq!(c.at(99), 4);
     }
 }

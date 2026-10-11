@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use parley::fontique::Blob;
 use pubrs_core::{Color, FrameId, Rect, StoryId};
@@ -146,10 +147,12 @@ pub struct StoryLayout {
     pub missing_glyphs: usize,
 }
 
-/// Layout of every story in a document.
+/// Layout of every story in a document. Stories are shared (`Arc`) so a
+/// layout assembled from the [`crate::cache::StoryLayoutCache`] costs a
+/// pointer per story, not a copy of every glyph.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DocumentLayout {
-    pub stories: BTreeMap<StoryId, StoryLayout>,
+    pub stories: BTreeMap<StoryId, Arc<StoryLayout>>,
 }
 
 impl DocumentLayout {
