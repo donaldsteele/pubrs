@@ -21,6 +21,10 @@ pub enum Dialog {
     PageSetup(PageSetupState),
     Paragraph(ParagraphState),
     DropCap(DropCapState),
+    /// Text → Tabs…
+    Tabs(TabsState),
+    /// Text → Bullets and Numbering…
+    Lists(ListState),
     SaveTemplate(String),
     Message(String, String),
     /// Design → Colour Scheme…
@@ -364,6 +368,8 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         Dialog::PageSetup(state) => page_setup_ui(app, ui, state),
         Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
         Dialog::DropCap(state) => drop_cap_ui(app, ui, state),
+        Dialog::Tabs(state) => tabs_ui(app, ui, state),
+        Dialog::Lists(state) => list_ui(app, ui, state),
         Dialog::Print(printers, options) => {
             ui.heading("Print");
             if let Some(note) = app.doc().and_then(imposition_note) {
@@ -1274,6 +1280,8 @@ impl ParagraphState {
                 (new != old).then_some(new)
             },
             drop_cap: None,
+            tab_stops: None,
+            list: None,
         }
     }
 }
@@ -1600,6 +1608,639 @@ fn drop_cap_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut DropCapState) -> 
                     }
                 }
                 None => Outcome::Close,
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+// ---------------------------------------------------------------------
+// Tabs and Bullets and Numbering
+
+use pubrs_api::core::style::{
+    List, ListFormat, ListKind, MAX_LIST_LEVEL, TabAlign, TabLeader, TabStop,
+};
+
+/// The paragraphs a paragraph dialog edits: the caret's, the selected ones,
+/// or every paragraph of the selected text box. Also the box's width in
+/// points (the ruler's length).
+fn para_target(app: &PubrsApp) -> Option<(StoryId, usize, usize, f64)> {
+    let doc = app.doc()?;
+    let edit = app.view().and_then(|v| v.edit.as_ref());
+    let (story, frame) = match edit {
+        Some(e) => (e.story, e.frame),
+        None => app
+            .selection()
+            .iter()
+            .find_map(|f| doc.story_of(*f).map(|s| (s, *f)))?,
+    };
+    let s = doc.story(story)?;
+    let (start, end) = match edit {
+        Some(e) => e.range(),
+        None => (0, s.char_len()),
+    };
+    let width = doc.frame(frame).map_or(360.0, |f| f.rect.width);
+    Some((story, start, end, width))
+}
+
+/// The Tabs dialog: a ruler strip over the paragraph's tab stops.
+pub struct TabsState {
+    story: StoryId,
+    start: usize,
+    end: usize,
+    initial: Vec<TabStop>,
+    stops: Vec<TabStop>,
+    selected: Option<usize>,
+    /// The stop being dragged, and whether it was pulled off the ruler.
+    drag: Option<(usize, bool)>,
+    /// Ruler length in points.
+    width: f64,
+    /// Style of the next stop added.
+    new_align: TabAlign,
+    new_leader: TabLeader,
+}
+
+const RULER_PX: f32 = 520.0;
+const RULER_H: f32 = 34.0;
+
+impl TabsState {
+    pub fn for_selection(app: &PubrsApp) -> Option<Self> {
+        let (story, start, end, width) = para_target(app)?;
+        let doc = app.doc()?;
+        let s = doc.story(story)?;
+        let initial = doc
+            .styles
+            .resolve_para(&s.paragraphs[s.locate(start).0])
+            .tab_stops;
+        let last = initial.last().map_or(0.0, |t| t.pos);
+        Some(Self {
+            story,
+            start,
+            end,
+            stops: initial.clone(),
+            initial,
+            selected: None,
+            drag: None,
+            width: width.max(last + 36.0).max(72.0),
+            new_align: TabAlign::Left,
+            new_leader: TabLeader::None,
+        })
+    }
+
+    fn pos_at(&self, x: f32, left: f32) -> f64 {
+        ((f64::from(x - left) * self.width / f64::from(RULER_PX)).round()).clamp(0.0, self.width)
+    }
+
+    fn x_of(&self, pos: f64, left: f32) -> f32 {
+        left + (pos * f64::from(RULER_PX) / self.width) as f32
+    }
+
+    fn hit(&self, x: f32, left: f32) -> Option<usize> {
+        self.stops
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, (self.x_of(s.pos, left) - x).abs()))
+            .filter(|(_, d)| *d <= 7.0)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    }
+
+    /// Add a stop in the style of the last one used, and select it.
+    fn add(&mut self, pos: f64) {
+        if self.stops.len() >= 64 {
+            return;
+        }
+        self.stops.push(TabStop {
+            pos,
+            align: self.new_align,
+            leader: self.new_leader,
+        });
+        self.sort_keep(self.stops.len() - 1);
+    }
+
+    /// Sort the stops by position and keep `sel` selected.
+    fn sort_keep(&mut self, sel: usize) {
+        let chosen = self.stops[sel];
+        self.stops.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+        self.selected = self.stops.iter().position(|s| *s == chosen);
+    }
+
+    fn remove_selected(&mut self) {
+        if let Some(i) = self.selected.take() {
+            self.stops.remove(i);
+        }
+    }
+
+    fn changed(&self) -> bool {
+        self.stops != self.initial
+    }
+}
+
+fn align_letter(a: TabAlign) -> &'static str {
+    match a {
+        TabAlign::Left => "L",
+        TabAlign::Center => "C",
+        TabAlign::Right => "R",
+        TabAlign::Decimal => "D",
+    }
+}
+
+/// The ruler strip: click to add a stop, drag to move it, drag it off the
+/// strip to remove it; with the strip focused, the arrow keys move the
+/// selected stop and Delete removes it.
+fn tabs_ruler(ui: &mut egui::Ui, st: &mut TabsState) {
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(RULER_PX, RULER_H), egui::Sense::click_and_drag());
+    mark(ui, "tab-ruler", &resp);
+    let resp = resp.on_hover_text(
+        "Click to add a tab stop, drag a stop to move it, drag it off the ruler to remove it. With the ruler focused: arrow keys move the selected stop, Delete removes it.",
+    );
+    let left = rect.left();
+    let vis = ui.visuals().clone();
+    let p = ui.painter_at(rect.expand2(egui::vec2(0.0, 12.0)));
+    p.rect_filled(rect, 2.0, vis.extreme_bg_color);
+    p.rect_stroke(
+        rect,
+        2.0,
+        vis.widgets.noninteractive.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    let mut t = 0.0;
+    while t <= st.width {
+        let x = st.x_of(t, left);
+        let major = (t % 36.0).abs() < 0.01;
+        let h = if major { 10.0 } else { 5.0 };
+        p.line_segment(
+            [
+                egui::pos2(x, rect.bottom()),
+                egui::pos2(x, rect.bottom() - h),
+            ],
+            egui::Stroke::new(1.0, vis.weak_text_color()),
+        );
+        if major && t > 0.0 {
+            p.text(
+                egui::pos2(x + 2.0, rect.top() + 2.0),
+                egui::Align2::LEFT_TOP,
+                format!("{t:.0}"),
+                egui::FontId::proportional(9.0),
+                vis.weak_text_color(),
+            );
+        }
+        t += 9.0;
+    }
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    if resp.drag_started()
+        && let Some(pt) = pointer
+        && let Some(i) = st.hit(pt.x, left)
+    {
+        st.selected = Some(i);
+        st.drag = Some((i, false));
+    }
+    if resp.dragged()
+        && let Some((i, _)) = st.drag
+        && let Some(pt) = pointer
+    {
+        let off = pt.y < rect.top() - 14.0 || pt.y > rect.bottom() + 14.0;
+        st.stops[i].pos = st.pos_at(pt.x, left);
+        st.drag = Some((i, off));
+    }
+    if resp.drag_stopped()
+        && let Some((i, off)) = st.drag.take()
+    {
+        if off {
+            st.selected = Some(i);
+            st.remove_selected();
+        } else {
+            st.sort_keep(i);
+        }
+    }
+    if resp.clicked()
+        && let Some(pt) = pointer
+    {
+        match st.hit(pt.x, left) {
+            Some(i) => st.selected = Some(i),
+            None => st.add(st.pos_at(pt.x, left)),
+        }
+    }
+    if resp.has_focus() {
+        let (dx, del) = ui.input(|i| {
+            let step = if i.modifiers.shift { 10.0 } else { 1.0 };
+            (
+                f64::from(i.key_pressed(egui::Key::ArrowRight)) * step
+                    - f64::from(i.key_pressed(egui::Key::ArrowLeft)) * step,
+                i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace),
+            )
+        });
+        if let Some(i) = st.selected {
+            if dx != 0.0 {
+                st.stops[i].pos = (st.stops[i].pos + dx).clamp(0.0, st.width);
+                st.sort_keep(i);
+            }
+            if del {
+                st.remove_selected();
+            }
+        }
+    }
+    for (i, s) in st.stops.iter().enumerate() {
+        let off = st.drag == Some((i, true));
+        let x = st.x_of(s.pos, left);
+        let sel = st.selected == Some(i);
+        let col = if off {
+            vis.weak_text_color()
+        } else if sel {
+            vis.selection.stroke.color
+        } else {
+            vis.text_color()
+        };
+        p.line_segment(
+            [
+                egui::pos2(x, rect.top() + 12.0),
+                egui::pos2(x, rect.bottom()),
+            ],
+            egui::Stroke::new(if sel { 2.0 } else { 1.0 }, col),
+        );
+        p.text(
+            egui::pos2(x, rect.top() + 11.0),
+            egui::Align2::CENTER_BOTTOM,
+            align_letter(s.align),
+            egui::FontId::monospace(11.0),
+            col,
+        );
+        if resp.has_focus() && sel {
+            p.rect_stroke(
+                egui::Rect::from_center_size(
+                    egui::pos2(x, rect.center().y),
+                    egui::vec2(14.0, 26.0),
+                ),
+                2.0,
+                egui::Stroke::new(1.0, col),
+                egui::StrokeKind::Outside,
+            );
+        }
+    }
+}
+
+const NO_STOP: &str = "Select a tab stop on the ruler first";
+
+fn tabs_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut TabsState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Tabs");
+    ui.label("Tab stops for the selected paragraphs, in points from the left edge of the text.");
+    ui.add_space(4.0);
+    tabs_ruler(ui, st);
+    ui.add_space(6.0);
+    let sel = st.selected.filter(|i| *i < st.stops.len());
+    let mut stop = sel.map_or(
+        TabStop {
+            pos: 0.0,
+            align: st.new_align,
+            leader: st.new_leader,
+        },
+        |i| st.stops[i],
+    );
+    let before = stop;
+    let max_pos = st.width.max(stop.pos);
+    ui.add_enabled_ui(sel.is_some(), |ui| {
+        egui::Grid::new("tabs-grid").num_columns(2).show(ui, |ui| {
+            ui.label("Position");
+            let r = ui.add(
+                egui::DragValue::new(&mut stop.pos)
+                    .speed(0.5)
+                    .range(0.0..=max_pos)
+                    .suffix(" pt"),
+            );
+            mark(ui, "tab-pos", &r);
+            r.on_disabled_hover_text(NO_STOP);
+            ui.end_row();
+            ui.label("Alignment");
+            ui.horizontal(|ui| {
+                for (a, label, name) in [
+                    (TabAlign::Left, "Left", "tab-align-left"),
+                    (TabAlign::Center, "Centre", "tab-align-center"),
+                    (TabAlign::Right, "Right", "tab-align-right"),
+                    (TabAlign::Decimal, "Decimal", "tab-align-decimal"),
+                ] {
+                    let r = ui.radio_value(&mut stop.align, a, label);
+                    mark(ui, name, &r);
+                    r.on_disabled_hover_text(NO_STOP);
+                }
+            });
+            ui.end_row();
+            ui.label("Leader");
+            ui.horizontal(|ui| {
+                for (l, label, name) in [
+                    (TabLeader::None, "None", "tab-leader-none"),
+                    (TabLeader::Dot, "Dots ....", "tab-leader-dot"),
+                    (TabLeader::Dash, "Dashes ----", "tab-leader-dash"),
+                    (TabLeader::Line, "Line ____", "tab-leader-line"),
+                ] {
+                    let r = ui.radio_value(&mut stop.leader, l, label);
+                    mark(ui, name, &r);
+                    r.on_disabled_hover_text(NO_STOP);
+                }
+            });
+            ui.end_row();
+        });
+    });
+    if let Some(i) = sel
+        && stop != before
+    {
+        st.stops[i] = stop;
+        st.new_align = stop.align;
+        st.new_leader = stop.leader;
+        if stop.pos != before.pos {
+            st.sort_keep(i);
+        }
+    }
+    ui.horizontal(|ui| {
+        let r = ui.button("Add stop");
+        mark(ui, "tab-add", &r);
+        let r = r.on_hover_text("Add a stop after the last one (the keyboard way to add)");
+        if r.clicked() {
+            let next = st.stops.last().map_or(36.0, |s| s.pos + 36.0).min(st.width);
+            st.add(next);
+        }
+        let r = ui.add_enabled(sel.is_some(), egui::Button::new("Remove"));
+        mark(ui, "tab-remove", &r);
+        let r = r.on_disabled_hover_text(NO_STOP);
+        if r.clicked() {
+            st.remove_selected();
+        }
+        let r = ui.add_enabled(!st.stops.is_empty(), egui::Button::new("Clear all"));
+        mark(ui, "tab-clear", &r);
+        let r = r.on_disabled_hover_text("There are no tab stops to clear");
+        if r.clicked() {
+            st.stops.clear();
+            st.selected = None;
+        }
+    });
+    ui.small("Without a stop ahead, a tab goes to the next 36 pt.");
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            out = if !st.changed()
+                || app.exec(Command::ApplyParaProps {
+                    story: st.story,
+                    start: st.start,
+                    end: st.end,
+                    props: ParaProps {
+                        tab_stops: Some(st.stops.clone()),
+                        ..Default::default()
+                    },
+                }) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+/// The Bullets and Numbering dialog.
+pub struct ListState {
+    story: StoryId,
+    start: usize,
+    end: usize,
+    kind: ListKind,
+    bullet: String,
+    format: ListFormat,
+    level: u8,
+    indent: f64,
+    restart: bool,
+    restart_at: u32,
+}
+
+impl ListState {
+    pub fn for_selection(app: &PubrsApp) -> Option<Self> {
+        let (story, start, end, _) = para_target(app)?;
+        let doc = app.doc()?;
+        let s = doc.story(story)?;
+        let list = doc
+            .styles
+            .resolve_para(&s.paragraphs[s.locate(start).0])
+            .list;
+        let l = list.unwrap_or_default();
+        Some(Self {
+            story,
+            start,
+            end,
+            // Opening the dialog is asking for a list.
+            kind: if l.kind == ListKind::None {
+                ListKind::Bullet
+            } else {
+                l.kind
+            },
+            bullet: l.bullet.to_string(),
+            format: l.format,
+            level: l.level,
+            indent: l.indent,
+            restart: l.start.is_some(),
+            restart_at: l.start.unwrap_or(1),
+        })
+    }
+
+    fn bullet_char(&self) -> char {
+        self.bullet
+            .chars()
+            .find(|c| !c.is_control() && !c.is_whitespace())
+            .unwrap_or(List::default().bullet)
+    }
+
+    fn list(&self) -> List {
+        List {
+            kind: self.kind,
+            bullet: self.bullet_char(),
+            format: self.format,
+            level: self.level,
+            indent: self.indent,
+            start: None,
+        }
+    }
+
+    fn preview(&self) -> String {
+        match self.kind {
+            ListKind::Bullet => self.bullet_char().to_string(),
+            ListKind::Number => self
+                .format
+                .label(if self.restart { self.restart_at } else { 1 }),
+            ListKind::None => String::new(),
+        }
+    }
+
+    /// The commands for OK; empty when nothing would change.
+    fn commands(&self, doc: &pubrs_api::core::Document) -> Vec<Command> {
+        let Some(s) = doc.story(self.story) else {
+            return Vec::new();
+        };
+        match self.kind {
+            ListKind::None => pubrs_api::core::clear_list_commands(
+                self.story,
+                s,
+                &doc.styles,
+                self.start,
+                self.end,
+                false,
+            ),
+            _ => pubrs_api::core::apply_list_commands(
+                self.story,
+                s,
+                self.start,
+                self.end,
+                self.list(),
+                (f64::from(self.level) + 1.0) * self.indent,
+                (self.kind == ListKind::Number && self.restart).then_some(self.restart_at),
+            ),
+        }
+    }
+}
+
+fn list_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ListState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Bullets and Numbering");
+    ui.horizontal(|ui| {
+        for (k, label, name) in [
+            (ListKind::None, "None", "list-none"),
+            (ListKind::Bullet, "Bullets", "list-bullet"),
+            (ListKind::Number, "Numbers", "list-number"),
+        ] {
+            let r = ui.radio_value(&mut st.kind, k, label);
+            mark(ui, name, &r);
+            if k == ListKind::None {
+                r.on_hover_text("Turn list items back into plain paragraphs");
+            }
+        }
+    });
+    let bullets = st.kind == ListKind::Bullet;
+    let numbers = st.kind == ListKind::Number;
+    let listed = st.kind != ListKind::None;
+    egui::Grid::new("list-grid").num_columns(2).show(ui, |ui| {
+        ui.label("Bullet");
+        ui.horizontal(|ui| {
+            let r = ui.add_enabled(
+                bullets,
+                egui::TextEdit::singleline(&mut st.bullet).desired_width(36.0),
+            );
+            mark(ui, "list-bullet-char", &r);
+            r.on_disabled_hover_text("Choose Bullets first");
+            for c in ["\u{2022}", "\u{2013}", "*", "\u{bb}", "\u{b7}"] {
+                let r = ui.add_enabled(bullets, egui::Button::new(c).small());
+                let r = r.on_disabled_hover_text("Choose Bullets first");
+                if r.clicked() {
+                    st.bullet = c.to_string();
+                }
+            }
+        });
+        ui.end_row();
+        ui.label("Number format");
+        let r = ui
+            .add_enabled_ui(numbers, |ui| {
+                egui::ComboBox::from_id_salt("list-format")
+                    .selected_text(st.format.label(1))
+                    .show_ui(ui, |ui| {
+                        for (f, name) in [
+                            (ListFormat::Decimal, "1., 2., 3."),
+                            (ListFormat::LowerAlpha, "a., b., c."),
+                            (ListFormat::UpperAlpha, "A., B., C."),
+                            (ListFormat::LowerRoman, "i., ii., iii."),
+                            (ListFormat::UpperRoman, "I., II., III."),
+                        ] {
+                            ui.selectable_value(&mut st.format, f, name);
+                        }
+                    });
+            })
+            .response;
+        mark(ui, "list-format", &r);
+        if !numbers {
+            r.on_hover_text("Choose Numbers first");
+        }
+        ui.end_row();
+        ui.label("Level");
+        let r = ui.add_enabled(
+            listed,
+            egui::DragValue::new(&mut st.level).range(0..=MAX_LIST_LEVEL),
+        );
+        mark(ui, "list-level", &r);
+        r.on_hover_text("Nesting level; a deeper level restarts after a shallower item")
+            .on_disabled_hover_text("Choose Bullets or Numbers first");
+        ui.end_row();
+        ui.label("Indent");
+        let r = ui.add_enabled(
+            listed,
+            egui::DragValue::new(&mut st.indent)
+                .speed(0.5)
+                .range(0.0..=720.0)
+                .suffix(" pt"),
+        );
+        mark(ui, "list-indent", &r);
+        r.on_hover_text("How far the bullet or number hangs left of the text")
+            .on_disabled_hover_text("Choose Bullets or Numbers first");
+        ui.end_row();
+        ui.label("Start at");
+        ui.horizontal(|ui| {
+            let r = ui.add_enabled(numbers, egui::Checkbox::without_text(&mut st.restart));
+            mark(ui, "list-restart", &r);
+            r.on_hover_text("Restart numbering at this paragraph")
+                .on_disabled_hover_text("Choose Numbers first");
+            let r = ui.add_enabled(
+                numbers && st.restart,
+                egui::DragValue::new(&mut st.restart_at).range(0..=100_000),
+            );
+            mark(ui, "list-start", &r);
+            r.on_disabled_hover_text("Turn on restart numbering first");
+        });
+        ui.end_row();
+    });
+    if listed {
+        ui.add_space(4.0);
+        ui.label(format!("Preview:  {}  Item text", st.preview()));
+    }
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            let commands = app.doc().map(|d| st.commands(d)).unwrap_or_default();
+            out = if commands.is_empty()
+                || app.exec(Command::Batch {
+                    label: "bullets and numbering".into(),
+                    commands,
+                }) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
             };
         }
         let c = ui.button("Cancel");

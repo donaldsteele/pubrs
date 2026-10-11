@@ -942,6 +942,9 @@ impl PubrsApp {
                 Some(NO_CARET)
             }
             Action::DropCap if !editing && !text_selected => Some(NO_PARAGRAPH),
+            Action::Tabs | Action::BulletsNumbering if !editing && !text_selected => {
+                Some(NO_PARAGRAPH)
+            }
             _ => None,
         }
     }
@@ -1149,6 +1152,14 @@ impl PubrsApp {
                 };
                 self.insert_break(kind);
             }
+            Tabs => match crate::dialogs::TabsState::for_selection(self) {
+                Some(state) => self.dialog = Some(Dialog::Tabs(state)),
+                None => self.notify(NO_PARAGRAPH),
+            },
+            BulletsNumbering => match crate::dialogs::ListState::for_selection(self) {
+                Some(state) => self.dialog = Some(Dialog::Lists(state)),
+                None => self.notify(NO_PARAGRAPH),
+            },
             DropCap => match crate::dialogs::DropCapState::for_selection(self) {
                 Some(state) => self.dialog = Some(Dialog::DropCap(state)),
                 None => self.notify(NO_PARAGRAPH),

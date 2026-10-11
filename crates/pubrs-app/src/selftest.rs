@@ -115,6 +115,8 @@ struct Data {
     suggestion: Option<String>,
     /// The step being retried and how often.
     retry: (usize, u32),
+    /// M16: the list frame and the price frame.
+    m16: Option<(FrameId, FrameId)>,
 }
 
 pub struct SelfTest {
@@ -353,6 +355,14 @@ impl SelfTest {
         Ok(Self::m15_lines(app, f)?
             .into_iter()
             .filter(|l| l.chars.start >= start && l.chars.end <= end)
+            .collect())
+    }
+
+    /// The list labels of every line frame `f` shows, one per labelled line.
+    fn m16_labels(app: &mut PubrsApp, f: FrameId) -> Result<Vec<String>, String> {
+        Ok(Self::m15_lines(app, f)?
+            .into_iter()
+            .filter_map(|l| l.list_label)
             .collect())
     }
 
@@ -2109,6 +2119,203 @@ impl SelfTest {
                     return Err("Escape did not close the Spelling window".into());
                 }
                 self.ok("Escape closed the Spelling window");
+            }
+            106 => {
+                // M16: a numbered list made with Bullets and Numbering… and
+                // nested with Tab, then a price line with a right tab and a
+                // dot leader. Frame L holds the list, frame T the price.
+                app.new_blank();
+                let add = |app: &mut PubrsApp, v: serde_json::Value| -> Result<FrameId, String> {
+                    let req: pubrs_api::tools::frames::FrameAddText =
+                        serde_json::from_value(v).map_err(|e| e.to_string())?;
+                    Ok(app
+                        .session
+                        .frame_add_text(req)
+                        .map_err(|e| e.message)?
+                        .frame_id)
+                };
+                let l = add(
+                    app,
+                    serde_json::json!({
+                        "x": 40.0, "y": 40.0, "width": 300.0, "height": 140.0,
+                        "text": "Pick fruit\nApples\nGreen apples\nPears",
+                    }),
+                )?;
+                let t = add(
+                    app,
+                    serde_json::json!({
+                        "x": 40.0, "y": 220.0, "width": 300.0, "height": 60.0,
+                        "text": "Tomato soup",
+                    }),
+                )?;
+                app.select(vec![l]);
+                self.data.m16 = Some((l, t));
+                self.screenshot(ctx);
+            }
+            107 => {
+                let (l, _) = self.data.m16.ok_or("no M16 frames")?;
+                let lines = Self::m15_lines(app, l)?;
+                let pos = Self::m15_line_pos(app, l, &lines[0])?;
+                self.fresh_double_click(pos);
+            }
+            108 => {
+                let (l, _) = self.data.m16.ok_or("no M16 frames")?;
+                if app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame) != Some(l) {
+                    return Err("double-click did not start editing the list frame".into());
+                }
+                self.key(Key::A, Modifiers::COMMAND);
+            }
+            109 => {
+                app.run_action(ctx, Action::BulletsNumbering);
+            }
+            110 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Lists(_))) {
+                    return Err("Text ▸ Bullets and Numbering… did not open its dialog".into());
+                }
+                self.click_target(ctx, "list-number")?;
+            }
+            111 => {
+                self.screenshot(ctx);
+            }
+            112 => {
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            113 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the Bullets and Numbering dialog".into());
+                }
+                let (l, _) = self.data.m16.ok_or("no M16 frames")?;
+                let got = Self::m16_labels(app, l)?;
+                if got != ["1.", "2.", "3.", "4."] {
+                    return Err(format!("numbered list labels are {got:?}"));
+                }
+                self.ok("Bullets and Numbering… made four numbered items (1. 2. 3. 4.)");
+                // Click at the very start of "Green apples", then Tab.
+                let lines = Self::m15_lines(app, l)?;
+                let line = lines.get(2).ok_or("no third line")?;
+                let r = app
+                    .doc()
+                    .and_then(|d| d.frame(l))
+                    .map(|f| f.rect)
+                    .ok_or("no frame")?;
+                let p = pubrs_api::core::Point::new(
+                    r.x + line.caret_x(line.chars.start),
+                    r.y + line.rect.y + line.rect.height / 2.0,
+                );
+                let pos = Self::screen_of(app, p).ok_or("canvas not laid out")?;
+                self.click(pos, false);
+                self.key(Key::Tab, Modifiers::NONE);
+            }
+            114 => {
+                let (l, _) = self.data.m16.ok_or("no M16 frames")?;
+                let got = Self::m16_labels(app, l)?;
+                if got != ["1.", "2.", "a.", "3."] {
+                    return Err(format!("after Tab the labels are {got:?}, not 1. 2. a. 3."));
+                }
+                let doc = app.doc().ok_or("no doc")?;
+                let text = doc
+                    .story_of(l)
+                    .and_then(|s| doc.story(s))
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text.contains('\t') {
+                    return Err("Tab at the start of a list item inserted a tab".into());
+                }
+                self.ok("Tab at the start of an item nested it: labels 1. 2. a. 3.");
+                self.screenshot(ctx);
+                self.key(Key::Tab, Modifiers::SHIFT);
+            }
+            115 => {
+                let (l, _) = self.data.m16.ok_or("no M16 frames")?;
+                let got = Self::m16_labels(app, l)?;
+                if got != ["1.", "2.", "3.", "4."] {
+                    return Err(format!("after Shift+Tab the labels are {got:?}"));
+                }
+                self.ok("Shift+Tab brought it back to level 0");
+                // Nest it again for the picture, then to the price line.
+                self.key(Key::Tab, Modifiers::NONE);
+                self.key(Key::Escape, Modifiers::NONE);
+                let (_, t) = self.data.m16.ok_or("no M16 frames")?;
+                app.select(vec![t]);
+            }
+            116 => {
+                let (_, t) = self.data.m16.ok_or("no M16 frames")?;
+                let lines = Self::m15_lines(app, t)?;
+                let pos = Self::m15_line_pos(app, t, &lines[0])?;
+                self.fresh_double_click(pos);
+            }
+            117 => {
+                let (_, t) = self.data.m16.ok_or("no M16 frames")?;
+                if app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame) != Some(t) {
+                    return Err("double-click did not start editing the price frame".into());
+                }
+                self.key(Key::End, Modifiers::NONE);
+                self.key(Key::Tab, Modifiers::NONE);
+                self.pending
+                    .push_back(vec![Event::Text("4.50".to_string())]);
+            }
+            118 => {
+                let (_, t) = self.data.m16.ok_or("no M16 frames")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let text = doc
+                    .story_of(t)
+                    .and_then(|s| doc.story(s))
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text != "Tomato soup\t4.50" {
+                    return Err(format!("Tab did not insert a tab character: {text:?}"));
+                }
+                self.ok("Tab while editing inserted a tab character");
+                self.key(Key::A, Modifiers::COMMAND);
+            }
+            119 => {
+                app.run_action(ctx, Action::Tabs);
+            }
+            120 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Tabs(_))) {
+                    return Err("Text ▸ Tabs… did not open its dialog".into());
+                }
+                // Click the ruler at 250 pt: the box is 300 pt wide.
+                let r = crate::dialogs::target_rect(ctx, "tab-ruler")
+                    .ok_or("the ruler is not on screen")?;
+                let x = r.left() + 250.0 * r.width() / 300.0;
+                self.click(egui::pos2(x, r.center().y), false);
+            }
+            121 => {
+                self.click_target(ctx, "tab-align-right")?;
+            }
+            122 => {
+                self.click_target(ctx, "tab-leader-dot")?;
+            }
+            123 => {
+                self.screenshot(ctx);
+            }
+            124 => {
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            125 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the Tabs dialog".into());
+                }
+                let (_, t) = self.data.m16.ok_or("no M16 frames")?;
+                let lines = Self::m15_lines(app, t)?;
+                let line = lines.first().ok_or("the price frame lost its line")?;
+                let dots: usize = line
+                    .runs
+                    .iter()
+                    .filter(|r| !r.text.is_empty() && r.text.chars().all(|c| c == '.'))
+                    .map(|r| r.glyphs.len())
+                    .sum();
+                let end = line.caret_x(line.chars.end);
+                if dots < 8 || (end - 254.0).abs() > 0.6 {
+                    return Err(format!(
+                        "right tab with dot leader: {dots} leader dots, the price ends at x {end:.1} (stop at 254)"
+                    ));
+                }
+                self.ok(format!(
+                    "Text ▸ Tabs…: a right stop at 250 pt with a dot leader ({dots} dots); the price ends on the stop"
+                ));
+                self.screenshot(ctx);
                 return Ok(true);
             }
             _ => return Ok(true),

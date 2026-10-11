@@ -17,7 +17,7 @@ use crate::style::{CharProps, ParaProps, StyleSheet};
 use crate::swatch::{Paint, SchemeId, Swatch};
 
 /// Current document schema version. See `migrate.rs` for the upgrade path.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// Shared, immutable asset bytes.
 pub type Blob = Arc<[u8]>;

@@ -23,7 +23,7 @@ Top-level object:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `schema_version` | integer | Currently `6`. Older versions are migrated on load. Newer versions are rejected. |
+| `schema_version` | integer | Currently `7`. Older versions are migrated on load. Newer versions are rejected. |
 | `id` | uuid | Document id. |
 | `meta` | object | `title`, `author`, optional `template`. |
 | `setup` | object | `size {width,height}`, `margins {top,right,bottom,left}`, `bleed` (all points); optional `sheet` (see below) and `booklet` (bool, omitted when false). |
@@ -116,6 +116,7 @@ version.
 | 4 | `swatches` and `scheme` on the document, and paints (swatch references and gradients) wherever a colour is stored. All optional, and a hex string is still a valid paint, so older files are valid version 4 files and are only stamped. |
 | 5 | `alt_text` on picture frames (written to tagged PDF). Optional and omitted when empty, so older files are valid version 5 files and are only stamped. |
 | 6 | Paragraph fields `keep_with_next`, `keep_together`, `widow_orphan` and `drop_cap` (on paragraphs and paragraph styles), and the break characters U+000E (column), U+001D (frame) and U+000C (page) in run text. All fields are optional and older files hold no break characters, so older files are valid version 6 files; migration only stamps the version. |
+| 7 | Paragraph fields `tab_stops` and `list` (on paragraphs and paragraph styles); tab characters in run text now move to tab stops. Both fields are optional, so older files are valid version 7 files; migration only stamps the version. |
 
 ### Swatches, schemes and paints (version 4)
 
@@ -218,3 +219,25 @@ the version 5 layout, unchanged** (Locked Decision 2).
   JSON writes them as `"\u000e"`, `"\u001d"` and `"\f"`. They draw nothing.
   Pages are never added: with no frame to continue in, the rest of the story
   overflows.
+
+### Tab stops and lists (version 7)
+
+Both fields are absent in every older file, and **absent means the version 6
+layout, unchanged** (Locked Decision 2). A tab character in text now moves the
+text after it to a tab stop; before version 7 it was only a glyph.
+
+- `tab_stops: [{"pos": 200, "align": "right", "leader": "dot"}]`: `pos` is in
+  points from the left edge of the column's text area; `align` is `left`
+  (default), `center`, `right` or `decimal`; `leader` is `none` (default),
+  `dot`, `dash` or `line`. A paragraph's list replaces its style's; `[]`
+  clears stops a style sets. A tab with no stop ahead goes to the next
+  multiple of 36 pt.
+- `list: {"kind": "number", "format": "a.", "level": 1, "indent": 18,
+  "start": 5, "bullet": "•"}`: `kind` is `bullet`, `number` or `none` (not a
+  list; overrides a style); `format` is `1.` (default), `a.`, `A.`, `i.` or
+  `I.`; `level` is 0-8; `indent` is how far the label hangs left of the text
+  (default 18); `start` restarts numbering at that value on this paragraph;
+  `bullet` is the bullet character (default U+2022). The text is at
+  `max(left_indent, indent)`. Labels are generated, never stored in run text.
+  Numbering counts per level through the story, continuing across paragraphs
+  that are not list items and across linked frames (ADR 0019).

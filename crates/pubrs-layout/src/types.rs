@@ -94,6 +94,9 @@ pub struct LineBox {
     pub carets: Vec<(usize, f64)>,
     /// True for the last line of a paragraph.
     pub ends_paragraph: bool,
+    /// The bullet or number drawn in the hanging indent of a list item's
+    /// first line (generated text, not part of the story).
+    pub list_label: Option<String>,
 }
 
 impl LineBox {

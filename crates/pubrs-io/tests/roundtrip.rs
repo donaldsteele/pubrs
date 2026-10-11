@@ -4,6 +4,7 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 
+use pubrs_core::style::{List, ListFormat, ListKind, TabAlign, TabLeader, TabStop};
 use pubrs_core::*;
 use pubrs_io::{IoError, format, image_info, import_image, read_bytes, write_bytes};
 
@@ -411,12 +412,13 @@ fn every_schema_fixture_opens_and_round_trips() {
     // A fixture is created only when it is missing and only for the current
     // schema version; an existing fixture is never rewritten, even when
     // blessing, so files written by earlier versions stay frozen.
-    let fixtures: [(u32, Document); 5] = [
+    let fixtures: [(u32, Document); 6] = [
         (2, sheet_document()),
         (3, hyphenation_document()),
         (4, common::colour_document()),
         (5, rich_document()),
         (6, paragraph_controls_document()),
+        (7, tabs_lists_document()),
     ];
     for (v, doc) in &fixtures {
         let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
@@ -447,7 +449,7 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 6, "expected the schema_v1 to v6 fixtures");
+    assert!(n >= 7, "expected the schema_v1 to v7 fixtures");
     let v5 = pubrs_io::load(&fixtures_dir().join("schema_v5.pubrs")).unwrap();
     let alt: Vec<_> = v5
         .frames
@@ -506,8 +508,8 @@ fn every_schema_fixture_opens_and_round_trips() {
             .iter()
             .any(|s| matches!(s.value, SwatchValue::Cmyk(_)))
     );
-    // The current fixture: keeps, widow and orphan control, a drop cap and
-    // one break character of each kind.
+    // Keeps, widow and orphan control, a drop cap and one break character
+    // of each kind.
     let doc = pubrs_io::load(&fixtures_dir().join("schema_v6.pubrs")).unwrap();
     let story = doc.stories.values().next().unwrap();
     let heading = doc.styles.resolve_para(&story.paragraphs[0]);
@@ -523,6 +525,21 @@ fn every_schema_fixture_opens_and_round_trips() {
     for k in pubrs_core::text::BreakKind::ALL {
         assert!(text.contains(k.char()), "{k:?} break survives the file");
     }
+    // The current fixture: tab stops with leaders, and a nested numbered list.
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v7.pubrs")).unwrap();
+    let story = doc.stories.values().next().unwrap();
+    let price = doc.styles.resolve_para(&story.paragraphs[0]);
+    assert_eq!(
+        price.tab_stops,
+        [TabStop {
+            pos: 200.0,
+            align: TabAlign::Right,
+            leader: TabLeader::Dot
+        }]
+    );
+    let item = doc.styles.resolve_para(&story.paragraphs[2]).list.unwrap();
+    assert_eq!((item.kind, item.level), (ListKind::Number, 1));
+    assert_eq!(item.format, ListFormat::LowerAlpha);
 }
 
 /// The document `tests/fixtures/schema_v6.pubrs` is written from: a
@@ -634,4 +651,58 @@ fn hex_colours_stay_plain_strings() {
     let json = serde_json::to_string(&b.finish()).unwrap();
     assert!(json.contains("\"fill\":\"#FF0010\""), "{json}");
     assert!(!json.contains("swatches") && !json.contains("scheme"));
+}
+
+/// The document `tests/fixtures/schema_v7.pubrs` is written from: a price
+/// line with a right tab and dot leader, and a numbered list with a nested
+/// lettered item.
+fn tabs_lists_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(1602), PageSetup::default());
+    let p = b.page(0);
+    let f = b
+        .text(
+            p,
+            Rect::new(36.0, 36.0, 300.0, 200.0),
+            "Tomato soup\t4.50\nFirst course\nGarlic bread\nMain course",
+        )
+        .unwrap();
+    let story = b.story_of(f);
+    b.exec(Command::ApplyParaProps {
+        story,
+        start: 0,
+        end: 0,
+        props: ParaProps {
+            tab_stops: Some(vec![TabStop {
+                pos: 200.0,
+                align: TabAlign::Right,
+                leader: TabLeader::Dot,
+            }]),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    for (para, level, format) in [
+        (1, 0, ListFormat::Decimal),
+        (2, 1, ListFormat::LowerAlpha),
+        (3, 0, ListFormat::Decimal),
+    ] {
+        let at = b.doc().story(story).unwrap().paragraph_start(para);
+        b.exec(Command::ApplyParaProps {
+            story,
+            start: at,
+            end: at,
+            props: ParaProps {
+                left_indent: Some(18.0 * (f64::from(level) + 1.0)),
+                list: Some(List {
+                    kind: ListKind::Number,
+                    format,
+                    level,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+    b.finish()
 }

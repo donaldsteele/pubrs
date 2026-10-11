@@ -618,3 +618,120 @@ crowd.{}Next week: jam-making in the village hall, from ten until noon.",
     .unwrap();
     assert_png_golden("paragraph_controls", &render(&b.finish(), 0, &opts()));
 }
+
+/// M16: a menu with prices on a right tab and dot leaders (the leaders of
+/// consecutive lines line up), under a centred heading.
+#[test]
+fn tabs_menu_with_dot_leaders() {
+    use pubrs_core::style::{TabAlign, TabLeader, TabStop};
+    let mut b = DocBuilder::new(SeqIds::new(16), small_page());
+    let p = b.page(0);
+    let f = b
+        .text(
+            p,
+            Rect::new(18.0, 18.0, 264.0, 164.0),
+            "Lunch menu\nTomato soup\t4.50\nGrilled salmon with lemon\t18.00\nGarden salad\t7.25\n\
+Sourdough and butter\t3.00\nHouse lemonade\t2.75",
+        )
+        .unwrap();
+    let s = b.story_of(f);
+    b.exec(Command::ApplyCharProps {
+        story: s,
+        start: 0,
+        end: 10,
+        props: CharProps {
+            bold: Some(true),
+            font_size: Some(14.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start: 0,
+        end: 0,
+        props: ParaProps {
+            align: Some(Align::Center),
+            space_after: Some(6.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let len = b.doc().story(s).unwrap().char_len();
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start: 11,
+        end: len,
+        props: ParaProps {
+            tab_stops: Some(vec![TabStop {
+                pos: 240.0,
+                align: TabAlign::Right,
+                leader: TabLeader::Dot,
+            }]),
+            space_after: Some(3.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    assert_png_golden("tabs_menu", &render(&b.finish(), 0, &opts()));
+}
+
+/// M16: a nested numbered list (1. a. b. 2.) and a bulleted list.
+#[test]
+fn nested_numbered_list() {
+    use pubrs_core::style::{List, ListFormat, ListKind};
+    let mut b = DocBuilder::new(SeqIds::new(17), small_page());
+    let p = b.page(0);
+    let f = b
+        .text(
+            p,
+            Rect::new(18.0, 18.0, 264.0, 164.0),
+            "Before opening\nWash the counters\nSweep the floor\nSet out the tables\n\
+Count the till\nOpen the doors\nWhat to bake\nSourdough\nRye",
+        )
+        .unwrap();
+    let s = b.story_of(f);
+    let items = [
+        (1, ListKind::Number, 0, ListFormat::Decimal),
+        (2, ListKind::Number, 1, ListFormat::LowerAlpha),
+        (3, ListKind::Number, 1, ListFormat::LowerAlpha),
+        (4, ListKind::Number, 0, ListFormat::Decimal),
+        (5, ListKind::Number, 0, ListFormat::Decimal),
+        (7, ListKind::Bullet, 0, ListFormat::Decimal),
+        (8, ListKind::Bullet, 0, ListFormat::Decimal),
+    ];
+    for (para, kind, level, format) in items {
+        let at = b.doc().story(s).unwrap().paragraph_start(para);
+        b.exec(Command::ApplyParaProps {
+            story: s,
+            start: at,
+            end: at,
+            props: ParaProps {
+                left_indent: Some(18.0 * (f64::from(level) + 1.0)),
+                list: Some(List {
+                    kind,
+                    format,
+                    level,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+    for para in [0, 6] {
+        let at = b.doc().story(s).unwrap().paragraph_start(para);
+        let end = at + b.doc().story(s).unwrap().paragraphs[para].char_len();
+        b.exec(Command::ApplyCharProps {
+            story: s,
+            start: at,
+            end,
+            props: CharProps {
+                bold: Some(true),
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    }
+    assert_png_golden("nested_list", &render(&b.finish(), 0, &opts()));
+}

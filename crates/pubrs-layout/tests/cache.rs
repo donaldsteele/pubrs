@@ -536,3 +536,71 @@ fn keeps_drop_caps_and_breaks_recompose_only_their_story() {
     assert_eq!(cache.stats().recomposed, 0, "page ranks are relative");
     assert_ne!(t.ed.doc().pages[0].id, page);
 }
+
+#[test]
+fn tab_stops_and_lists_recompose_only_their_story() {
+    use pubrs_core::style::{List, ListKind, TabAlign, TabLeader, TabStop};
+    let mut t = two_stories();
+    let (mut lay, mut cache) = (layouter(), StoryLayoutCache::new());
+    let start = check(&mut cache, &mut lay, t.ed.doc());
+    let len = t.ed.doc().story(t.b).unwrap().char_len();
+    let edits = [
+        // A tab in the text, then stops for it.
+        Command::InsertText {
+            story: t.b,
+            at: 5,
+            text: "\t".into(),
+            format: None,
+        },
+        Command::ApplyParaProps {
+            story: t.b,
+            start: 0,
+            end: len,
+            props: ParaProps {
+                tab_stops: Some(vec![TabStop {
+                    pos: 120.0,
+                    align: TabAlign::Right,
+                    leader: TabLeader::Dot,
+                }]),
+                ..Default::default()
+            },
+        },
+        // The first paragraph becomes a list item; the numbering of the
+        // later ones depends on it.
+        Command::ApplyParaProps {
+            story: t.b,
+            start: 0,
+            end: len,
+            props: ParaProps {
+                left_indent: Some(18.0),
+                list: Some(List {
+                    kind: ListKind::Number,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        },
+        Command::ApplyParaProps {
+            story: t.b,
+            start: 0,
+            end: 0,
+            props: ParaProps {
+                list: Some(List {
+                    kind: ListKind::None,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        },
+    ];
+    for e in edits {
+        t.ed.execute(e).unwrap();
+        let lay2 = check(&mut cache, &mut lay, t.ed.doc());
+        assert_eq!(cache.stats().recomposed, 1, "only story b is recomposed");
+        assert!(Arc::ptr_eq(&start.stories[&t.a], &lay2.stories[&t.a]));
+    }
+    while t.ed.undo().is_some() {
+        check(&mut cache, &mut lay, t.ed.doc());
+    }
+    assert_eq!(check(&mut cache, &mut lay, t.ed.doc()), start);
+}

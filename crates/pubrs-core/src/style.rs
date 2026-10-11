@@ -127,6 +127,212 @@ pub struct ParaProps {
     /// lines. Unset inherits; `{"lines": 0}` removes one a style sets.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drop_cap: Option<DropCap>,
+    /// Tab stops, replacing any a style sets. An empty list clears them.
+    /// A paragraph that has tabs but no stops uses a stop every 36 pt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_stops: Option<Vec<TabStop>>,
+    /// Bullet or numbered list membership. `{"kind": "none"}` removes a
+    /// list a style sets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list: Option<List>,
+}
+
+/// Distance between the default tab stops, in points.
+pub const DEFAULT_TAB_INTERVAL: f64 = 36.0;
+
+/// How text lines up at a tab stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TabAlign {
+    /// Text starts at the stop.
+    #[default]
+    Left,
+    /// Text is centred on the stop.
+    Center,
+    /// Text ends at the stop.
+    Right,
+    /// The first `.` or `,` after the tab sits on the stop.
+    Decimal,
+}
+
+/// What fills the gap before a tab stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TabLeader {
+    #[default]
+    None,
+    Dot,
+    Dash,
+    Line,
+}
+
+impl TabLeader {
+    /// The glyph repeated to fill the gap.
+    pub fn glyph(self) -> Option<char> {
+        match self {
+            Self::None => None,
+            Self::Dot => Some('.'),
+            Self::Dash => Some('-'),
+            Self::Line => Some('_'),
+        }
+    }
+}
+
+/// A tab stop.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TabStop {
+    /// Distance from the frame's left text edge in points.
+    pub pos: f64,
+    #[serde(default)]
+    pub align: TabAlign,
+    #[serde(default)]
+    pub leader: TabLeader,
+}
+
+/// Bullet or number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ListKind {
+    #[default]
+    Bullet,
+    Number,
+    /// Not a list; overrides a list a style sets.
+    None,
+}
+
+/// How list numbers are written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum ListFormat {
+    #[default]
+    #[serde(rename = "1.")]
+    Decimal,
+    #[serde(rename = "a.")]
+    LowerAlpha,
+    #[serde(rename = "A.")]
+    UpperAlpha,
+    #[serde(rename = "i.")]
+    LowerRoman,
+    #[serde(rename = "I.")]
+    UpperRoman,
+}
+
+impl ListFormat {
+    /// The label for item `n` (1-based), with its trailing full stop.
+    pub fn label(self, n: u32) -> String {
+        let n = n.max(1);
+        match self {
+            Self::Decimal => format!("{n}."),
+            Self::LowerAlpha => format!("{}.", alpha(n, b'a')),
+            Self::UpperAlpha => format!("{}.", alpha(n, b'A')),
+            Self::LowerRoman => format!("{}.", roman(n).to_lowercase()),
+            Self::UpperRoman => format!("{}.", roman(n)),
+        }
+    }
+}
+
+fn alpha(mut n: u32, base: u8) -> String {
+    let mut out = Vec::new();
+    while n > 0 {
+        n -= 1;
+        out.push(base + (n % 26) as u8);
+        n /= 26;
+    }
+    out.reverse();
+    String::from_utf8(out).unwrap_or_default()
+}
+
+fn roman(mut n: u32) -> String {
+    if n >= 4000 {
+        return n.to_string();
+    }
+    let table = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut out = String::new();
+    for (v, r) in table {
+        while n >= v {
+            out.push_str(r);
+            n -= v;
+        }
+    }
+    out
+}
+
+/// List membership of a paragraph. The label is generated text drawn in
+/// the hanging indent; it is not part of the story.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct List {
+    #[serde(default)]
+    pub kind: ListKind,
+    /// Bullet character (default U+2022).
+    #[serde(default = "default_bullet")]
+    pub bullet: char,
+    /// Number format (default "1.").
+    #[serde(default)]
+    pub format: ListFormat,
+    /// Nesting level, 0-8 (default 0).
+    #[serde(default)]
+    pub level: u8,
+    /// Hanging indent in points: the label sits this far left of the text
+    /// (default 18).
+    #[serde(default = "default_list_indent")]
+    pub indent: f64,
+    /// Restart numbering at this value on this paragraph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<u32>,
+}
+
+pub const MAX_LIST_LEVEL: u8 = 8;
+
+fn default_bullet() -> char {
+    '\u{2022}'
+}
+
+fn default_list_indent() -> f64 {
+    18.0
+}
+
+impl Default for List {
+    fn default() -> Self {
+        Self {
+            kind: ListKind::Bullet,
+            bullet: default_bullet(),
+            format: ListFormat::Decimal,
+            level: 0,
+            indent: default_list_indent(),
+            start: None,
+        }
+    }
+}
+
+impl List {
+    pub fn is_valid(&self) -> bool {
+        self.level <= MAX_LIST_LEVEL
+            && self.indent.is_finite()
+            && (0.0..=720.0).contains(&self.indent)
+            && !self.bullet.is_control()
+            && self.start.is_none_or(|s| s <= 1_000_000)
+    }
 }
 
 /// Lines kept together by widow and orphan control when it is turned on
@@ -261,6 +467,8 @@ impl ParaProps {
             keep_together: other.keep_together.or(self.keep_together),
             widow_orphan: other.widow_orphan.or(self.widow_orphan),
             drop_cap: other.drop_cap.or(self.drop_cap),
+            tab_stops: other.tab_stops.clone().or_else(|| self.tab_stops.clone()),
+            list: other.list.or(self.list),
         }
     }
 
@@ -281,6 +489,12 @@ impl ParaProps {
             && self.justify_limits.is_none_or(|j| j.is_valid())
             && self.widow_orphan.is_none_or(|n| n <= 10)
             && self.drop_cap.is_none_or(|d| d.is_valid())
+            && self.tab_stops.as_ref().is_none_or(|t| {
+                t.len() <= 64
+                    && t.iter()
+                        .all(|s| s.pos.is_finite() && (0.0..=10_000.0).contains(&s.pos))
+            })
+            && self.list.is_none_or(|l| l.is_valid())
     }
 }
 
@@ -368,6 +582,10 @@ pub struct ParaAttrs {
     pub widow_orphan: u8,
     /// `None` = no drop cap (also for `lines: 0`).
     pub drop_cap: Option<DropCap>,
+    /// Explicit stops sorted by position; empty = default grid only.
+    pub tab_stops: Vec<TabStop>,
+    /// `None` = not a list (also for kind `none`).
+    pub list: Option<List>,
 }
 
 impl Default for ParaAttrs {
@@ -387,6 +605,8 @@ impl Default for ParaAttrs {
             keep_together: false,
             widow_orphan: 0,
             drop_cap: None,
+            tab_stops: Vec::new(),
+            list: None,
         }
     }
 }
@@ -434,6 +654,14 @@ impl ParaAttrs {
         }
         if let Some(v) = p.drop_cap {
             self.drop_cap = (v.lines > 0).then_some(v);
+        }
+        if let Some(v) = &p.tab_stops {
+            let mut stops = v.clone();
+            stops.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+            self.tab_stops = stops;
+        }
+        if let Some(v) = p.list {
+            self.list = (v.kind != ListKind::None).then_some(v);
         }
     }
 }

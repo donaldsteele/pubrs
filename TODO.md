@@ -53,6 +53,17 @@ Deferred and partial work. Each entry says what is missing and why.
 - A drop cap is drawn in the style of its first character even when its characters differ; right-to-left paragraphs get the cap on the left. Clicks beside the cap on lines 2..N land on those lines (the cap is hit through the first line).
 - Insert ▸ Break ▸ Frame Break has no shortcut (Page: Ctrl/Cmd+Enter, Column: Ctrl/Cmd+Shift+Enter). Drop Cap… is under Text, as there is no Format menu.
 
+## Tab stops and lists (M16)
+
+- Lines are broken before tabs are placed, so text after a tab that a stop pushes past the right edge overhangs instead of wrapping (ADR 0019).
+- A paragraph with a tab is set flush left whatever its alignment: centre, right and justified paragraphs with tabs are not supported.
+- A paragraph with a drop cap shows no list label; the first-line indent is ignored for list items.
+- List labels use the first character's style and cannot be styled on their own (no label font, colour or bullet picture).
+- Tab stops are measured from the column's text edge; there is no ruler on the canvas to drag them (use Text ▸ Tabs…), and no "tab stops from the ruler" while editing.
+- Numbered lists cannot be continued from another story or restarted with a dialog "continue" option; use Start at.
+- Multilevel numbering does not yet join levels ("1.a."); every level shows its own number.
+- The Tabs dialog's ruler is as wide as the text box; a stop past its right end is only reachable with the position field.
+
 ## `.pub` import (M31)
 
 - `.pub` margin guides are not read; imported pages use 36 pt margins.

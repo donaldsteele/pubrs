@@ -24,7 +24,10 @@ pub mod validate;
 pub use builder::DocBuilder;
 pub use bytes::Bytes;
 pub use color::Color;
-pub use command::{CmdResult, Command, CommandError, TextFrameProps};
+pub use command::{
+    CmdResult, Command, CommandError, TextFrameProps, apply_list_commands, clear_list_commands,
+    list_level_command,
+};
 pub use geom::{Margins, Point, Rect, Size};
 pub use history::{Change, Editor, HistoryItem};
 #[cfg(feature = "random-ids")]

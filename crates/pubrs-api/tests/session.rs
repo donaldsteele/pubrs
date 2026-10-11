@@ -368,6 +368,8 @@ fn styles_align_group_and_zorder() {
         keep_together: None,
         widow_orphan: None,
         drop_cap: None,
+        tab_stops: None,
+        list: None,
     })
     .unwrap();
     let got = s

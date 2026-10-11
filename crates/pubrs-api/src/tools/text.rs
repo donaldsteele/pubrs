@@ -1,6 +1,8 @@
 //! Text tools.
 
-use pubrs_core::style::{DEFAULT_WIDOW_ORPHAN, DropCap, LinesOrFlag};
+use pubrs_core::style::{
+    DEFAULT_WIDOW_ORPHAN, DropCap, LinesOrFlag, List, ListFormat, ListKind, MAX_LIST_LEVEL, TabStop,
+};
 use pubrs_core::text::BreakKind;
 use pubrs_core::{
     Align, CharProps, Color, Command, DocumentId, FrameId, Margins, Paint, ParaProps, StoryId,
@@ -175,6 +177,88 @@ pub struct TextApplyParaStyle {
     /// Drop cap `{lines, chars}` (defaults 3 and 1); `{"lines": 0}` removes it.
     #[serde(default)]
     pub drop_cap: Option<DropCap>,
+    /// Tab stops `[{pos, align: left|center|right|decimal, leader: none|dot|dash|line}]` (pos in points from the text edge); `[]` clears them. See text_set_tabs.
+    #[serde(default)]
+    pub tab_stops: Option<Vec<TabStop>>,
+    /// Bullet or numbered list `{kind: bullet|number|none, bullet, format, level, indent, start}`; `{"kind": "none"}` removes it. See text_apply_list.
+    #[serde(default)]
+    pub list: Option<List>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextSetTabs {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    #[serde(default)]
+    pub frame_id: Option<FrameId>,
+    #[serde(default)]
+    pub story_id: Option<StoryId>,
+    /// Paragraphs touching start..end are changed. Default: all paragraphs.
+    #[serde(default)]
+    pub start: Option<usize>,
+    #[serde(default)]
+    pub end: Option<usize>,
+    /// The tab stops, replacing the paragraphs' own: `pos` in points from the text edge, `align` left (default), center, right or decimal, `leader` none (default), dot, dash or line. An empty list clears them. Without stops a tab goes to the next 36 pt; past the last stop too.
+    pub stops: Vec<TabStop>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextApplyList {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    #[serde(default)]
+    pub frame_id: Option<FrameId>,
+    #[serde(default)]
+    pub story_id: Option<StoryId>,
+    /// Paragraphs touching start..end become list items. Default: all paragraphs.
+    #[serde(default)]
+    pub start: Option<usize>,
+    #[serde(default)]
+    pub end: Option<usize>,
+    /// bullet or number.
+    pub kind: ListKind,
+    /// Number format: "1." (default), "a.", "A.", "i." or "I.".
+    #[serde(default)]
+    pub format: Option<ListFormat>,
+    /// Bullet character (default U+2022).
+    #[serde(default)]
+    pub bullet: Option<char>,
+    /// Nesting level 0-8 (default 0). A deeper level restarts when a shallower item appears.
+    #[serde(default)]
+    pub level: Option<u8>,
+    /// Hanging indent in points: the label sits this far left of the text (default 18).
+    #[serde(default)]
+    pub indent: Option<f64>,
+    /// Number the first paragraph of the range from this value instead of continuing the count.
+    #[serde(default)]
+    pub restart_at: Option<u32>,
+    /// Left indent of the text in points (default: (level + 1) x indent).
+    #[serde(default)]
+    pub left_indent: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextClearList {
+    /// Document id (default: the most recently used document).
+    #[serde(default)]
+    pub doc_id: Option<DocumentId>,
+    #[serde(default)]
+    pub frame_id: Option<FrameId>,
+    #[serde(default)]
+    pub story_id: Option<StoryId>,
+    /// Paragraphs touching start..end stop being list items. Default: all paragraphs.
+    #[serde(default)]
+    pub start: Option<usize>,
+    #[serde(default)]
+    pub end: Option<usize>,
+    /// Leave the left indent as it is (default: it is reset to 0).
+    #[serde(default)]
+    pub keep_indent: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -267,6 +351,9 @@ pub struct ParagraphOut {
     pub style: Option<String>,
     pub props: ParaProps,
     pub align: Align,
+    /// The bullet or number drawn for a list item (generated text, not in the story).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_label: Option<String>,
     pub runs: Vec<RunOut>,
 }
 
@@ -548,13 +635,21 @@ impl Session {
                 LinesOrFlag::Lines(n) => n,
             }),
             drop_cap: req.drop_cap,
+            tab_stops: req.tab_stops,
+            list: req.list,
         };
         if props.widow_orphan.is_some_and(|n| n > 10)
             || props.drop_cap.is_some_and(|d| !d.is_valid())
+            || props.list.is_some_and(|l| !l.is_valid())
+            || props
+                .tab_stops
+                .iter()
+                .flatten()
+                .any(|s| !(0.0..=10_000.0).contains(&s.pos))
         {
             return Err(ApiError::invalid(
-                "invalid keep or drop cap settings",
-                "widow_orphan is true, false or 0-10 lines; drop_cap lines are 0-10 and chars 1-15",
+                "invalid keep, drop cap, tab or list settings",
+                "widow_orphan is true, false or 0-10 lines; drop_cap lines are 0-10 and chars 1-15; tab stops 0-10000 points; list level 0-8",
             ));
         }
         if props != ParaProps::default() {
@@ -569,6 +664,94 @@ impl Session {
             req.doc_id,
             Command::Batch {
                 label: "paragraph format".into(),
+                commands,
+            },
+        )?;
+        self.text_out(story, change)
+    }
+
+    pub fn text_set_tabs(&mut self, req: TextSetTabs) -> ApiResult<TextChangeOut> {
+        let story = self.resolve_story(req.doc_id, req.frame_id, req.story_id)?;
+        let (start, end) = self.range(req.doc_id, story, req.start, req.end)?;
+        let props = ParaProps {
+            tab_stops: Some(req.stops),
+            ..Default::default()
+        };
+        if !props.is_valid() {
+            return Err(ApiError::invalid(
+                "tab stops must have a position of 0-10000 points, and at most 64 of them",
+                "pos is measured in points from the left edge of the text area",
+            ));
+        }
+        let change = self.exec(
+            req.doc_id,
+            Command::ApplyParaProps {
+                story,
+                start,
+                end,
+                props,
+            },
+        )?;
+        self.text_out(story, change)
+    }
+
+    pub fn text_apply_list(&mut self, req: TextApplyList) -> ApiResult<TextChangeOut> {
+        let story = self.resolve_story(req.doc_id, req.frame_id, req.story_id)?;
+        let (start, end) = self.range(req.doc_id, story, req.start, req.end)?;
+        if req.kind == ListKind::None {
+            return Err(ApiError::invalid(
+                "kind is bullet or number",
+                "use text_clear_list to remove a list",
+            ));
+        }
+        let defaults = List::default();
+        let level = req.level.unwrap_or(0);
+        let indent = req.indent.unwrap_or(defaults.indent);
+        let list = List {
+            kind: req.kind,
+            bullet: req.bullet.unwrap_or(defaults.bullet),
+            format: req.format.unwrap_or_default(),
+            level,
+            indent,
+            start: None,
+        };
+        if !list.is_valid() {
+            return Err(ApiError::invalid(
+                format!(
+                    "invalid list: level is 0-{MAX_LIST_LEVEL}, indent 0-720 points, bullet a printable character"
+                ),
+                "for example {\"kind\": \"number\", \"format\": \"a.\", \"level\": 1}",
+            ));
+        }
+        let left_indent = req.left_indent.unwrap_or((f64::from(level) + 1.0) * indent);
+        let commands = {
+            let open = self.get(req.doc_id)?;
+            let s = open.doc().story(story).expect("resolved");
+            pubrs_core::apply_list_commands(story, s, start, end, list, left_indent, req.restart_at)
+        };
+        let change = self.exec(
+            req.doc_id,
+            Command::Batch {
+                label: "apply list".into(),
+                commands,
+            },
+        )?;
+        self.text_out(story, change)
+    }
+
+    pub fn text_clear_list(&mut self, req: TextClearList) -> ApiResult<TextChangeOut> {
+        let story = self.resolve_story(req.doc_id, req.frame_id, req.story_id)?;
+        let (start, end) = self.range(req.doc_id, story, req.start, req.end)?;
+        let commands = {
+            let open = self.get(req.doc_id)?;
+            let doc = open.doc();
+            let s = doc.story(story).expect("resolved");
+            pubrs_core::clear_list_commands(story, s, &doc.styles, start, end, req.keep_indent)
+        };
+        let change = self.exec(
+            req.doc_id,
+            Command::Batch {
+                label: "clear list".into(),
                 commands,
             },
         )?;
@@ -611,6 +794,16 @@ impl Session {
         let style_name = |id: Option<pubrs_core::StyleId>| {
             id.and_then(|i| doc.styles.get(i)).map(|s| s.name.clone())
         };
+        // Labels sit on the first line of their item, which starts at the
+        // paragraph's first character.
+        let list_labels: std::collections::HashMap<usize, String> = layout
+            .stories
+            .get(&story_id)
+            .into_iter()
+            .flat_map(|s| s.frames.values())
+            .flat_map(|f| f.lines.iter())
+            .filter_map(|l| Some((l.chars.start, l.list_label.clone()?)))
+            .collect();
         let mut paragraphs = Vec::new();
         let mut pos = 0;
         for (index, p) in story.paragraphs.iter().enumerate() {
@@ -642,6 +835,7 @@ impl Session {
                     .or_else(|| style_name(Some(doc.styles.default_paragraph))),
                 props: p.props.clone(),
                 align: doc.styles.resolve_para(p).align,
+                list_label: list_labels.get(&start).cloned(),
                 runs,
             });
             pos += 1;

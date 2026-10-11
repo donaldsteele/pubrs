@@ -965,7 +965,23 @@ fn handle_input(
         }
     }
     // ---- keyboard
-    let canvas_focus = ctx.memory(|m| m.has_focus(canvas_id) || m.focused().is_none());
+    // While editing, Tab is text: egui moves the focus on Tab unless the
+    // canvas already holds it, and a Tab press may be the first thing it
+    // sees after a dialog closed, so take the focus back for it.
+    let tab_event = app.view().is_some_and(|v| v.edit.is_some())
+        && app.dialog.is_none()
+        && ctx.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key {
+                        key: egui::Key::Tab,
+                        ..
+                    }
+                )
+            })
+        });
+    let canvas_focus = tab_event || ctx.memory(|m| m.has_focus(canvas_id) || m.focused().is_none());
     if ctx.text_edit_focused() || !canvas_focus {
         return;
     }
@@ -978,6 +994,11 @@ fn handle_input(
         // the keyboard: its Enter must not also type a paragraph break.
     } else if app.view().is_some_and(|v| v.edit.is_some()) {
         ctx.memory_mut(|m| {
+            // After a dialog closes nothing has focus, and egui would move
+            // it on the first Tab: keep it on the canvas while editing.
+            if !m.has_focus(canvas_id) {
+                m.request_focus(canvas_id);
+            }
             m.set_focus_lock_filter(
                 canvas_id,
                 egui::EventFilter {
@@ -1135,7 +1156,7 @@ fn text_keys(
                             crate::spell::open_menu(app, doc_id, doc, story, e.caret, anchor, true);
                         }
                     }
-                    egui::Key::Tab => edit_insert(app, &e, "\t"),
+                    egui::Key::Tab => tab_key(app, doc, &e, modifiers),
                     egui::Key::Backspace => edit_delete(app, &e, false, word, &chars),
                     egui::Key::Delete => edit_delete(app, &e, true, word, &chars),
                     egui::Key::ArrowLeft => {
@@ -1563,5 +1584,31 @@ mod enter_tests {
             });
             out.textures_delta.clear();
         }
+    }
+}
+
+/// Tab while editing text. At the very start of a list item it makes the
+/// item one level deeper, and Shift+Tab one level shallower (one undo step
+/// each); anywhere else Tab inserts a tab character. Shortcuts with
+/// Cmd/Ctrl or Alt are not list gestures.
+fn tab_key(app: &mut PubrsApp, doc: &Document, e: &TextEdit, m: egui::Modifiers) {
+    let list_item = || {
+        let s = doc.story(e.story)?;
+        let (pi, c) = s.locate(e.range().0);
+        doc.styles.resolve_para(&s.paragraphs[pi]).list?;
+        Some((s, pi, c))
+    };
+    if !(m.command || m.alt)
+        && let Some((s, pi, c)) = list_item()
+        && (m.shift || (c == 0 && !e.has_selection()))
+    {
+        let delta = if m.shift { -1 } else { 1 };
+        if let Some(cmd) = pubrs_api::core::list_level_command(e.story, s, &doc.styles, pi, delta) {
+            app.exec(cmd);
+        }
+        return;
+    }
+    if !m.shift {
+        edit_insert(app, e, "\t");
     }
 }

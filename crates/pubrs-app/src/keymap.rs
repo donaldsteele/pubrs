@@ -58,6 +58,8 @@ pub enum Action {
     UnlinkTextFrames,
     Paragraph,
     DropCap,
+    Tabs,
+    BulletsNumbering,
     Bold,
     Italic,
     Underline,
@@ -265,6 +267,8 @@ pub const MENUS: &[MenuSpec] = &[
             Sep,
             A("Paragraph…", Action::Paragraph),
             A("Drop Cap…", Action::DropCap),
+            A("Tabs…", Action::Tabs),
+            A("Bullets and Numbering…", Action::BulletsNumbering),
         ],
     },
     MenuSpec {

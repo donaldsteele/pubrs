@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 159213,
+  "bytes": 159280,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 159213,
+  "bytes": 159280,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 64
+  "revision": 68
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 65
+  "revision": 69
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-000000000020"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 61
+  "revision": 65
 }
 ```
 
@@ -1519,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 45
 }
 ```
 
@@ -1560,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42
+  "revision": 46
 }
 ```
 
@@ -1598,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43
+  "revision": 47
 }
 ```
 
@@ -1637,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 44
+  "revision": 48
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001f",
-  "revision": 58
+  "revision": 62
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 59
+  "revision": 63
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 54
+  "revision": 58
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 55
+  "revision": 59
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 56
+  "revision": 60
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 57
+  "revision": 61
 }
 ```
 
@@ -1911,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 45
+  "revision": 49
 }
 ```
 
@@ -1941,7 +1941,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 49
+  "revision": 53
 }
 ```
 
@@ -1979,7 +1979,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 56
 }
 ```
 
@@ -2019,7 +2019,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 53
+  "revision": 57
 }
 ```
 
@@ -2087,7 +2087,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 61
+  "revision": 65
 }
 ```
 
@@ -2152,7 +2152,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 61,
+  "revision": 65,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2212,7 +2212,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-000000000020",
-  "revision": 60
+  "revision": 64
 }
 ```
 
@@ -2257,7 +2257,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": true,
-  "revision": 31,
+  "revision": 35,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2473,14 +2473,14 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 0,
   "overflowing": false,
-  "revision": 50,
+  "revision": 54,
   "story_id": "00000000-0000-87ea-8000-000000000019"
 }
 ```
 
 ### `text_apply_para_style`
 
-Format paragraphs touching start..end (default all): paragraph style by name (e.g. "Heading 1", "Body"), align left/center/right/justify, line_spacing (multiple of font size), space_before/after and indents in points, hyphenation, keep_with_next, keep_together, widow_orphan (true = 2 lines) and drop_cap {lines, chars}.
+Format paragraphs touching start..end (default all): paragraph style by name (e.g. "Heading 1", "Body"), align left/center/right/justify, line_spacing (multiple of font size), space_before/after and indents in points, hyphenation, keep_with_next, keep_together, widow_orphan (true = 2 lines), drop_cap {lines, chars}, tab_stops and list (see text_set_tabs and text_apply_list).
 
 **Arguments**
 
@@ -2499,12 +2499,14 @@ Format paragraphs touching start..end (default all): paragraph style by name (e.
 | `language` | string |  | BCP 47 language tag for hyphenation (default "en-US"). |
 | `left_indent` | number |  |  |
 | `line_spacing` | number |  | Line height as a multiple of the font size (1.2 = normal). |
+| `list` | object |  | Bullet or numbered list `{kind: bullet\|number\|none, bullet, format, level, indent, start}`; `{"kind": "none"}` removes it. See text_apply_list. |
 | `right_indent` | number |  |  |
 | `space_after` | number |  | Points. |
 | `space_before` | number |  | Points. |
 | `start` | integer |  | Paragraphs touching start..end are changed. Default: all paragraphs. |
 | `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
 | `style` | string |  | Paragraph style name or id (e.g. "Heading 1", "Body"). |
+| `tab_stops` | array |  | Tab stops `[{pos, align: left\|center\|right\|decimal, leader: none\|dot\|dash\|line}]` (pos in points from the text edge); `[]` clears them. See text_set_tabs. |
 | `widow_orphan` | boolean \| integer |  | Widow and orphan control: `true` (2 lines), a line count, or `false`/0 to turn it off (default off). |
 
 **Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
@@ -2563,6 +2565,210 @@ Result:
   "length": 219,
   "overflowing": false,
   "revision": 26,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
+}
+```
+
+### `text_set_tabs`
+
+Set the tab stops of the paragraphs touching start..end (default all): stops [{pos, align left/center/right/decimal, leader none/dot/dash/line}], pos in points from the text edge. An empty list clears them. A tab with no stop ahead goes to the next 36 pt. Decimal stops align on the first . (or , in languages that write a decimal comma). Leaders fill the gap before the text and line up from line to line.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `end` | integer |  |  |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `start` | integer |  | Paragraphs touching start..end are changed. Default: all paragraphs. |
+| `stops` | array of object | yes | The tab stops, replacing the paragraphs' own: `pos` in points from the text edge, `align` left (default), center, right or decimal, `leader` none (default), dot, dash or line. An empty list clears them. Without stops a tab goes to the next 36 pt; past the last stop too. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example** — A right-aligned stop 200 pt from the text edge with a dot leader: "Soup<TAB>4.50" fills the gap with dots, and leaders line up from line to line. Align is left (default), center, right or decimal; leader is none (default), dot, dash or line. A tab past the last stop (or with no stops) goes to the next 36 pt.
+
+```json
+{
+  "arguments": {
+    "end": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "start": 0,
+    "stops": [
+      {
+        "align": "right",
+        "leader": "dot",
+        "pos": 200
+      }
+    ]
+  },
+  "name": "text_set_tabs"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 220,
+  "overflowing": false,
+  "revision": 30,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
+}
+```
+
+**Example** — An empty list clears the stops.
+
+```json
+{
+  "arguments": {
+    "end": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "start": 0,
+    "stops": []
+  },
+  "name": "text_set_tabs"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 220,
+  "overflowing": false,
+  "revision": 31,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
+}
+```
+
+### `text_apply_list`
+
+Make the paragraphs touching start..end (default all) bullet or numbered list items with a hanging indent: kind, format (1. a. A. i. I.), bullet character, level 0-8, indent (points the label hangs left of the text), restart_at (number the first paragraph from this value). Numbering continues across paragraphs and linked frames; a deeper level restarts after a shallower item. Labels are generated text: they are not in the story and do not move offsets (text_get lists them as list_label).
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bullet` | string |  | Bullet character (default U+2022). |
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `end` | integer |  |  |
+| `format` | "1." \| "a." \| "A." \| "i." \| "I." \| null |  | Number format: "1." (default), "a.", "A.", "i." or "I.". |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `indent` | number |  | Hanging indent in points: the label sits this far left of the text (default 18). |
+| `kind` | "bullet" \| "number" \| "none" | yes | bullet or number. |
+| `left_indent` | number |  | Left indent of the text in points (default: (level + 1) x indent). |
+| `level` | integer |  | Nesting level 0-8 (default 0). A deeper level restarts when a shallower item appears. |
+| `restart_at` | integer |  | Number the first paragraph of the range from this value instead of continuing the count. |
+| `start` | integer |  | Paragraphs touching start..end become list items. Default: all paragraphs. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example** — Numbered list items with a hanging indent: the number sits 18 pt (indent) left of the text. Numbering continues across paragraphs and linked frames; level 1 items restart after a level 0 item. The label is generated text, not part of the story: text_get shows it as list_label.
+
+```json
+{
+  "arguments": {
+    "end": 0,
+    "format": "1.",
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "kind": "number",
+    "restart_at": 1,
+    "start": 0
+  },
+  "name": "text_apply_list"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 220,
+  "overflowing": false,
+  "revision": 32,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
+}
+```
+
+**Example** — kind is bullet or number; text_clear_list removes a list.
+
+```json
+{
+  "arguments": {
+    "end": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "kind": "none",
+    "start": 0
+  },
+  "name": "text_apply_list"
+}
+```
+
+Error:
+
+```json
+{
+  "code": "invalid_argument",
+  "hint": "use text_clear_list to remove a list",
+  "message": "kind is bullet or number"
+}
+```
+
+### `text_clear_list`
+
+Turn list items touching start..end (default all) back into plain paragraphs. Resets the left indent to 0 unless keep_indent is true.
+
+**Arguments**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `doc_id` | string |  | Document id (default: the most recently used document). |
+| `end` | integer |  |  |
+| `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `keep_indent` | boolean |  | Leave the left indent as it is (default: it is reset to 0). |
+| `start` | integer |  | Paragraphs touching start..end stop being list items. Default: all paragraphs. |
+| `story_id` | string |  | Identifies a story: the text that flows through a chain of linked text frames. |
+
+**Result fields:** `affected_ids`, `doc_id`, `length`, `overflowing`, `revision`, `story_id`
+
+**Example**
+
+```json
+{
+  "arguments": {
+    "end": 0,
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "start": 0
+  },
+  "name": "text_clear_list"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 220,
+  "overflowing": false,
+  "revision": 33,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2645,7 +2851,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "new_story_id": "00000000-0000-87ea-8000-000000000019",
-  "revision": 32
+  "revision": 36
 }
 ```
 
@@ -2898,7 +3104,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 30
+  "revision": 34
 }
 ```
 
@@ -3135,7 +3341,7 @@ Result:
 
 ```json
 {
-  "revision": 32,
+  "revision": 36,
   "styles": [
     {
       "character": {
@@ -3226,7 +3432,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 33,
+  "revision": 37,
   "style_id": "00000000-0000-87ea-8000-00000000001a"
 }
 ```
@@ -3270,7 +3476,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 34
+  "revision": 38
 }
 ```
 
@@ -3297,7 +3503,7 @@ Result:
     "00000000-0000-87ea-8000-000000000005"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 35
+  "revision": 39
 }
 ```
 
@@ -3337,7 +3543,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 36
+  "revision": 40
 }
 ```
 
@@ -3370,7 +3576,7 @@ Result:
 
 ```json
 {
-  "revision": 50,
+  "revision": 54,
   "swatches": [
     {
       "name": "Brand Cyan",
@@ -3435,7 +3641,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 46,
+  "revision": 50,
   "swatch_id": "00000000-0000-87ea-8000-00000000001d"
 }
 ```
@@ -3470,7 +3676,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 47,
+  "revision": 51,
   "swatch_id": "00000000-0000-87ea-8000-00000000001e"
 }
 ```
@@ -3517,7 +3723,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 52
 }
 ```
 
@@ -3582,7 +3788,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 56
 }
 ```
 
@@ -3703,7 +3909,7 @@ Result:
     "… 3 more"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 51
+  "revision": 55
 }
 ```
 
@@ -3752,7 +3958,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 40
+  "revision": 44
 }
 ```
 
@@ -3794,7 +4000,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 41
 }
 ```
 
@@ -3831,7 +4037,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 41
 }
 ```
 
@@ -3879,7 +4085,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000013",
   "pixel_height": 1200,
   "pixel_width": 1800,
-  "revision": 38
+  "revision": 42
 }
 ```
 
@@ -3917,7 +4123,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 43
 }
 ```
 
@@ -4294,7 +4500,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -4319,7 +4525,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair-x4.pdf",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -4357,7 +4563,7 @@ Result:
 
 ```json
 {
-  "bytes": 668545,
+  "bytes": 668612,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "files": [
     "spring-fair-print-pdfx4.pdf",
@@ -4365,7 +4571,7 @@ Result:
     "README.txt"
   ],
   "path": "<output_dir>/spring-fair-print.zip",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -4410,7 +4616,7 @@ Result:
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 63,
+  "revision": 67,
   "width": 596
 }
 ```
@@ -4452,7 +4658,7 @@ Result:
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAf3ElEQVR4nO2d… (10952 characters)",
-  "revision": 63,
+  "revision": 67,
   "width": 249
 }
 ```
@@ -4493,7 +4699,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 62
+  "revision": 66
 }
 ```
 
@@ -4531,7 +4737,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -4584,9 +4790,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 56 more"
+    "… 60 more"
   ],
-  "revision": 61
+  "revision": 65
 }
 ```
 
@@ -4768,7 +4974,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 6,
+    "schema_version": 7,
     "scheme": "coral_reef",
     "setup": {
       "bleed": 9.0,
@@ -4835,7 +5041,7 @@ Result:
               "letter_spacing": 0.05,
               "max_word_space": 1.33
             },
-            "…": "6 more keys"
+            "…": "9 more keys"
           },
           {
             "align": "justify",
@@ -4866,7 +5072,7 @@ Result:
               "letter_spacing": 0.05,
               "max_word_space": 1.33
             },
-            "…": "6 more keys"
+            "…": "9 more keys"
           }
         ]
       }
@@ -4926,7 +5132,7 @@ Result:
       "… 6 more"
     ]
   },
-  "revision": 63
+  "revision": 67
 }
 ```
 
@@ -4959,7 +5165,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 63,
+  "revision": 67,
   "warnings": [
     {
       "code": "overflow",

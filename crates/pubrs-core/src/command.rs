@@ -1694,3 +1694,123 @@ fn delete_style(doc: &mut Document, id: StyleId) -> CmdResult {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------
+// Lists: commands built from the paragraphs a range touches. The API's
+// text_apply_list / text_clear_list and the GUI's Bullets and Numbering
+// dialog and Tab key all go through these.
+
+fn para_cmd(story: StoryId, at: usize, props: ParaProps) -> Command {
+    Command::ApplyParaProps {
+        story,
+        start: at,
+        end: at,
+        props,
+    }
+}
+
+/// Make the paragraphs touching `start..end` list items of `list`, with
+/// their text at `left_indent`. `restart_at` numbers the first one.
+pub fn apply_list_commands(
+    story: StoryId,
+    s: &Story,
+    start: usize,
+    end: usize,
+    list: crate::style::List,
+    left_indent: f64,
+    restart_at: Option<u32>,
+) -> Vec<Command> {
+    s.paragraph_span(start, end)
+        .enumerate()
+        .map(|(i, pi)| {
+            para_cmd(
+                story,
+                s.paragraph_start(pi),
+                ParaProps {
+                    left_indent: Some(left_indent),
+                    list: Some(crate::style::List {
+                        start: if i == 0 { restart_at } else { None },
+                        ..list
+                    }),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect()
+}
+
+/// Turn the list items among the paragraphs touching `start..end` back
+/// into plain paragraphs (their left indent too, unless `keep_indent`).
+pub fn clear_list_commands(
+    story: StoryId,
+    s: &Story,
+    styles: &crate::style::StyleSheet,
+    start: usize,
+    end: usize,
+    keep_indent: bool,
+) -> Vec<Command> {
+    s.paragraph_span(start, end)
+        .filter(|pi| styles.resolve_para(&s.paragraphs[*pi]).list.is_some())
+        .map(|pi| {
+            para_cmd(
+                story,
+                s.paragraph_start(pi),
+                ParaProps {
+                    left_indent: (!keep_indent).then_some(0.0),
+                    list: Some(crate::style::List {
+                        kind: crate::style::ListKind::None,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect()
+}
+
+/// Move list item `para` one level deeper (`delta` 1) or shallower (-1):
+/// its text moves by the hanging indent, and numbers that still have the
+/// default format of their level take the default of the new one (1. a. i.
+/// repeating). `None` when it is not a list item or is at the limit.
+pub fn list_level_command(
+    story: StoryId,
+    s: &Story,
+    styles: &crate::style::StyleSheet,
+    para: usize,
+    delta: i32,
+) -> Option<Command> {
+    use crate::style::{ListFormat, ListKind, MAX_LIST_LEVEL};
+    let p = s.paragraphs.get(para)?;
+    let pa = styles.resolve_para(p);
+    let list = pa.list?;
+    let level = i32::from(list.level) + delta;
+    if !(0..=i32::from(MAX_LIST_LEVEL)).contains(&level) {
+        return None;
+    }
+    let default_format = |lv: i32| match lv.rem_euclid(3) {
+        0 => ListFormat::Decimal,
+        1 => ListFormat::LowerAlpha,
+        _ => ListFormat::LowerRoman,
+    };
+    let format =
+        if list.kind == ListKind::Number && list.format == default_format(i32::from(list.level)) {
+            default_format(level)
+        } else {
+            list.format
+        };
+    let left = (pa.left_indent + f64::from(delta) * list.indent).max(0.0);
+    Some(para_cmd(
+        story,
+        s.paragraph_start(para),
+        ParaProps {
+            left_indent: Some(left),
+            list: Some(crate::style::List {
+                level: level as u8,
+                format,
+                // A restart belongs to the item, not to its level.
+                ..list
+            }),
+            ..Default::default()
+        },
+    ))
+}

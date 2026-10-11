@@ -11,7 +11,9 @@ use parley::{
     Affinity, Alignment, AlignmentOptions, BreakReason, Cluster, Cursor, FontFamily, FontStyle,
     FontWeight, Layout, LayoutContext, LineHeight, PositionedLayoutItem, StyleProperty, YieldData,
 };
-use pubrs_core::style::DropCap;
+use pubrs_core::style::{
+    DEFAULT_TAB_INTERVAL, DropCap, ListKind, MAX_LIST_LEVEL, TabAlign, TabLeader, TabStop,
+};
 use pubrs_core::text::{BreakKind, is_break};
 use pubrs_core::{
     Align, CharAttrs, Document, Frame, FrameContent, FrameId, Ink, Owner, PageId, ParaAttrs,
@@ -165,6 +167,8 @@ struct ParaJob<'a> {
     regions: &'a [Region],
     /// Apply keeps (off for the fallback layout without them).
     keeps: bool,
+    /// The list label of the paragraph (generated text).
+    label: Option<&'a str>,
 }
 
 /// A drop cap shaped at its size: glyph runs with x from the cap's left
@@ -381,9 +385,14 @@ impl Layouter {
         // last). If one of them overflows, the move is undone.
         let mut reflow: Option<(usize, usize)> = None;
         let mut any_moved = false;
+        // List labels depend only on the paragraphs before, never on where
+        // they fall, so they are numbered once here and a rewind needs no
+        // counters (ADR 0019).
+        let pas: Vec<ParaAttrs> = paras.iter().map(|p| doc.styles.resolve_para(p)).collect();
+        let labels = list_labels(&pas);
         let mut pi = 0usize;
         while let Some(para) = paras.get(pi) {
-            let pa = doc.styles.resolve_para(para);
+            let pa = pas[pi].clone();
             marks.truncate(pi);
             marks.push(ParaMark {
                 cur,
@@ -402,6 +411,7 @@ impl Layouter {
                     start: para_start,
                     regions,
                     keeps,
+                    label: labels[pi].as_deref(),
                 };
                 let (of, m) = self.flow_kept(job, &mut cur, &mut placed, &mut out, start_at);
                 any_moved |= m;
@@ -587,6 +597,7 @@ impl Layouter {
             job.pa,
             job.start,
             job.regions,
+            job.label,
             cur,
             placed,
             out,
@@ -735,6 +746,23 @@ impl Layouter {
         out
     }
 
+    /// The glyph repeated for a tab leader, in the style of `attrs`.
+    fn leader_glyph(&mut self, ch: char, attrs: &CharAttrs) -> Option<Leader> {
+        let mut buf = [0u8; 4];
+        let shaped = self.shape_one_line(ch.encode_utf8(&mut buf), attrs, attrs.font_size);
+        let (font, s) = shaped.into_iter().next()?;
+        let g = s.glyphs.first()?;
+        Some(Leader {
+            font,
+            size: s.size,
+            color: s.color,
+            bold: s.bold,
+            skew: s.skew,
+            id: g.0,
+            advance: g.3,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn flow_paragraph(
         &mut self,
@@ -743,6 +771,7 @@ impl Layouter {
         pa: &ParaAttrs,
         para_start: usize,
         regions: &[Region],
+        label: Option<&str>,
         cur: &mut FlowCursor,
         placed: &mut Vec<PlacedLine>,
         out: &mut StoryLayout,
@@ -801,6 +830,24 @@ impl Layouter {
         let cap_lines = cap.as_ref().map_or(0, |c| c.lines);
         let cap_indent = cap.as_ref().map_or(0.0, |c| c.width + c.gap);
         let has_breaks = body.contains(is_break);
+        // Tabs: parley shapes each as a space and the segments after it are
+        // moved to the tab stops afterwards (ADR 0019). `tab_chars` holds
+        // (character index, byte) of every tab in the paragraph.
+        let tab_chars: Vec<(usize, usize)> = if body.contains('\t') {
+            orig.char_indices()
+                .enumerate()
+                .filter(|(i, (_, c))| *c == '\t' && *i >= cap_chars)
+                .map(|(i, (b, _))| (i, b))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let has_tabs = !tab_chars.is_empty();
+        // A drop cap takes the first lines: no label beside it.
+        let label = label.filter(|_| cap.is_none());
+        let list = pa.list.filter(|_| label.is_some());
+        let left_indent = list.map_or(pa.left_indent, |l| pa.left_indent.max(l.indent));
+        let mut leader_cache: HashMap<(char, usize), Option<Leader>> = HashMap::new();
         // `text` is what parley shapes: the paragraph with soft hyphens
         // inserted at hyphenation points (ADR 0014), and break characters
         // shaped as "\n" (same byte length, ADR 0015). Story offsets are
@@ -811,7 +858,7 @@ impl Layouter {
         // without the inserted soft hyphens (ADR 0014).
         let cur0 = *cur;
         let mut plain = hy_lang.is_none();
-        let (shadow, mut layout, mut lcx, line_infos, placements, overflowed, cap_at) = 'attempt: loop {
+        let (shadow, mut layout, mut lcx, line_infos, placements, overflowed, cap_at, first_x) = 'attempt: loop {
             *cur = cur0;
             let mut shadow = match hy_lang.filter(|_| !plain) {
                 Some(lang) => Shadow::hyphenated(body, lang),
@@ -819,6 +866,9 @@ impl Layouter {
             };
             if has_breaks {
                 shadow.text = std::borrow::Cow::Owned(shadow.text.replace(is_break, "\n"));
+            }
+            if has_tabs {
+                shadow.text = std::borrow::Cow::Owned(shadow.text.replace('\t', " "));
             }
             let breaks = if has_breaks {
                 newline_kinds(&shadow.text, body, &shadow)
@@ -852,7 +902,9 @@ impl Layouter {
                 }
             }
             let mut layout: Layout<Ink> = builder.build(text);
-            let justified = pa.align == Align::Justify;
+            // Tab segments are never stretched: a paragraph with tabs is
+            // set flush left and the stops place its text.
+            let justified = pa.align == Align::Justify && !has_tabs;
             let limited = justified && pa.justify_limits.is_some();
             let mut lcx =
                 (limited || text.contains(hyphen::SHY)).then(|| LineCx::new(&mut layout, text));
@@ -873,6 +925,8 @@ impl Layouter {
             let mut overflowed = false;
             // Region and x of the drop cap (set with the first line).
             let mut cap_at: Option<(usize, f64)> = None;
+            // x where the first line's text starts.
+            let mut first_x = 0.0f64;
             {
                 let mut bl = layout.break_lines();
                 bl.state_mut().set_layout_max_advance(max_w);
@@ -929,14 +983,17 @@ impl Layouter {
                             && cap_at.is_none_or(|(cr, _)| cr == cur.region);
                         pa.left_indent + if beside { cap_indent } else { 0.0 }
                     } else {
-                        pa.left_indent
-                            + if first_line {
+                        left_indent
+                            + if first_line && list.is_none() {
                                 pa.first_line_indent
                             } else {
                                 0.0
                             }
                     };
                     let x = ax + indent.max(0.0);
+                    if first_line {
+                        first_x = x;
+                    }
                     let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
                     {
                         let st = bl.state_mut();
@@ -1001,12 +1058,12 @@ impl Layouter {
                 continue 'attempt;
             }
             break (
-                shadow, layout, lcx, line_infos, placements, overflowed, cap_at,
+                shadow, layout, lcx, line_infos, placements, overflowed, cap_at, first_x,
             );
         };
         let text: &str = &shadow.text;
         layout.align(
-            to_parley_align(pa.align),
+            to_parley_align(if has_tabs { Align::Left } else { pa.align }),
             AlignmentOptions {
                 align_when_overflowing: false,
                 last_line_alignment: None,
@@ -1210,6 +1267,173 @@ impl Layouter {
                 h,
             );
             let mut chars = chars;
+            // Tabs: the text after each tab moves to its stop; leaders fill
+            // the gap (ADR 0019).
+            let line_tabs: Vec<(usize, usize)> = tab_chars
+                .iter()
+                .map(|(i, b)| (para_start + i, *b))
+                .filter(|(o, _)| (chars.start..chars.end).contains(o))
+                .collect();
+            if !line_tabs.is_empty() {
+                let region_x = regions[region].x;
+                let offs: Vec<usize> = line_tabs.iter().map(|t| t.0).collect();
+                let bytes: Vec<usize> = line_tabs.iter().map(|t| t.1).collect();
+                let sep = decimal_sep(&pa.language);
+                let segs = plan_tabs(
+                    &offs,
+                    &|o| caret_at(&carets, o, rect.x),
+                    chars.end,
+                    &|a, b| {
+                        orig.chars()
+                            .skip(a - para_start)
+                            .take(b - a)
+                            .position(|c| c == sep)
+                            .map(|p| a + p)
+                    },
+                    &pa.tab_stops,
+                    region_x,
+                );
+                let shift_of = |k: usize| if k == 0 { 0.0 } else { segs[k - 1].shift };
+                for c in &mut carets {
+                    c.1 += shift_of(offs.partition_point(|&t| t < c.0));
+                }
+                let mut moved: Vec<GlyphRun> = Vec::with_capacity(runs.len() + segs.len());
+                for r in std::mem::take(&mut runs) {
+                    let GlyphRun {
+                        font,
+                        font_size,
+                        color,
+                        synthetic_bold,
+                        synthetic_skew,
+                        text,
+                        glyphs,
+                    } = r;
+                    let mut groups: Vec<(usize, Vec<PositionedGlyph>)> = Vec::new();
+                    for mut g in glyphs {
+                        if g.text.len() == 1 && bytes.binary_search(&g.text.start).is_ok() {
+                            continue;
+                        }
+                        let k = bytes.partition_point(|&b| b < g.text.start);
+                        g.x += shift_of(k);
+                        match groups.last_mut() {
+                            Some((gk, v)) if *gk == k => v.push(g),
+                            _ => groups.push((k, vec![g])),
+                        }
+                    }
+                    for (_, glyphs) in groups {
+                        moved.push(GlyphRun {
+                            font: font.clone(),
+                            font_size,
+                            color,
+                            synthetic_bold,
+                            synthetic_skew,
+                            text: text.clone(),
+                            glyphs,
+                        });
+                    }
+                }
+                runs = moved;
+                let mut split: Vec<Decoration> = Vec::with_capacity(decorations.len());
+                for d in std::mem::take(&mut decorations) {
+                    for k in 0..=segs.len() {
+                        let lo = if k == 0 {
+                            f64::NEG_INFINITY
+                        } else {
+                            segs[k - 1].nat_start
+                        };
+                        let hi = segs.get(k).map_or(f64::INFINITY, |s| s.nat_before);
+                        let (x0, x1) = (d.rect.x.max(lo), d.rect.right().min(hi));
+                        if x1 - x0 > 0.01 {
+                            split.push(Decoration {
+                                rect: Rect::new(x0 + shift_of(k), d.rect.y, x1 - x0, d.rect.height),
+                                color: d.color,
+                            });
+                        }
+                    }
+                }
+                decorations = split;
+                let base = f64::from(m.baseline);
+                for (k, seg) in segs.iter().enumerate() {
+                    let Some(ch) = seg.leader.glyph() else {
+                        continue;
+                    };
+                    let ai = run_attrs
+                        .iter()
+                        .position(|(r, _)| r.contains(&(bytes[k] - cap_b)))
+                        .unwrap_or(0);
+                    let leader = match leader_cache.get(&(ch, ai)) {
+                        Some(l) => l.clone(),
+                        None => {
+                            let attrs = run_attrs
+                                .get(ai)
+                                .map_or_else(default_attrs, |a| a.1.clone());
+                            let l = self.leader_glyph(ch, &attrs);
+                            leader_cache.insert((ch, ai), l.clone());
+                            l
+                        }
+                    };
+                    if let Some(run) =
+                        leader.and_then(|l| leader_run(&l, ch, region_x, seg.pen, seg.start, base))
+                    {
+                        runs.push(run);
+                    }
+                }
+                let end = caret_at(&carets, chars.end, rect.right());
+                let right = rect.right().max(end);
+                rect.width = right - rect.x;
+            }
+            // A list item's first line starts with its bullet or number,
+            // hanging left of the text.
+            let mut list_label = None;
+            if li == 0
+                && let (Some(text_label), Some(l)) = (label, list)
+            {
+                let attrs = run_attrs
+                    .first()
+                    .map_or_else(default_attrs, |a| a.1.clone());
+                let shaped = self.shape_one_line(text_label, &attrs, attrs.font_size);
+                let width = shaped
+                    .iter()
+                    .flat_map(|(_, s)| s.glyphs.iter())
+                    .map(|g| g.1 + g.3)
+                    .fold(0.0f64, f64::max);
+                let gap = attrs.font_size * 0.25;
+                let mut x0 = first_x - l.indent;
+                if x0 + width + gap > first_x {
+                    x0 = first_x - gap - width;
+                }
+                x0 = x0.max(regions[region].x);
+                let base = f64::from(m.baseline);
+                let label_text: Arc<str> = Arc::from(text_label);
+                let mut label_runs: Vec<GlyphRun> = shaped
+                    .into_iter()
+                    .map(|(font, s)| GlyphRun {
+                        font,
+                        font_size: s.size,
+                        color: s.color,
+                        synthetic_bold: s.bold,
+                        synthetic_skew: s.skew,
+                        text: label_text.clone(),
+                        glyphs: s
+                            .glyphs
+                            .into_iter()
+                            .map(|(id, gx, gy, advance, text)| PositionedGlyph {
+                                id,
+                                x: x0 + gx,
+                                y: base + gy,
+                                advance,
+                                text,
+                            })
+                            .collect(),
+                    })
+                    .collect();
+                label_runs.append(&mut runs);
+                runs = label_runs;
+                let right = rect.right();
+                rect.x = rect.x.min(x0);
+                rect.width = right - rect.x;
+                list_label = Some(text_label.to_string());
+            }
             // The drop cap is drawn by the first line: its glyphs come first,
             // its characters start the line and have carets across it.
             if li == 0
@@ -1255,6 +1479,7 @@ impl Layouter {
                     decorations,
                     carets,
                     ends_paragraph,
+                    list_label,
                 },
             });
         }
@@ -1274,6 +1499,192 @@ impl Layouter {
         cur.y += pa.space_after;
         None
     }
+}
+
+/// A glyph repeated to make a tab leader.
+#[derive(Debug, Clone)]
+struct Leader {
+    font: FontHandle,
+    size: f64,
+    color: Ink,
+    bold: bool,
+    skew: Option<f64>,
+    id: u32,
+    advance: f64,
+}
+
+/// A tab on a laid-out line, resolved against the stops.
+#[derive(Debug, Clone, Copy)]
+struct TabSeg {
+    /// Natural x at the end of the text before the tab.
+    nat_before: f64,
+    /// Natural x where the text after the tab starts.
+    nat_start: f64,
+    /// How far everything after the tab moves.
+    shift: f64,
+    /// Where the pen is when the tab begins (placed x).
+    pen: f64,
+    /// Where the text after the tab starts (placed x).
+    start: f64,
+    leader: TabLeader,
+}
+
+/// The decimal separator a language writes: a comma for most of continental
+/// Europe and Latin America, a full stop otherwise.
+fn decimal_sep(language: &str) -> char {
+    let base = language
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    const COMMA: [&str; 20] = [
+        "de", "fr", "es", "it", "pt", "nl", "ru", "pl", "sv", "da", "nb", "nn", "no", "fi", "cs",
+        "sk", "hu", "tr", "uk", "bg",
+    ];
+    if COMMA.contains(&base.as_str()) {
+        ','
+    } else {
+        '.'
+    }
+}
+
+/// Caret x of story offset `o` among a line's carets.
+fn caret_at(carets: &[(usize, f64)], o: usize, default: f64) -> f64 {
+    match carets.binary_search_by_key(&o, |c| c.0) {
+        Ok(i) => carets[i].1,
+        Err(i) => carets
+            .get(i.min(carets.len().saturating_sub(1)))
+            .map_or(default, |c| c.1),
+    }
+}
+
+/// Place the text after each of a line's tabs. `tabs` are the story offsets
+/// of the tabs; `caret` gives the natural x of an offset, `line_end` the
+/// offset where the line ends, `sep_at(a, b)` the offset of the first decimal
+/// separator in `a..b`, and `origin` the x the stops are measured from.
+/// Stops are used in order; past the last one (or with none) the default
+/// grid applies.
+fn plan_tabs(
+    tabs: &[usize],
+    caret: &dyn Fn(usize) -> f64,
+    line_end: usize,
+    sep_at: &dyn Fn(usize, usize) -> Option<usize>,
+    stops: &[TabStop],
+    origin: f64,
+) -> Vec<TabSeg> {
+    let mut out: Vec<TabSeg> = Vec::with_capacity(tabs.len());
+    let mut prev_shift = 0.0f64;
+    for (i, &off) in tabs.iter().enumerate() {
+        let nat_before = caret(off);
+        let nat_start = caret(off + 1);
+        let pen = nat_before + prev_shift;
+        let end_off = tabs.get(i + 1).copied().unwrap_or(line_end);
+        let width = (caret(end_off) - nat_start).max(0.0);
+        let rel = pen - origin;
+        let stop = stops
+            .iter()
+            .find(|s| s.pos > rel + 0.01)
+            .copied()
+            .unwrap_or_else(|| TabStop {
+                pos: ((rel + 0.01) / DEFAULT_TAB_INTERVAL).floor() * DEFAULT_TAB_INTERVAL
+                    + DEFAULT_TAB_INTERVAL,
+                align: TabAlign::Left,
+                leader: TabLeader::None,
+            });
+        let lead = match stop.align {
+            TabAlign::Left => 0.0,
+            TabAlign::Center => width / 2.0,
+            TabAlign::Right => width,
+            TabAlign::Decimal => {
+                sep_at(off + 1, end_off).map_or(width, |o| (caret(o) - nat_start).clamp(0.0, width))
+            }
+        };
+        let start = (origin + stop.pos - lead).max(pen);
+        let shift = start - nat_start;
+        out.push(TabSeg {
+            nat_before,
+            nat_start,
+            shift,
+            pen,
+            start,
+            leader: stop.leader,
+        });
+        prev_shift = shift;
+    }
+    out
+}
+
+/// Leader glyphs filling `from..to`, on a grid anchored at `origin` so
+/// that the leaders of consecutive lines line up. Dots are spaced two
+/// advances apart, dashes and lines one.
+fn leader_run(
+    l: &Leader,
+    ch: char,
+    origin: f64,
+    from: f64,
+    to: f64,
+    base: f64,
+) -> Option<GlyphRun> {
+    let pitch = l.advance * if ch == '.' { 2.0 } else { 1.0 };
+    if pitch < 0.5 || to - from < pitch {
+        return None;
+    }
+    let mut n = ((from + 1.0 - origin) / pitch).ceil();
+    let mut glyphs = Vec::new();
+    while glyphs.len() < 4000 {
+        let x = origin + n * pitch;
+        if x + l.advance > to - 1.0 {
+            break;
+        }
+        let i = glyphs.len();
+        glyphs.push(PositionedGlyph {
+            id: l.id,
+            x,
+            y: base,
+            advance: l.advance,
+            text: i..i + 1,
+        });
+        n += 1.0;
+    }
+    if glyphs.is_empty() {
+        return None;
+    }
+    Some(GlyphRun {
+        font: l.font.clone(),
+        font_size: l.size,
+        color: l.color,
+        synthetic_bold: l.bold,
+        synthetic_skew: l.skew,
+        text: Arc::from(ch.to_string().repeat(glyphs.len())),
+        glyphs,
+    })
+}
+
+/// The label of every paragraph that is a list item: a bullet, or its
+/// number. Counters run per level through the story: a numbered item
+/// continues its level's count (or restarts at `start`) and resets the
+/// deeper levels; paragraphs that are not list items change nothing, so a
+/// count continues across them (ADR 0019).
+fn list_labels(pas: &[ParaAttrs]) -> Vec<Option<String>> {
+    let mut counters = [0u32; MAX_LIST_LEVEL as usize + 1];
+    pas.iter()
+        .map(|pa| {
+            let l = pa.list?;
+            let lv = usize::from(l.level.min(MAX_LIST_LEVEL));
+            for c in &mut counters[lv + 1..] {
+                *c = 0;
+            }
+            match l.kind {
+                ListKind::Number => {
+                    let n = l.start.unwrap_or(counters[lv].saturating_add(1));
+                    counters[lv] = n;
+                    Some(l.format.label(n))
+                }
+                ListKind::Bullet => Some(l.bullet.to_string()),
+                ListKind::None => None,
+            }
+        })
+        .collect()
 }
 
 fn advance_region(cur: &mut FlowCursor, regions: &[Region]) {
