@@ -40,5 +40,11 @@ STAGE="$(mktemp -d)"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 DMG="$OUT/pubrs-$VERSION-macos-universal.dmg"
-hdiutil create -volname "pubrs $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+# hdiutil's automatic size from -srcfolder underestimates a large universal
+# bundle ("No space left on device"), so size the image explicitly: the staged
+# size (du does not follow the /Applications symlink) plus 30% and 32 MB.
+SIZE_KB=$(du -sk "$STAGE" | cut -f1)
+SIZE_MB=$(( SIZE_KB * 13 / 10 / 1024 + 32 ))
+echo "staged ${SIZE_KB} KB; creating a ${SIZE_MB} MB image"
+hdiutil create -volname "pubrs $VERSION" -srcfolder "$STAGE" -fs HFS+ -size "${SIZE_MB}m" -ov -format UDZO "$DMG"
 echo "$DMG"
