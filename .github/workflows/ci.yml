@@ -62,12 +62,28 @@ jobs:
       - name: GUI end-to-end self-test (Windows, macOS)
         if: runner.os != 'Linux'
         run: cargo run -p pubrs-app -- --self-test target/gui-selftest
+      - name: GUI self-test through the Mesa llvmpipe restart (Windows; the runner has no GPU)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Same layout as the MSI: pubrs-app.exe, and a copy next to Mesa in mesa\.
+          $dir = "$env:RUNNER_TEMP\pubrs-mesa-test"
+          ./packaging/windows/fetch-mesa.ps1 -Dest "$dir\mesa"
+          Copy-Item target\debug\pubrs-app.exe $dir
+          Copy-Item target\debug\pubrs-app.exe "$dir\mesa"
+          $p = Start-Process "$dir\pubrs-app.exe" -ArgumentList '--self-test', "$PWD\target\gui-selftest-mesa" -Wait -PassThru -RedirectStandardOutput mesa-selftest.out -RedirectStandardError mesa-selftest.log
+          Get-Content mesa-selftest.out
+          Get-Content mesa-selftest.log | Select-String 'window drawing|Mesa|WARN|ERROR' | ForEach-Object { $_.Line -replace '\x1b\[[0-9;]*m', '' }
+          if ($p.ExitCode -ne 0) { throw "self-test through Mesa failed" }
+          if (!(Select-String -Path mesa-selftest.log -Pattern 'window drawing.*llvmpipe' -Quiet)) { throw "did not draw with Mesa llvmpipe" }
       - name: Upload GUI self-test screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gui-selftest-${{ matrix.os }}
-          path: target/gui-selftest/*.png
+          path: |
+            target/gui-selftest/*.png
+            target/gui-selftest-mesa/*.png
           if-no-files-found: ignore
       - name: Upload golden diffs on failure
         if: failure()

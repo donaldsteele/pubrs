@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** `v0.1.0` is tagged and its release is a draft (run 38090646384). Before publishing: the manual per-installer check in RELEASE.md on real desktops, and a decision on bundling Mesa llvmpipe for Windows without a GPU driver (TODO.md, ADR 0011). Further work is listed in TODO.md.
+**Next step:** `v0.1.0` is tagged and its release is a draft (run 38090646384). Before publishing: the manual per-installer check in RELEASE.md on real desktops. The draft predates the GPU-adapter fix and the bundled Mesa (ADR 0011), so a new tag (`v0.1.1`) or a rebuilt draft is needed to ship them. Further work is listed in TODO.md.
 
 ## Verification per milestone
 
@@ -55,4 +55,7 @@ None.
 - Fix: the GUI adapter is chosen across Vulkan/Metal/DX12/OpenGL, hardware first (`crates/pubrs-app/src/adapter.rs`,
   +5 app tests, 125 tests in total). Help → About and the status bar show when the window is drawn in software.
   `PUBRS_PERF=1` logs frame statistics.
-- Open: Windows with no GPU driver at all still uses WARP. Mesa llvmpipe measured 16× cheaper per frame (TODO.md).
+- Then (requested): the x64 MSI bundles Mesa llvmpipe (mesa-dist-win 26.2.4) in `bin\mesa`. With no hardware adapter, pubrs restarts
+  from the copy of itself there (`crates/pubrs-app/src/mesa.rs`). CI runs the GUI self-test through that restart on
+  the GPU-less Windows runner, and the release workflow checks that the installed MSI draws with llvmpipe. +3 app
+  tests (128 in total). ARM64 has no Mesa build (TODO.md).

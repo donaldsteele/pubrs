@@ -22,7 +22,7 @@
    on the tag by hand: `gh workflow run release.yml --ref v0.1.0` (it drafts the release
    the same way).
 4. The **Release** workflow builds, checks and uploads:
-   - `pubrs-<v>-x86_64-pc-windows-msvc.msi`, `pubrs-<v>-aarch64-pc-windows-msvc.msi` (cargo-wix, WiX 3.14)
+   - `pubrs-<v>-x86_64-pc-windows-msvc.msi`, `pubrs-<v>-aarch64-pc-windows-msvc.msi` (cargo-wix, WiX 3.14); the x64 MSI includes Mesa llvmpipe in `bin\mesa` for PCs without a GPU driver (ADR 0011)
    - `pubrs-<v>-macos-universal.dmg` (cargo-bundle + lipo, arm64 + x86_64, `.pubrs` document type)
    - `pubrs_<v>_amd64.deb`, `pubrs_<v>_arm64.deb` (cargo-deb)
    - `pubrs-<v>-x86_64.AppImage`, `pubrs-<v>-aarch64.AppImage` (appimagetool)
@@ -44,7 +44,7 @@ Each installer job installs (or mounts) the package and then:
 | Check | Windows MSI (x64) | macOS DMG | Linux .deb | AppImage |
 |---|---|---|---|---|
 | Installs | `msiexec /i /qn` | mount + copy `.app` | `apt install ./*.deb` | run in place |
-| Launches the GUI | `pubrs-app --smoke-test` | `pubrs-app --smoke-test` | `xvfb-run pubrs-app --smoke-test` | `--smoke-test` under xvfb |
+| Launches the GUI | `pubrs-app --smoke-test`, which must restart with the bundled Mesa llvmpipe (the runner has no GPU) | `pubrs-app --smoke-test` | `xvfb-run pubrs-app --smoke-test` | `--smoke-test` under xvfb |
 | Opens the sample and exports a PDF | `pubrs export samples\bakery-trifold.pubrs` | `pubrs export Resources/samples/…` | `pubrs export /usr/share/doc/pubrs/examples/…` | `--cli export …` |
 | File type registered | `assoc .pubrs` = `pubrs.Publication` | `CFBundleDocumentTypes` in Info.plist | mime XML installed | — |
 | Uninstalls cleanly | `msiexec /x /qn`, binaries gone | remove `.app` | `apt remove`, binaries gone | delete file |
@@ -66,14 +66,17 @@ Silicon and on Intel, a GNOME or KDE Linux desktop on X11 and on Wayland):
    bakery brochure with two photos.
 4. **Edit**: double-click the "Our Story" text and type a sentence; the text
    flows into the middle panel. Undo with Ctrl/⌘+Z.
-5. **Export PDF** (Ctrl/⌘+E) and open it in the system PDF viewer: two
+5. **Help → About**: "Window drawing" names the GPU. On a Windows PC or VM
+   without a graphics driver it says llvmpipe (x64) and the status bar shows
+   "Drawing without a GPU"; moving the mouse over the page stays smooth.
+6. **Export PDF** (Ctrl/⌘+E) and open it in the system PDF viewer: two
    landscape pages, text selectable, photos sharp.
-6. **Print** (Ctrl/⌘+P): the system print dialog (Windows, macOS) or the
+7. **Print** (Ctrl/⌘+P): the system print dialog (Windows, macOS) or the
    pubrs printer chooser (Linux/CUPS) appears; print to PDF or a real
    printer.
-7. **MCP**: `pubrs-mcp --help` runs from a terminal (Windows: new terminal
+8. **MCP**: `pubrs-mcp --help` runs from a terminal (Windows: new terminal
    after install so PATH is updated).
-8. **Uninstall**: Settings → Apps (Windows), drag to Bin (macOS),
+9. **Uninstall**: Settings → Apps (Windows), drag to Bin (macOS),
    `sudo apt remove pubrs` (Linux). The program files are gone; your
    documents and `Documents/pubrs` are untouched.
 

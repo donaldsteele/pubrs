@@ -164,9 +164,9 @@ pub fn status_bar(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new("⚠ Drawing without a GPU").color(Color32::from_rgb(180, 83, 9)))
                         .on_hover_text(format!(
-                            "No graphics driver is available to this window, so {} draws it on the CPU. \
-                             pubrs will be slow and use a lot of CPU. Install the graphics driver, or turn on \
-                             3D acceleration if this is a virtual machine.",
+                            "No graphics driver is available to this window, so {} draws it on the CPU, \
+                             which uses much more CPU than a graphics card. Install the graphics driver, or turn \
+                             on 3D acceleration if this is a virtual machine.",
                             app.window.name
                         ));
                 });

@@ -48,6 +48,12 @@ jobs:
           cargo install cargo-wix --version 0.3.9 --locked
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p pubrs-app -p pubrs-cli -p pubrs-mcp
+      - name: Fetch Mesa llvmpipe for the MSI (x64 only; mesa-dist-win has no ARM64 build)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          ./packaging/windows/fetch-mesa.ps1 -Dest target\mesa
+          "PUBRS_MESA_DIR=$PWD\target\mesa" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build MSI
         run: cargo wix -p pubrs-app --no-build --nocapture --target ${{ matrix.target }} --output target/wix/pubrs-${{ env.VERSION }}-${{ matrix.target }}.msi
       - name: Sign MSI (placeholder, runs when a certificate is configured)
@@ -69,13 +75,20 @@ jobs:
           if (!(Test-Path "$bin\pubrs-app.exe")) { Get-Content install.log -Tail 50; throw "pubrs-app.exe not installed" }
           & "$bin\pubrs.exe" --no-system-fonts export "C:\Program Files\pubrs\samples\bakery-trifold.pubrs" -o "$env:RUNNER_TEMP\sample.pdf"
           if (!(Test-Path "$env:RUNNER_TEMP\sample.pdf")) { throw "export failed" }
-          & "$bin\pubrs-app.exe" --smoke-test
-          if ($LASTEXITCODE -ne 0) { throw "GUI did not launch" }
+          foreach ($f in 'pubrs-app.exe', 'opengl32.dll', 'libgallium_wgl.dll', 'THIRD-PARTY-NOTICES.txt') {
+            if (!(Test-Path "$bin\mesa\$f")) { throw "bin\mesa\$f not installed" }
+          }
+          $p = Start-Process "$bin\pubrs-app.exe" -ArgumentList '--smoke-test' -Wait -PassThru -RedirectStandardOutput smoke.out -RedirectStandardError smoke.log
+          Get-Content smoke.out, smoke.log
+          if ($p.ExitCode -ne 0) { throw "GUI did not launch" }
+          # The runner has no GPU: pubrs must have restarted from bin\mesa and drawn with llvmpipe.
+          if (!(Select-String -Path smoke.log -Pattern 'window drawing.*llvmpipe' -Quiet)) { throw "GUI did not draw with Mesa llvmpipe" }
           $assoc = (cmd /c assoc .pubrs)
           Write-Host "file association: $assoc"
           if ($assoc -notmatch "pubrs.Publication") { throw ".pubrs is not associated" }
           Start-Process msiexec.exe -Wait -ArgumentList "/x `"$msi`" /qn"
           if (Test-Path "$bin\pubrs-app.exe") { throw "uninstall left files behind" }
+          if (Test-Path "$bin\mesa") { throw "uninstall left bin\mesa behind" }
       - uses: actions/upload-artifact@v4
         with:
           name: msi-${{ matrix.target }}

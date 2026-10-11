@@ -6,6 +6,7 @@ mod autosave;
 mod canvas;
 mod dialogs;
 mod keymap;
+mod mesa;
 mod panels;
 mod perf;
 mod platform;
@@ -120,7 +121,27 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse()?;
     let outcome = Rc::new(RefCell::new(Outcome::default()));
     tracing::info!("starting GUI with the wgpu renderer");
-    if let Err(e) = run(&args, eframe::Renderer::Wgpu, &outcome) {
+    let mut result = run(&args, eframe::Renderer::Wgpu, &outcome);
+    if result.is_err()
+        && mesa::restart_requested()
+        && let Some(exe) = mesa::bundled_exe()
+    {
+        tracing::info!(
+            "no GPU driver: restarting with Mesa llvmpipe ({})",
+            exe.display()
+        );
+        match mesa::run_bundled(&exe) {
+            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+            Err(e) => {
+                tracing::warn!(
+                    "cannot start {} ({e}); drawing with the system's software adapter",
+                    exe.display()
+                );
+                result = run(&args, eframe::Renderer::Wgpu, &outcome);
+            }
+        }
+    }
+    if let Err(e) = result {
         tracing::warn!("wgpu renderer unavailable ({e}); falling back to OpenGL");
         run(&args, eframe::Renderer::Glow, &outcome)
             .map_err(|e| anyhow::anyhow!("no usable renderer: {e}"))?;

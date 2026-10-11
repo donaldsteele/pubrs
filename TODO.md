@@ -24,4 +24,5 @@ Deferred and partial work. Each entry says what is missing and why.
 - Installers are unsigned unless the signing secrets in RELEASE.md are set; macOS notarization is a manual step.
 - Flatpak: manifest and AppStream metadata only. It is not built in CI, and Flathub submission needs generated `cargo-sources.json`.
 - The Windows ARM64 MSI is built but not install-checked in CI (no ARM64 Windows runner in the release workflow).
-- Windows without any GPU driver (Hyper-V, UTM, remote sessions) draws the window with WARP: about 0.5 CPU-seconds per frame, so moving the mouse keeps several cores busy. Mesa llvmpipe through glow measured 16× cheaper per frame on the same runner. Bundling it would add about 60 MB to the MSI and needs a way to load it only when no hardware adapter exists, so that a VM's own OpenGL driver is not hidden (ADR 0011).
+- The Windows ARM64 MSI has no bundled Mesa (mesa-dist-win publishes x64 and x86 only), so ARM64 Windows without a GPU driver still draws with WARP: about 0.5 CPU-seconds per frame (ADR 0011).
+- Bundled Mesa is pinned to mesa-dist-win 26.2.4. Updating it means a new version and SHA-256 in `packaging/windows/fetch-mesa.ps1` and `packaging/windows/mesa/THIRD-PARTY-NOTICES.txt`.
