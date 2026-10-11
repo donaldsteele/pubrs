@@ -16,12 +16,15 @@
 
 1. Update `version` in the workspace `Cargo.toml`, `version` under
    `[package.metadata.bundle]` in `crates/pubrs-app/Cargo.toml` (the macOS app),
-   and add a `<release>` to `packaging/flatpak/*.metainfo.xml`. Commit without
-   `[skip ci]` in the message, or the tag will not start the release workflow.
+   and add a `<release>` to `packaging/flatpak/*.metainfo.xml`. Then refresh
+   `Cargo.lock` (`cargo update -w`, or any build) and commit it too: the release
+   workflow builds with `--locked` and fails if the lock file does not match the
+   version. Commit without `[skip ci]` in the message, or the tag will not
+   start the release workflow.
 2. Make sure CI is green on all four jobs.
-3. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`. GitHub does not start the
+3. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`. GitHub does not start the
    workflow for a tag on a commit whose message contains `[skip ci]`; in that case run it
-   on the tag by hand: `gh workflow run release.yml --ref v0.1.0` (it drafts the release
+   on the tag by hand: `gh workflow run release.yml --ref v0.2.0` (it drafts the release
    the same way).
 4. The **Release** workflow builds, checks and uploads:
    - `pubrs-<v>-x86_64-pc-windows-msvc.msi`, `pubrs-<v>-aarch64-pc-windows-msvc.msi` (cargo-wix, WiX 3.14); the x64 MSI includes Mesa llvmpipe in `bin\mesa` for PCs without a GPU driver (ADR 0011)
@@ -37,7 +40,14 @@
    (for Flathub, generate `cargo-sources.json` with flatpak-cargo-generator).
 
 The workflow can also be started by hand (**Actions → Release → Run
-workflow**) to build installers without publishing.
+workflow**, or `gh workflow run release.yml --ref <branch>`) to build installers
+without publishing. A manual dispatch on a branch builds, checks and uploads
+every installer (Windows x64 and ARM64 MSI, macOS DMG, Linux .deb and AppImage
+for x86_64 and aarch64) as workflow artifacts, named with the version in
+`Cargo.toml`. It does not create a release or a tag: the `release` job runs only
+when the ref is a tag (`refs/tags/v*`). The workflow file must exist on that
+branch. Use this to rehearse a release (for 0.2.0, on `plan/publisher-parity`)
+before tagging; the artifacts are kept for the repository's retention period.
 
 ## What the workflow checks automatically
 
@@ -83,5 +93,98 @@ Silicon and on Intel, a GNOME or KDE Linux desktop on X11 and on Wayland):
    `sudo apt remove pubrs` (Linux). The program files are gone; your
    documents and `Documents/pubrs` are untouched.
 
+Printing and print-shop output need a person and paper, so they are checked by
+hand once per release (on at least one OS per printing backend: Windows GDI,
+macOS PDFKit, Linux CUPS):
+
+10. **Print a sheet of 30 labels.** New from template → Address labels, then
+    Mailings → Mail Merge… with a CSV of 30 rows (Name, Address, City, State,
+    Zip) and **Print…** (or Merge to PDF and print the PDF). Print at actual
+    size (no "fit to page", no scaling) on plain paper, then lay it over a
+    real Avery 5160 sheet against a window: every address should sit inside
+    its label with equal margins. On Windows, note whether the printer's
+    printable area shrank the page (see USER_GUIDE.md, Printing). Repeat
+    with another preset if you have the stock, and look at the presets
+    listed in ASSETS.md as unchecked.
+11. **Print an 8-page booklet.** Make an 8-page publication, Page Setup →
+    Labels, Cards, Booklet → Booklet (saddle stitch), **Print…** double-sided,
+    flipping on the short edge. Fold the stack in half: the pages must read
+    1 to 8 in order, with page 1 on the outside front and page 8 on the back.
+12. **Open the PDF/X-4 export in a preflight tool.** Export the newsletter
+    (or the flyer after switching its colours to CMYK) with **Commercial
+    printing (PDF/X-4)** and open it in Acrobat Pro's Preflight (PDF/X-4
+    profile) or another PDF/X checker such as callas pdfToolbox. It should
+    pass or show only findings you accept (for example the generic output
+    profile). pubrs's own checker does not look at trapping, overprint or
+    ink coverage.
+
 Record the results (OS version, installer, pass/fail per step) in the
 release notes.
+
+## 0.2.0 release notes
+
+Paste this into the GitHub release draft and trim it.
+
+**New in 0.2.0 (publisher parity)**
+
+- *Text.* Hyphenation with bounded justification (English, German, Spanish,
+  French, Polish, Portuguese); keep with next, keep lines together, widow and
+  orphan control; drop caps; tab stops with leaders; bullets and numbering with
+  nested levels; character formatting (small and all caps, strikethrough,
+  superscript, subscript, baseline shift, ligatures, kerning); tight, through
+  and both-sides text wrap; text that follows into linked frames and columns
+  with page, column and frame breaks.
+- *Objects.* Tables (insert, type, merge and split cells, resize, cell
+  properties, Tab between cells); WordArt, drop shadows and BorderArt.
+- *Colour and print.* Swatches (RGB, CMYK, spot), twelve colour schemes, tints
+  and gradients; PDF/X-4 and PDF/A-2b export with bleed, crop marks and a
+  "Save for a commercial printer" package; a Design Checker panel that
+  updates as you edit, with a check before a commercial export.
+- *Labels, cards and booklets.* 26 sheet presets (Avery and A4 labels and
+  cards, generic 2-up and 4-up), page setup for sheets and saddle-stitch
+  booklets, imposed in PDF and print.
+- *Mail merge.* A wizard for CSV and XLSX lists, merge fields, a preview, and
+  merge to PDF, to a new publication or to the printer; `pubrs merge`;
+  matching MCP tools.
+- *Spelling.* Check as you type, a right-click menu, a Spelling window (F7) and
+  user dictionaries (American English is built in).
+- *Everyday templates.* Greeting card, postcard, certificate, menu, letterhead,
+  envelope, annual calendar, address labels and business cards (sheet).
+- *Import.* Microsoft Publisher (`.pub`) files: pages, text, pictures (PNG,
+  JPEG, GIF), shapes, tables, colours and masters, with a report of what was
+  left out (File → Import Publisher File…, `pubrs import`, MCP `doc_import`).
+- *Clipboard and input.* Copy and paste frames between publications, rich text
+  and pictures from other programs; Chinese, Japanese and Korean input;
+  right-to-left text (Hebrew, Arabic) carets and selection.
+- *Speed.* Tiled, off-thread page drawing and an incremental layout cache; `pubrs
+  perf` measures it (a 200-page publication checks within budget).
+- *File format.* Schema version 12. Files saved by 0.1 open unchanged; files
+  saved by 0.2 do not open in 0.1.
+
+**Template names.** The nine new built-in templates (`greeting_card`,
+`postcard`, `certificate`, `menu`, `letterhead`, `envelope`, `calendar`,
+`address_labels`, `business_cards`) take precedence over any template of your
+own saved earlier under the same name: the built-in is listed and used, and
+yours is hidden (its file is untouched; save it under another name to use it).
+
+**Known limitations** (see TODO.md for the full list)
+
+- Installers are not code-signed or notarized; Windows SmartScreen and macOS
+  Gatekeeper warn on first run (USER_GUIDE.md says how to proceed).
+- macOS: double-clicking a `.pubrs` or `.pub` file starts pubrs without opening
+  it; use File → Open or drag the file onto the window.
+- Windows ARM64: the MSI is built but not install-tested, and has no bundled
+  Mesa (a PC without a GPU driver draws slowly).
+- Printing on Windows and macOS is untested on real printers by CI; label
+  sheet alignment (several presets entered from memory: Avery 5376, 5377, 22805,
+  5305, 8315, C32011, L7651 and the L7161/L7162 margins) needs a test print.
+  On Windows a page larger than the printer's printable area is shrunk to fit.
+- Hyphenation covers six languages; spelling needs a Hunspell dictionary for
+  anything but American English.
+- Windows metafile pictures in `.pub` files and pictures in Publisher 98 and
+  2000 files are not imported.
+- Ctrl+V cannot paste an image-only clipboard on Windows and Linux (use Edit →
+  Paste); the text of an input method's composition is drawn in the window's
+  font.
+- Flatpak is manifest only, not built in CI.
+

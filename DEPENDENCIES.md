@@ -33,3 +33,12 @@ Any dependency outside that stack has a one-line justification below.
 - `hayro-syntax` 0.8 (pubrs-render, MIT OR Apache-2.0; `default-features = false`): parses an exported PDF's objects and content streams so `pdfx::check` can find device RGB under a CMYK output intent (PDF/X-4). Already in the tree through the dev-only `hayro`.
 - `calamine` 0.36 (pubrs-io, MIT; `default-features = false`): reads XLSX workbooks (first or named sheet, cells as displayed text, dates as ISO) for mail merge (Owner decision 4). Pure Rust; brings in `quick-xml`, `zip` 8.x (a second copy beside the workspace's zip 9), `atoi_simd`, `fast-float2`, `codepage`, `encoding_rs`, `byteorder` and `log`. CSV is parsed in-tree.
 - `quick-xml` 0.41 (pubrs-io, MIT): rewrites an XLSX's shared-strings part with truthful `count`/`uniqueCount` before `calamine` sees it (ADR 0023); the same version calamine already uses.
+- `image` feature `gif` (workspace `Cargo.toml`, M32, ADR 0026): decodes the GIF pictures some `.pub` files embed so they can be stored as PNG assets. No new crate: it enables `image`'s `gif` decoder, which pulls in `gif` 0.14 (MIT OR Apache-2.0), `weezl` (MIT OR Apache-2.0) and `color_quant` (MIT). The `image` default features stay off; only `png`, `jpeg` and `gif` are on.
+- `arboard` 3.6 (pubrs-app; in the prescribed stack): the system clipboard for copy and paste of text, HTML, PNG and pubrs frames (M27, ADR 0025). No other crate was added for the clipboard.
+
+## Licence check (0.2.0)
+
+Every crate in `Cargo.lock` (652 outside this workspace, all platforms) was checked against its declared licence. Everything is MIT, Apache-2.0, BSD, Zlib, ISC, Unicode or MPL-2.0 (alone or as one side of an `OR`), except these, which are still permissive and listed here so the owner can decide:
+
+- `clipboard-win` 5.4 and `error-code` 3.4 (BSL-1.0, the Boost Software License, Windows only, brought in by `arboard`). Permissive; no notice-in-binary requirement for BSL-1.0.
+- `epaint_default_fonts` 0.36 (`(MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0`): the fonts egui's `default_fonts` feature bundles for the user interface (Hack, Ubuntu-Light, NotoEmoji, emoji-icon-font). These are font licences (SIL OFL 1.1 and the Ubuntu Font Licence), outside the list in PLAN.md Locked Decision 5. They apply to the UI font files only, not to documents, and the OFL allows bundling. Dropping `default_fonts` from `eframe` would remove them but also the UI font; the owner may accept them or replace the UI font.

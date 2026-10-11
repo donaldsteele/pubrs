@@ -64,6 +64,8 @@ text colour is stored. Ids are UUID strings.
 - `image`: optional `asset`, `fit` (`fill|fit|stretch`), `crop` (fractions trimmed from `left/top/right/bottom`), `lock_aspect`, `alt_text` (what the picture shows; empty or absent for none).
 - `shape`: `shape` = `{"kind":"rectangle","corner_radius":0}`, `{"kind":"ellipse"}` or `{"kind":"line","direction":"down_right|up_right"}`.
 - `group`: `children` (ids, back to front). Children keep absolute geometry.
+- `word_art`: one warped line of text (version 9; see below).
+- `table`: a grid whose cells hold stories (version 11; see below).
 
 ### Story
 
@@ -122,9 +124,19 @@ version.
 | 7 | Paragraph fields `tab_stops` and `list` (on paragraphs and paragraph styles); tab characters in run text now move to tab stops. Both fields are optional, so older files are valid version 7 files; migration only stamps the version. |
 | 8 | Character fields `baseline`, `caps`, `strikethrough`, `ligatures` and `kerning` (on runs and character styles). All are optional, so older files are valid version 8 files; migration only stamps the version. |
 | 9 | `type: "word_art"` frame content, and the frame style fields `shadow` and `border_art`. All are optional and omitted when unset, so older files are valid version 9 files; migration only stamps the version (ADR 0020). |
-| 10 | Wrap modes `tight` and `through`, and `wrap.both_sides` on frames. All optional (`both_sides` is omitted when false), so older files are valid version 9 files; migration only stamps the version. |
+| 10 | Wrap modes `tight` and `through`, and `wrap.both_sides` on frames. All optional (`both_sides` is omitted when false), so older files are valid version 10 files; migration only stamps the version. |
 | 11 | `type: "table"` frame content (`cols`, `rows`, `cells`; cell text is stories whose chain is the table frame). A new variant, so older files hold none; migration only stamps the version (ADR 0024). |
 | 12 | `merge` (the mail-merge data snapshot) and the run field `field` (a merge field). Both are optional and omitted when unset, so older files are valid version 12 files; migration only stamps the version (ADR 0023). |
+
+### Alt text (version 5)
+
+An image frame's `content` may carry `alt_text`: a string saying what the
+picture shows, for people who cannot see it. It is optional and omitted when
+empty, so a file without it is a valid version 5 file. `pubrs` writes it into
+a tagged PDF as the picture's `/Alt`, and the Design Checker's
+`missing_alt_text` warning is raised for a picture that has an image and no
+alt text. Set it with the `image_set_alt_text` tool or the Alt text field in the
+properties panel. Only pictures have it; shapes and WordArt do not.
 
 ### Swatches, schemes and paints (version 4)
 

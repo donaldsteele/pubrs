@@ -15,6 +15,13 @@
 //! wait for its squiggle, fix it from the right-click menu and from the
 //! Spelling window (F7).
 //!
+//! The last steps (M33, DoD 1) are one newsletter from the template, end to
+//! end: hyphenation and spacing limits on the justified lead story (Paragraph
+//! dialog), a drop cap, bullets, Find and Replace, an inserted table typed
+//! into, F7 stepped through with Ignore, a PDF/X-4 export with the Commercial
+//! preset that passes the checker, then save, close and reopen: identical
+//! document JSON and byte-identical renders of every page.
+//!
 //! Before each step the self-test waits until the render worker has drawn
 //! the current revision, so screenshots show the page.
 
@@ -48,6 +55,24 @@ Our Saturday market stall opens at seven on the square, with seasonal specials: 
 Easter, stollen and mince pies in December, and summer fruit tarts while the berries last. Ask \
 about our bread subscription, which brings a fresh loaf to your door twice a week.\n\
 Thank you for keeping a small bakery busy for more than thirty years.";
+
+/// DoD 1: the newsletter's lead story. Long words so a justified column
+/// breaks some of them; "harvest" three times for Find and Replace.
+const DOD1_LEAD: &str = "Extraordinary hyphenation demonstrates comprehensive typographic \
+craftsmanship throughout international newsletters, particularly considering unforgettable \
+communication opportunities and administration. The harvest festival returns with extraordinary \
+programmes, and every harvest table needs volunteers, representatives and organisers. \
+Congratulations to everyone who made the harvest possible, and welcome to our newest neighbours.";
+
+/// DoD 1: the second story, one paragraph long enough for a drop cap, with a
+/// misspelt word for the spell check.
+const DOD1_SECOND: &str = "Every season brings visitors to our open workshops, and this year the \
+studio is busier than ever. Bring your own tools or borrow ours, and stay for a delicous lunch \
+in the garden afterwards. Beginners are always welcome, and our volunteers will show you \
+everything you need to know to get started on your first project.";
+
+/// DoD 1: three sidebar items that become a bulleted list.
+const DOD1_SIDEBAR: &str = "Spring meeting\nOpen workshop\nCommunity lunch";
 
 /// Frames a step waits at most for the render worker (about 15 s at 60 Hz;
 /// software-rendered CI frames are slower, so this is a frame count).
@@ -153,6 +178,11 @@ struct Data {
     m24_csv: Option<PathBuf>,
     /// M29: the table Replace All wraps, its height before, and the undo steps before.
     m29_table: Option<(FrameId, f64, usize)>,
+    /// DoD 1: the newsletter's lead story, second story and sidebar frames.
+    dod1: Option<(FrameId, FrameId, FrameId)>,
+    /// DoD 1: the inserted table, and the spelling issues stepped through.
+    dod1_table: Option<FrameId>,
+    dod1_ignored: usize,
 }
 
 pub struct SelfTest {
@@ -4212,6 +4242,462 @@ impl SelfTest {
                     return Err(format!("the merge warning is incomplete: {w:?}"));
                 }
                 self.ok("Design Checker: after the list lost its City column the panel shows merge_field_missing for City with the frame and page");
+                self.screenshot(ctx);
+            }
+            // ---- DoD 1 (PLAN.md): a newsletter from the template, end to end.
+            235 => {
+                app.new_from_template("newsletter")
+                    .ok_or("template_apply failed")?;
+                let pages = app.doc().map_or(0, |d| d.pages.len());
+                if pages != 4 {
+                    return Err(format!("the newsletter has {pages} pages, not 4"));
+                }
+                let (Some(lead), Some(second), Some(side)) = (
+                    find(app, "lead_story"),
+                    find(app, "second_story"),
+                    find(app, "sidebar_text"),
+                ) else {
+                    return Err("the newsletter placeholders are missing".into());
+                };
+                for (f, text) in [
+                    (lead, DOD1_LEAD),
+                    (second, DOD1_SECOND),
+                    (side, DOD1_SIDEBAR),
+                ] {
+                    app.session
+                        .text_set(TextSet {
+                            doc_id: None,
+                            frame_id: Some(f),
+                            story_id: None,
+                            text: text.to_string(),
+                            markup: false,
+                        })
+                        .map_err(|e| e.message)?;
+                }
+                self.data.dod1 = Some((lead, second, side));
+                self.data.dod1_table = None;
+                self.data.dod1_ignored = 0;
+                self.data.json = None;
+                self.data.pngs.clear();
+                app.select(vec![lead]);
+                self.ok("DoD1: a new newsletter from the template (4 pages), story text filled in");
+                self.key(Key::P, Modifiers::COMMAND | Modifiers::ALT);
+            }
+            236 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Paragraph(_))) {
+                    return Err("DoD1: Cmd+Alt+P did not open the Paragraph dialog".into());
+                }
+                self.click_target(ctx, "hyphenate")?;
+            }
+            // The template already limits word and letter spacing (the dialog
+            // shows it ticked), so only Hyphenate is switched on.
+            237 => self.screenshot(ctx),
+            238 => self.key(Key::Enter, Modifiers::NONE),
+            239 => {
+                if app.dialog.is_some() {
+                    return Err("DoD1: Enter did not close the Paragraph dialog".into());
+                }
+                let (lead, _, _) = self.data.dod1.ok_or("no DoD1 frames")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let story = doc.story_of(lead).ok_or("no lead story")?;
+                let attrs = doc.styles.resolve_para(
+                    doc.story(story)
+                        .and_then(|s| s.paragraphs.first())
+                        .ok_or("empty lead story")?,
+                );
+                if !matches!(attrs.align, pubrs_api::core::Align::Justify)
+                    || !attrs.hyphenate
+                    || attrs.justify_limits.is_none()
+                {
+                    return Err(format!(
+                        "DoD1: the lead story is {:?}, hyphenate {}, limits {:?}",
+                        attrs.align, attrs.hyphenate, attrs.justify_limits
+                    ));
+                }
+                let lay = app.session.layout(app.doc_id()).map_err(|e| e.message)?;
+                let hyphenated = lay.stories.get(&story).map_or(0, |s| {
+                    s.frames
+                        .values()
+                        .flat_map(|f| f.lines.iter())
+                        .filter(|l| {
+                            l.runs
+                                .last()
+                                .and_then(|r| r.glyphs.last())
+                                .is_some_and(|g| g.text.is_empty() && g.advance > 0.0)
+                        })
+                        .count()
+                });
+                if hyphenated == 0 {
+                    return Err("DoD1: no line of the lead story ends in a hyphen".into());
+                }
+                self.ok(format!(
+                    "DoD1: the lead story is justified (template) and hyphenated with spacing limits (Paragraph dialog): {hyphenated} line(s) end in a hyphenation break"
+                ));
+                self.screenshot(ctx);
+                // Drop cap on the second story (page 3).
+                let (_, second, _) = self.data.dod1.ok_or("no DoD1 frames")?;
+                app.select(vec![second]);
+                if let Some(v) = app.view_mut() {
+                    v.page = 2;
+                }
+                app.run_action(ctx, Action::DropCap);
+            }
+            240 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::DropCap(_))) {
+                    return Err("DoD1: Text > Drop Cap… did not open its dialog".into());
+                }
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            241 => {
+                if app.dialog.is_some() {
+                    return Err("DoD1: Enter did not close the Drop Cap dialog".into());
+                }
+                let (_, second, _) = self.data.dod1.ok_or("no DoD1 frames")?;
+                let lines = Self::m15_para_lines(app, second, 0)?;
+                let (Some(first), Some(third)) = (lines.first(), lines.get(2)) else {
+                    return Err("DoD1: the second story has fewer than 3 lines".into());
+                };
+                let (cap, text) = match &first.runs[..] {
+                    [cap, text, ..] => (cap, text),
+                    _ => return Err("DoD1: no drop cap run on the first line".into()),
+                };
+                if cap.font_size < 2.0 * text.font_size || third.rect.x <= first.rect.x {
+                    return Err(format!(
+                        "DoD1: drop cap {:.1} pt against text {:.1} pt, line 3 at x {:.1}",
+                        cap.font_size, text.font_size, third.rect.x
+                    ));
+                }
+                self.ok(format!(
+                    "DoD1: drop cap on the second story: {:.1} pt letter over {:.1} pt text",
+                    cap.font_size, text.font_size
+                ));
+                self.screenshot(ctx);
+                // Bullets on the sidebar (page 1).
+                let (_, _, side) = self.data.dod1.ok_or("no DoD1 frames")?;
+                app.select(vec![side]);
+                if let Some(v) = app.view_mut() {
+                    v.page = 0;
+                }
+                app.run_action(ctx, Action::BulletsNumbering);
+            }
+            242 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Lists(_))) {
+                    return Err(
+                        "DoD1: Text > Bullets and Numbering… did not open its dialog".into(),
+                    );
+                }
+                self.click_target(ctx, "list-bullet")?;
+            }
+            243 => {
+                self.screenshot(ctx);
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            244 => {
+                if app.dialog.is_some() {
+                    return Err("DoD1: Enter did not close the Bullets and Numbering dialog".into());
+                }
+                let (_, _, side) = self.data.dod1.ok_or("no DoD1 frames")?;
+                let got = Self::m16_labels(app, side)?;
+                if got.len() != 3 || got.iter().any(|l| l.trim().is_empty() || l.ends_with('.')) {
+                    return Err(format!("DoD1: bullet labels are {got:?}"));
+                }
+                self.ok(format!(
+                    "DoD1: Bullets and Numbering made three bulleted items ({got:?})"
+                ));
+                // Find: Cmd+F, a word, Enter; Escape; Cmd+H.
+                app.select(Vec::new());
+                self.key(Key::F, Modifiers::COMMAND);
+            }
+            245 => {
+                if app.find.mode != crate::find::Mode::Bar {
+                    return Err("DoD1: Cmd+F did not open the find bar".into());
+                }
+                self.pending
+                    .push_back(vec![Event::Text("harvest".to_string())]);
+            }
+            246 => {
+                if app.find.query != "harvest" {
+                    return Err(format!("DoD1: find query is {:?}", app.find.query));
+                }
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            247 => {
+                let want = DOD1_LEAD.to_lowercase().matches("harvest").count();
+                let m = Self::navigable_matches(app, "harvest")?;
+                if want < 2 || m.len() != want {
+                    return Err(format!(
+                        "DoD1: {} matches of harvest, expected {want}",
+                        m.len()
+                    ));
+                }
+                self.data.matches = want;
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            248 => {
+                if app.find.mode != crate::find::Mode::Closed {
+                    return Err("DoD1: Escape did not close the find bar".into());
+                }
+                // An earlier step left its replacement text in the field.
+                app.find.replacement.clear();
+                self.key(Key::H, Modifiers::COMMAND);
+            }
+            249 => {
+                if app.find.mode != crate::find::Mode::Replace {
+                    return Err("DoD1: Cmd+H did not open Find and Replace".into());
+                }
+                self.click_target(ctx, "find-replacement")?;
+            }
+            250 => self
+                .pending
+                .push_back(vec![Event::Text("gather".to_string())]),
+            251 => {
+                if app.find.replacement != "gather" {
+                    return Err(format!("DoD1: replacement is {:?}", app.find.replacement));
+                }
+                self.click_target(ctx, "find-replace-all")?;
+            }
+            252 => {
+                let n = self.data.matches;
+                if app.find.last_replaced != Some(n) {
+                    return Err(format!(
+                        "DoD1: Replace All reported {:?} for {n} matches",
+                        app.find.last_replaced
+                    ));
+                }
+                if !Self::navigable_matches(app, "harvest")?.is_empty()
+                    || Self::navigable_matches(app, "gather")?.len() != n
+                {
+                    return Err("DoD1: Replace All left the old word or lost the new one".into());
+                }
+                self.ok(format!(
+                    "DoD1: Cmd+F then Cmd+H, Replace All: \"harvest\" became \"gather\" {n} times"
+                ));
+                self.screenshot(ctx);
+                crate::find::close(app);
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            253 => {
+                // A table (page 4), typed into with the caret in its first cell.
+                app.select(Vec::new());
+                if let Some(v) = app.view_mut() {
+                    v.page = 3;
+                }
+                self.data.m20_hist = Self::done_steps(app);
+                app.run_action(ctx, Action::InsertTable);
+            }
+            254 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Table(_))) {
+                    return Err("DoD1: Insert > Table… did not open the dialog".into());
+                }
+                self.click_target(ctx, "table-grid-1-2")?;
+            }
+            255 => self.click_target(ctx, "ok")?,
+            256 => {
+                if app.dialog.is_some() {
+                    return Err("DoD1: the Table dialog stayed open after Insert".into());
+                }
+                let doc = app.doc().ok_or("no doc")?;
+                let (id, t) = doc
+                    .frames
+                    .values()
+                    .filter(|f| f.name.is_none())
+                    .find_map(|f| f.as_table().map(|t| (f.id, t.clone())))
+                    .ok_or("DoD1: Insert did not add a table")?;
+                if t.rows.len() != 2 || t.cols.len() != 3 {
+                    return Err(format!(
+                        "DoD1: the grid gave {}x{}",
+                        t.rows.len(),
+                        t.cols.len()
+                    ));
+                }
+                self.data.dod1_table = Some(id);
+                for ch in "Opening hours".chars() {
+                    self.pending.push_back(vec![Event::Text(ch.to_string())]);
+                }
+            }
+            257 => {
+                let id = self.data.dod1_table.ok_or("no table")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("DoD1: the table is gone")?;
+                let text = doc
+                    .story(t.cells[0].story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text != "Opening hours" {
+                    return Err(format!("DoD1: the first cell holds {text:?}"));
+                }
+                self.ok(
+                    "DoD1: Insert > Table… (2x3 from the hover grid) and typed into its first cell",
+                );
+                self.screenshot(ctx);
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            258 => {
+                // Spell check: F7 steps through the issues with Ignore.
+                app.select(Vec::new());
+                if let Some(v) = app.view_mut() {
+                    v.page = 0;
+                }
+                self.key(Key::F7, Modifiers::NONE);
+            }
+            259 => {
+                let Some(d) = app.spell.dialog.clone() else {
+                    return self.again("F7 to open the Spelling window");
+                };
+                if d.done {
+                    if self.data.dod1_ignored == 0 {
+                        return Err("DoD1: the spell check found no issue to step through".into());
+                    }
+                    self.ok(format!(
+                        "DoD1: F7 opened the Spelling window and stepped through {} issue(s) with Ignore until the check completed",
+                        self.data.dod1_ignored
+                    ));
+                    self.screenshot(ctx);
+                    self.key(Key::Escape, Modifiers::NONE);
+                    return Ok(false);
+                }
+                if d.current.is_none() || d.suggestions.is_none() {
+                    return self.again("a word and suggestions in the Spelling window");
+                }
+                self.data.dod1_ignored += 1;
+                self.click_target(ctx, "spell-ignore-word")?;
+                return self.again("the end of the spelling check");
+            }
+            260 => {
+                if app.spell.dialog.is_some() {
+                    return Err("DoD1: Escape did not close the Spelling window".into());
+                }
+                app.run_action(ctx, Action::ExportPdf);
+            }
+            261 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::ExportPdf(_))) {
+                    return Err("DoD1: File > Export PDF did not open the Export dialog".into());
+                }
+                self.click_target(ctx, "preset-commercial")?;
+            }
+            262 => {
+                let path = self.out.join("newsletter-x4.pdf");
+                let _ = std::fs::remove_file(&path);
+                match &mut app.dialog {
+                    Some(crate::dialogs::Dialog::ExportPdf(st)) => {
+                        if st.standard() != pubrs_api::tools::export::PdfStandardIn::Pdfx4 {
+                            return Err("DoD1: the Commercial preset did not choose PDF/X-4".into());
+                        }
+                        st.target = Some(path);
+                    }
+                    _ => return Err("DoD1: the Export dialog closed".into()),
+                }
+                self.click_target(ctx, "export-go")?;
+            }
+            263 => {
+                // The template's RGB colours are listed before a commercial
+                // export (M29): carry on with Export anyway.
+                if let Some(crate::dialogs::Dialog::ExportPdf(st)) = &app.dialog
+                    && st.blocking.is_some()
+                {
+                    self.click_target(ctx, "export-anyway")?;
+                    return self.again("the export to finish");
+                }
+                if app.dialog.is_some() {
+                    return Err("DoD1: the Export dialog did not close after Export".into());
+                }
+                let bytes = std::fs::read(self.out.join("newsletter-x4.pdf"))
+                    .map_err(|e| format!("DoD1: no newsletter-x4.pdf: {e}"))?;
+                let issues = pubrs_api::render::pdfx::check(&bytes);
+                if !issues.is_empty() {
+                    return Err(format!(
+                        "DoD1: the PDF/X-4 export fails its check: {issues:?}"
+                    ));
+                }
+                self.ok(format!(
+                    "DoD1: Export PDF with the Commercial preset wrote {} bytes of PDF/X-4 that pass the checker",
+                    bytes.len()
+                ));
+                self.key(Key::Escape, Modifiers::NONE);
+            }
+            264 => {
+                // Save, remember the document and every page, close.
+                let path = self.out.join("newsletter.pubrs");
+                if !app.save_to(&path) {
+                    return Err("DoD1: save failed".into());
+                }
+                let id = app.doc_id().ok_or("no doc")?;
+                self.data.json = Some(
+                    serde_json::to_value(
+                        &app.session
+                            .doc_to_json(DocRef { doc_id: Some(id) })
+                            .map_err(|e| e.message)?
+                            .document,
+                    )
+                    .map_err(|e| e.to_string())?,
+                );
+                self.data.pngs.clear();
+                let pages = app.doc().map_or(0, |d| d.pages.len());
+                for i in 0..pages {
+                    let (_, _, png) = app
+                        .session
+                        .page_png(
+                            Some(id),
+                            i,
+                            &RasterOptions {
+                                dpi: 72.0,
+                                ..Default::default()
+                            },
+                            false,
+                        )
+                        .map_err(|e| e.message)?;
+                    self.data.pngs.push(png);
+                }
+                self.screenshot(ctx);
+                app.close_active(false);
+                if app.doc_id() == Some(id) {
+                    return Err("DoD1: the newsletter did not close (unsaved changes?)".into());
+                }
+                self.ok("DoD1: saved and closed the newsletter");
+                self.drop = Some(path);
+            }
+            265 => {
+                let id = app
+                    .doc_id()
+                    .ok_or("DoD1: dropping the saved file on the window did not open it")?;
+                let json = serde_json::to_value(
+                    &app.session
+                        .doc_to_json(DocRef { doc_id: Some(id) })
+                        .map_err(|e| e.message)?
+                        .document,
+                )
+                .map_err(|e| e.to_string())?;
+                if Some(&json) != self.data.json.as_ref() {
+                    return Err("DoD1: the reopened newsletter differs from the saved one".into());
+                }
+                let pages = app.doc().map_or(0, |d| d.pages.len());
+                if pages != self.data.pngs.len() || pages != 4 {
+                    return Err(format!("DoD1: the reopened newsletter has {pages} pages"));
+                }
+                for (i, before) in self.data.pngs.iter().enumerate() {
+                    let (_, _, png) = app
+                        .session
+                        .page_png(
+                            Some(id),
+                            i,
+                            &RasterOptions {
+                                dpi: 72.0,
+                                ..Default::default()
+                            },
+                            false,
+                        )
+                        .map_err(|e| e.message)?;
+                    if &png != before {
+                        return Err(format!(
+                            "DoD1: page {} renders differently after reopening",
+                            i + 1
+                        ));
+                    }
+                }
+                self.ok("DoD1: reopened: identical document JSON and byte-identical renders of all 4 pages");
                 self.screenshot(ctx);
                 return Ok(true);
             }

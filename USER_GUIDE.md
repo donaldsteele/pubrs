@@ -80,9 +80,19 @@ Printing on Linux uses CUPS; install it if you want to print.
      neighbouring months' days are grey). It opens on the current year; in
      scripts and through MCP the `year` option picks 1600 to 9999 (default
      2027).
-   - **Address labels**: Avery 5160 (30 per sheet). Type the address once
-     and it repeats; merge fields come with mail merge.
+   - **Address labels**: Avery 5160 (30 per sheet). The label holds the
+     merge fields Name, Address, City, State and Zip: load a list with
+     **Mailings → Mail Merge…** and each record becomes one label (see
+     *Mail merge* below).
    - **Business cards (sheet)**: Avery 5371, ten cards per sheet.
+
+   The nine templates after Newsletter (greeting card, postcard, certificate,
+   menu, letterhead, envelope, calendar, address labels and business cards)
+   are new in 0.2.0 and always win over a template of your own saved under the
+   same name: if an earlier version saved `menu` or `postcard` in your
+   templates folder, the built-in one is what you get and yours is hidden (the
+   file is still there; save yours under another name to use it). `Save as
+   Template…` refuses these names.
 2. **Change the text:** double-click a text box and type. Ctrl+A selects
    all the text in the box. Press Esc when you are done.
 3. **Add pictures:** double-click an empty picture frame (grey box with a
@@ -208,7 +218,8 @@ file. On the command line: `pubrs import old.pub -o new.pubrs`.
   0.25 in of the page edge, which many desktop printers cannot print (not for
   publications with bleed, label sheets or commercial jobs); table cells with
   nothing in them; pictures without alt text (Alt text in the properties
-  panel); unfilled template placeholders.
+  panel); unfilled template placeholders; merge fields that name a column the
+  loaded list does not have.
 - **Commercial printing checks** (a box in the panel, off by default) also
   flags every frame that uses an RGB colour (a plain colour, an RGB swatch, a
   gradient stop, text colour; pure black text is not counted) in a job meant
@@ -222,8 +233,8 @@ file. On the command line: `pubrs import old.pub -o new.pubrs`.
   listed with three buttons: **Export anyway**, **Fix first** (opens the
   panel with the commercial checks on and selects the first problem) and
   **Cancel**. The other presets never stop you.
-- Not checked yet: whether a frame is hidden behind a picture, text on a
-  picture, and mail-merge fields (they arrive with mail merge).
+- Not checked yet: whether a frame is hidden behind a picture, and text on a
+  picture.
 
 ### Tables
 
@@ -263,6 +274,229 @@ file. On the command line: `pubrs import old.pub -o new.pubrs`.
   side), and the width of the current column and the minimum height of the
   current row. A change to several cells is one undo step.
 
+### Text: hyphenation, justification and paragraph controls
+
+**Text → Paragraph…** (Ctrl+Alt+P / ⌥⌘P) works on the paragraph at the cursor,
+the selected paragraphs, or every paragraph of a selected text box. It has two
+tabs and one OK for the whole dialog (one undo step).
+
+- **Indents and Spacing** sets left, right and first-line indent, space before
+  and after, and line spacing. Below them:
+  - **Hyphenate** breaks long words at the end of a line with a hyphen. It is
+    off until you turn it on, templates included. **Language** picks the
+    pattern: English (US), German, Spanish, French, Polish or Portuguese. Other
+    languages are not hyphenated, and the dialog says so.
+  - **Limit word and letter spacing** decides how far a justified line may be
+    stretched before it is left short instead. **Word space up to** defaults to
+    133% of a normal space and **Letter spacing up to** to 5% of the font size.
+    The built-in templates have it ticked; unticked, justified lines stretch as
+    far as needed. Justify itself is the **Justify** button in the Text section
+    of the properties panel.
+- **Keeps** controls breaks between columns, linked frames and pages:
+  **Keep with next** (the last line stays with the next paragraph), **Keep
+  lines together** (the paragraph is not split if it fits in one column), and
+  **Widow and orphan control** with a minimum of 2 to 10 lines. A paragraph
+  that contains a column, frame or page break is not kept.
+
+**Text → Drop Cap…** sinks the first letters of a paragraph into the first
+lines: tick **Drop cap** and choose how many **lines** it spans and how many
+**characters** it takes. The dialog previews the paragraph's first words.
+
+### Tab stops, leaders, bullets and numbering
+
+- **Text → Tabs…** shows a ruler as wide as the text box. Click it to add a
+  stop, drag a stop to move it (drag it off the ruler to delete it), and choose
+  its alignment (left, centre, right or decimal) and **leader** (none, dots,
+  dashes or a line) before adding. The position field gives an exact value in
+  points. Stops are measured from the text edge. Without stops a tab jumps to
+  the next 36 pt. A paragraph with a tab is set flush left whatever its
+  alignment. The menu template uses a right tab with dot leaders for prices.
+- **Text → Bullets and Numbering…** turns paragraphs into list items:
+  **Bullets** (pick the character) or **Numbers** (1. 2. 3., a. b. c.,
+  A. B. C., i. ii. iii. or I. II. III.), the nesting **Level**, the hanging
+  **Indent**, and **Restart numbering** with **Start at**. **None** turns items
+  back into paragraphs. In a list, **Tab** at the start of an item nests it
+  one level and **Shift+Tab** brings it back.
+
+### Character formatting
+
+**Text → Character…** (Ctrl+Alt+C / ⌥⌘C) sets font, size, **Bold**,
+**Italic**, **Underline**, **Strikethrough**, **Baseline** (normal,
+superscript, subscript, or a **Shift** in points: positive raises), **Capitals**
+(none, small caps or all caps; the text is stored as typed) and **Ligatures**
+and **Kerning** (both on by default). **Superscript** and **Subscript** also
+have shortcuts (Ctrl+Shift+= and Ctrl+=; ⇧⌘= and ⌘= on macOS) and buttons in
+the text panel, which also has colour, size, alignment and spacing. With
+several cells or a whole table selected, the Text and character commands are
+unavailable; place the cursor in one cell.
+
+### Colour
+
+- **Design → Swatches** shows the Swatches panel. **+ RGB**, **+ CMYK** and
+  **+ Spot** add a swatch (a spot colour has a name and a CMYK stand-in shown on
+  screen). Use a swatch for a fill, line or text colour and change it once to
+  change every place that uses it.
+- **Design → Colour Scheme…** (or **Colour scheme…** in the panel) picks one of
+  twelve built-in schemes with seven slots (Main, Accent 1 to 4, Hyperlink,
+  Followed Hyperlink) and recolours everything that uses them in one step.
+- A fill can be a **solid** colour or swatch with a **tint**, a **linear
+  gradient** (angle) or a **radial gradient**. The panel edits the angle and
+  the first and last colour.
+- CMYK and spot swatches print as CMYK and as a separate ink in a commercial
+  PDF; RGB colours print as RGB (see *Commercial printing* below).
+
+### WordArt, shadows and BorderArt
+
+- **Insert → WordArt…** opens a gallery of twelve styles. Type your text,
+  choose a style and press **Insert**. The properties panel then edits the
+  text, font, size, **Shape** (arch up or down, circle, wave, slant up or down,
+  inflate), letter fill (solid or gradient), outline and shadow. WordArt text
+  is edited in the panel, not on the page, and is not spell checked.
+- **Format → Shadow** adds a soft drop shadow to the selected frames; the
+  **Shadow** controls in the panel set offset, blur, colour and opacity. In a
+  PDF the shadow is a 150 dpi picture.
+- **Format → Border Art…** picks one of twelve decorative borders and its width
+  for the selected frame, with previews. The border colours are fixed.
+
+### Text wrap
+
+Select a picture or shape and choose **Text wrap** in the properties panel:
+**None**, **Square** (round the frame's box, on the wider side), **Tight**
+(round the shape's outline, which for an ellipse follows the curve and for a
+picture follows its non-transparent pixels), **Through** (like Tight, but the
+text also fills notches and holes in the outline) or **Top and bottom** (no text
+beside it). **Margin** sets the clearance in points. **Text on both sides**
+fills every gap beside the frame that is wider than three em. Only frames in
+front of the text frame on the same page make text wrap.
+
+### Labels, cards and booklets
+
+**File → Page Setup…** (Ctrl+Shift+P / ⇧⌘P) has a **Page** tab (it shows the
+size, margins and bleed, which you change in the properties panel with nothing
+selected) and a **Labels, Cards, Booklet** tab:
+
+- **Labels or cards on a sheet.** Choose a **Sheet** from 26 presets: Avery US
+  address, shipping, return-address, business-card, postcard and square labels
+  (5160, 5161, 5162, 5163, 5164, 5167, 5371, 5376, 5377, 8160, 8163, 22805,
+  5305, 8315), A4 labels and cards (L7160, L7161, L7162, L7163, L7173, L7651,
+  C32011, J8160) and generic 2-up and 4-up Letter and A4 sheets. Each page of
+  the publication is then one label, so tick the box that sets the page size to
+  the label size. **Fill** is **Same page on every label** (design one label,
+  it repeats across the sheet) or **One page per label** (each page fills the
+  next label; used by mail merge). Export PDF and Print then place the labels
+  on the sheet at its exact positions; the status bar says how many sheets
+  there are. Avery and the other product numbers are trademarks of their
+  owners, used only to name a sheet; pubrs is not affiliated with them. Check a
+  test print against a plain sheet held to the light before using real labels.
+- **Booklet (saddle stitch, 2-up).** The pages are padded to a multiple of 4 and
+  imposed two to a sheet side in booklet order, so an 8-page booklet prints as
+  four sides: 8|1, 2|7, 6|3 and 4|5. Print double-sided, flipping on the short
+  edge, then fold the stack in half. Imposed output has no bleed, and crop
+  marks mark the whole sheet. **Export PDF** writes the same imposed pages (the
+  MCP `export_pdf` tool takes `impose: false` for the plain pages).
+
+### Mail merge
+
+Mail merge prints one copy of your design for each row of a list: letters,
+postcards, name badges or address labels.
+
+1. **Mailings → Mail Merge…** opens a four-step window. On **1 Data** type the
+   path of a `.csv` or `.xlsx` file, or **Choose file…**, then **Load**. The
+   first row names the fields. CSV must be UTF-8; the separator (comma,
+   semicolon or tab) is found by itself. For a workbook pick the **Sheet**
+   (default the first). The data is stored in the publication, so it reopens
+   without the file.
+2. **2 Fields** lists each field with the first record's value. Click in a text
+   box first, then **Insert at cursor** (or use **Insert → Merge Field…**,
+   which picks a field with the arrow keys and Enter). A field sits in the text
+   as one character and looks like «Name»; it takes the formatting of the text
+   around it.
+3. **3 Preview** shows the data in the text: tick **Show the data in the text**
+   and step through the records with ◀ ▶ or the Left and Right arrow keys.
+   A field with no value takes one neighbouring space with it, so a missing
+   town does not leave a gap.
+4. **4 Finish** makes the output: **Merge to PDF…**, **Merge to a new
+   publication** (a new, unsaved tab with the values typed in) or **Print…**
+   (the merged PDF goes to the printer). The Design Checker warns if a field
+   names a column the list does not have.
+
+**Mailings → Refresh Data** re-reads the file for the current session. On a
+label sheet set to **One page per label**, 30 records fill the 30 labels of a
+5160 sheet and record 31 starts the next sheet; on a **Same page on every
+label** sheet each record gets a sheet of its own. Limits: files up to 64 MiB,
+100,000 records, 512 fields, 5,000,000 cells and 20,000 output pages. A
+field's value is one line (a line break in a cell becomes a space), so an
+address that spans lines needs one field per line. Fields on a master page
+merge in the PDF but stay «Name» in a merged publication. Copying text that
+holds a field to another program gives plain text. On the command line:
+`pubrs merge labels.pubrs --data list.csv -o labels.pdf`.
+
+For address labels choose **File → New from Template… → Address labels**: it is
+a 5160 sheet with Name, Address, City, State and Zip already in place.
+
+### Commercial printing (PDF/X-4)
+
+**File → Export PDF…** (Ctrl+E / ⌘E) asks what the PDF is for:
+
+- **Screen**: for reading and sharing by e-mail; tagged for screen readers.
+- **Desktop printing**: an ordinary PDF with fonts embedded, for an office or
+  home printer. Bleed and crop marks are there to tick if you want them.
+- **Commercial printing (PDF/X-4)**: PDF 1.6 with a CMYK output intent (a
+  bundled generic CMYK, SWOP-like, profile), the bleed (if the publication has
+  one), crop marks and embedded fonts, checked before it is written. CMYK colours are written as CMYK and spot
+  colours as separate inks. Use CMYK or spot swatches: RGB colours are listed
+  by the check (see *Design Checker*) and are written with the profile's RGB
+  equivalent.
+- **Archive (PDF/A-2b)**: for long-term storage.
+
+**Include bleed**, **Crop marks** and **Tagged PDF (accessibility)** (text as
+paragraphs, pictures as figures with their alt text) can be changed after
+choosing a preset (bleed and marks only for the two printing presets). **Save for a commercial printer…** writes one zip with the
+PDF/X-4 file, the editable publication with its pictures, and a list of the
+fonts and colours used: send that to the print shop. Give the bleed a value
+first in the properties panel with nothing selected (0.125 in is common).
+pubrs checks its own PDF/X-4 output for the markers and structure the standard
+needs, but does not check trapping, overprint or total ink coverage: ask your
+printer to run it through a preflight tool before the job. The same options are
+in the `export_pdf` MCP tool (`standard: "pdfx4"`).
+
+### Printing on each system
+
+**Print…** (Ctrl+P / ⌘P) exports the PDF and sends it to a printer. It uses
+what each system provides:
+
+| | Windows | macOS | Linux |
+|---|---|---|---|
+| Dialog | The Windows print dialog | The macOS print panel | pubrs's own: choose the printer and copies |
+| Scaling | Actual size, centred; shrunk only if the page is bigger than the printer's printable area | Page scaling is off: actual size | The PDF is sent as it is with `lpr`; if the page comes out smaller, turn off "fit to page" in the printer's options |
+| Needs | A printer | A printer | CUPS (`lpr`, `lpstat`) |
+
+For labels and booklets, print at **actual size** (no "fit to page") and, for
+booklets, **double-sided, flip on the short edge**. Printers cannot print to the
+very edge of the paper; the Design Checker mentions objects within 0.25 in of
+it. On Windows a label sheet on a printer whose printable area is smaller than
+the paper is shrunk slightly, which moves the labels: print the exported PDF
+from a PDF viewer at 100% instead, and test on plain paper first.
+
+### Notes for each system
+
+- **Command and Control.** Everything written as Ctrl+X in this guide is ⌘X on
+  macOS, and Alt is ⌥ (Option). In a table cell, **Control+Tab** types a tab
+  character on macOS too (Control, not Command). Zoom in is Ctrl+Alt+= (⌥⌘=)
+  because Ctrl+= and Ctrl+Shift+= are subscript and superscript.
+- **Paste a picture.** On Windows and Linux, Ctrl+V pastes text when the
+  clipboard holds text and does nothing when it holds only a picture: use
+  **Edit → Paste** for a picture. On macOS ⌘V works for both.
+- **Chinese, Japanese and Korean input.** The text you are composing is drawn
+  in the window's own font, not your document's, so it may show boxes on a
+  system without a CJK font until you confirm it; once confirmed it is set in
+  your document's font like any other text. Input methods have been tested with
+  synthetic input events only, not with a real input method on each system.
+- **Opening files.** Windows and Linux open `.pubrs` and `.pub` files you
+  double-click. On macOS use **File → Open** or drag the file onto the window.
+- **Fonts.** Each system's own fonts are available; Liberation Sans and Serif
+  are always there.
+
 ### Copying, pasting and international text
 
 - **Copy and paste frames.** Copy puts the selected frames on the system clipboard, and Paste puts them on the
@@ -288,6 +522,8 @@ file. On the command line: `pubrs import old.pub -o new.pubrs`.
 | New from template / blank | Ctrl+N / Ctrl+Shift+N | ⌘N / ⇧⌘N |
 | Open, Save, Save As | Ctrl+O, Ctrl+S, Ctrl+Shift+S | ⌘O, ⌘S, ⇧⌘S |
 | Export PDF, Print | Ctrl+E, Ctrl+P | ⌘E, ⌘P |
+| Page Setup | Ctrl+Shift+P | ⇧⌘P |
+| Page break, column break | Ctrl+Enter, Ctrl+Shift+Enter | ⌘↩, ⇧⌘↩ |
 | Undo, Redo | Ctrl+Z, Ctrl+Shift+Z | ⌘Z, ⇧⌘Z |
 | Cut, Copy, Paste, Duplicate | Ctrl+X/C/V, Ctrl+D | ⌘X/C/V, ⌘D |
 | Group, Ungroup | Ctrl+G, Ctrl+Shift+G | ⌘G, ⇧⌘G |
@@ -335,9 +571,17 @@ pubrs export brochure.pubrs -o brochure.pdf [--crop-marks] [--no-bleed] [--outli
 pubrs render brochure.pubrs --dpi 150 [--page 2] [-o out.png]
 pubrs validate brochure.pubrs [--json] [--commercial]   # exit code 1 if there are problems
 pubrs import old.pub -o new.pubrs [--json]    # import a Publisher file; prints what was dropped
+pubrs merge labels.pubrs --data list.csv -o labels.pdf [--as publication] [--sheet Sheet1]
+                                              # mail merge: one page set per record
+pubrs perf --pages 200 [--runs 7] [--check]   # time editing and rendering on a synthetic publication
 pubrs script steps.json --out out/            # replay MCP-style tool calls
 pubrs tools                                   # list the tools
 ```
+
+Add `--no-system-fonts` (before the command) to use only the bundled fonts, for
+the same output on every computer. `pubrs merge` reads the list stored in the
+publication when `--data` is left out. `pubrs perf --check` exits 1 if a
+budget is exceeded.
 
 `pubrs validate` exits 1 for any warning, including missing alt text and empty
 table cells (a table you have just inserted counts as having empty cells).

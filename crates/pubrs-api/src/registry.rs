@@ -193,6 +193,8 @@ pub static TOOLS: &[ToolDef] = &[
         "Get one frame in full (geometry, style, wrap, content), plus overflow for text frames and effective dpi for images."),
     tool!("frame_duplicate", "Frames", frame_duplicate, frames::FrameDuplicate => frames::FrameAddOut, ro = false, destructive = false, image = None,
         "Copy a frame (text frames get a copy of their text) offset by dx/dy points, optionally onto another page."),
+    tool!("frame_copy_to_doc", "Frames", frame_copy_to_doc, frames::FrameCopyToDoc => frames::FrameCopyOut, ro = false, destructive = false, image = None,
+        "Copy frames from one open document into another (or the same one): text frames keep their text and chain, picture frames bring their images (an image the target already holds is reused), groups stay groups. Styles are matched by name, missing ones are added; swatches the target lacks become their colours. One undo step in the target. Give the page by page_index (from 0) and an optional offset in points."),
     // ---------------------------------------------------------------- tables
     tool!("table_add", "Tables", table_add, tables::TableAdd => tables::TableAddOut, ro = false, destructive = false, image = None,
         "Add a table: rows x cols cells filling the rectangle (equal columns and rows, 0.5pt black borders, 4pt insets), optionally with a header_fill on the first row. Each cell holds ordinary text: story_ids lists the cells row by row; fill them with table_set_cell_text. A row grows to fit its text up to the frame's bottom; text that no longer fits is reported by text_overflow_status and validate."),
@@ -218,8 +220,6 @@ pub static TOOLS: &[ToolDef] = &[
         "Set one column's width in points. The table frame's width follows the sum of the columns."),
     tool!("table_set_row_height", "Tables", table_set_row_height, tables::TableSetRowHeight => Changed, ro = false, destructive = false, image = None,
         "Set a row's minimum height in points. The row still grows to fit its text, up to the frame's bottom."),
-    tool!("frame_copy_to_doc", "Frames", frame_copy_to_doc, frames::FrameCopyToDoc => frames::FrameCopyOut, ro = false, destructive = false, image = None,
-        "Copy frames from one open document into another (or the same one): text frames keep their text and chain, picture frames bring their images (an image the target already holds is reused), groups stay groups. Styles are matched by name, missing ones are added; swatches the target lacks become their colours. One undo step in the target. Give the page by page_index (from 0) and an optional offset in points."),
     // ---------------------------------------------------------------- text
     tool!("text_set", "Text", text_set, text::TextSet => text::TextChangeOut, ro = false, destructive = false, image = None,
         "Replace all text of a text frame's story (the whole linked chain). Keeps the existing first-paragraph formatting, so filling a template placeholder keeps its style. markup: true enables # headings and **bold**/*italic*/__underline__. Reports overflow."),

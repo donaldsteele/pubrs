@@ -2,14 +2,6 @@
 
 Deferred and partial work. Each entry says what is missing and why.
 
-## Later phases (designed for, not built)
-
-- Mail merge from CSV.
-- `.pub` import beyond M31 part 1 (reference: libmspub).
-- CMYK / spot colours, PDF/X output.
-- Tables.
-- Avery label sheet presets.
-
 ## Partial features
 
 - Character formatting caches each face's OS/2 and `smcp` data per (family, bold, italic) in the `Layouter` and never clears it; once fonts can be added at runtime, clear it (or key it on a font-library generation) so a newly added family replaces the fallback face's data.
@@ -20,8 +12,8 @@ Deferred and partial work. Each entry says what is missing and why.
 - The `validate` tool still clones the whole document on every call (`crates/pubrs-api/src/tools/query.rs`); `Session::validate_parts` (M29) still clones the `Document` (maps of `Arc`s) per call, once per refresh of the Design Checker panel, not per keystroke. (The canvas page snapshot now shares frames and stories by `Arc` and is built by `Session::page_snapshot`, M13.)
 - vello is no longer used by the GUI (ADR 0013), but `crates/pubrs-app/Cargo.toml` still enables `pubrs-api/gpu`, so the app compiles and links it. Dropping the feature from the app was outside M13's files.
 - Character formatting (M17, ADR 0021): real `smcp` is detected from the GSUB feature list only (not per-letter coverage); a strikethrough through synthesized small caps is stepped; the Character dialog has no preview and no letter-spacing or colour fields (the text panel has them); the super/subscript buttons are in the text panel, not a toolbar.
-- Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI).
-- macOS: double-clicking a `.pubrs` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events. Workaround: File → Open, or drag the file onto the pubrs window (ADR 0010).
+- Windows and macOS printing are compile-checked here; they need the manual check in RELEASE.md (no printers on CI). On Windows the GDI path shrinks a page that is larger than the printer's printable area, so a label sheet can shift; macOS prints with page scaling off.
+- macOS: double-clicking a `.pubrs` or `.pub` file in Finder launches pubrs but does not open the file, because winit does not deliver `application:openURLs:` events (no Apple-event handler); the files arrive only as command-line paths. Workaround: File → Open, Import Publisher File… or drag the file onto the pubrs window (ADR 0010, 0026).
 - Installers are unsigned unless the signing secrets in RELEASE.md are set; macOS notarization is a manual step.
 - Flatpak: manifest and AppStream metadata only. It is not built in CI, and Flathub submission needs generated `cargo-sources.json`.
 - The Windows ARM64 MSI is built but not install-checked in CI (no ARM64 Windows runner in the release workflow).
@@ -36,7 +28,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - English US pattern licence (Kuiken's notice-preserving grant) is outside the LD5 list; the owner must confirm (ASSETS.md).
 - The built-in styles leave `justify_limits` unset (v0.1 behaviour, LD2); the M30 templates enable limits in their Body style (ADR 0028); the defaults of a blank document are unchanged.
 - Letter-spaced justification spaces characters, not grapheme clusters, and uses the mean font size of the line for its cap.
-- The Paragraph dialog is under Text → Paragraph… (Ctrl/Cmd+Alt+P); there is no Format menu.
+- The Paragraph dialog is under Text → Paragraph… (Ctrl/Cmd+Alt+P); it has no Justify control (Justify is in the properties panel).
 
 ## Paragraph controls and breaks (M15)
 
@@ -47,7 +39,7 @@ Deferred and partial work. Each entry says what is missing and why.
 - Keeps never cost visible text: a move that makes its own paragraphs overflow is undone, and when moves push later text out of the chain the whole story is laid out without keeps (all or nothing, ADR 0015). Finer recovery (dropping only the move that hid the text) is not done.
 - With a drop cap, the first word is hyphenated without its cap letters (the patterns see "ourselves" for "Ourselves" with a one-letter cap).
 - A drop cap is drawn in the style of its first character even when its characters differ; right-to-left paragraphs get the cap on the left. Clicks beside the cap on lines 2..N land on those lines (the cap is hit through the first line).
-- Insert ▸ Break ▸ Frame Break has no shortcut (Page: Ctrl/Cmd+Enter, Column: Ctrl/Cmd+Shift+Enter). Drop Cap… is under Text, as there is no Format menu.
+- Insert ▸ Break ▸ Frame Break has no shortcut (Page: Ctrl/Cmd+Enter, Column: Ctrl/Cmd+Shift+Enter). Drop Cap… is under Text.
 
 ## Tab stops and lists (M16)
 
@@ -71,12 +63,9 @@ Deferred and partial work. Each entry says what is missing and why.
 - `.pub` tables: only plain row-by-column grids with one paragraph per cell import (merged cells, cell borders and fills are not read); other tables keep their text as a text frame and are reported as `table`.
 - `.pub` masters: the master reference is read for 2002+ files only, and no corpus master has a shape, so a master with frames is covered by the shared frame pipeline but by no corpus file.
 - `.pub` colour scheme slots (palette entries 0 to 6 = Main, Accent 1 to 4, Hyperlink, Followed Hyperlink; 7 = Background) are inferred from three schemes.
-- macOS has no Apple-event handler for opened files: `.pubrs` and `.pub` files arrive only as command-line paths (File, Import Publisher File… and drag and drop work).
-- The macOS `.pub` document type and the Windows "Open with" registration for `.pub` are not built or run in this environment; CI and the release workflow are the first to build them.
+- The macOS `.pub` document type and the Windows "Open with" registration for `.pub` have not been exercised on a real macOS or Windows desktop (owner check after the first installers).
 - Linked-chain flow order in 98/2000 `.pub` files is page order; prev/next ids are read only for 2002+.
 - The `.pub` oracle (libmspub) counts a chained story once per frame; recall is measured that way (ADR 0017).
-- Colour (M21, resolved in M22): the PDF now writes CMYK as DeviceCMYK and spot colours as Separation.
-- Colour (M21): `validate` does not warn about a reference to a missing swatch (it draws magenta); the design checker (M29) should.
 - Colour (M21): the gradient editor in the GUI edits the angle and the first and last stop colours only (custom colours, no swatches or extra stops in the dialog); the API takes up to 16 stops with swatches.
 - Colour (M21): the GPU gradient path (vello) is compile-checked only; CI has no GPU adapter.
 - Colour (M21): the swatch tools take a swatch id or name, but `{swatch: ...}` paints in other tools need the id.
@@ -89,18 +78,16 @@ Deferred and partial work. Each entry says what is missing and why.
 - PDF/X-4 is checked by `pdfx::check` only (veraPDF has no PDF/X profile); trapping, overprint and total ink coverage are not checked.
 - The OutputCondition of a custom `output_intent_icc` is the fixed text "Custom CMYK output profile" (the profile's description is not read).
 - The Export dialog has no field for a custom output profile; use `export_pdf` with `output_intent_icc`.
-- `validate` does not yet warn about RGB colours in a PDF/X job (`rgb_in_cmyk_job`) or pictures without alt text (`missing_alt_text`); the design checker (M29) should.
 - Tagged PDF has no heading or list structure: text is `P` per frame, pictures are `Figure`, everything else is an artifact.
 
 ## Spelling (M28)
 
 - Only American English (en_US, SCOWL size 60) is built in. Other languages, and British or other English variants, need a user Hunspell `.dic`/`.aff` pair in the dictionaries folder; a paragraph whose language has none is skipped (`unchecked_languages`).
-- `pubrs-mcp` passes no dictionaries folder (its `main.rs` was outside M28's files): over MCP, added words last for the session and user dictionaries are not loaded. The app and the `pubrs` CLI use `<config dir>/pubrs/dictionaries`.
 - `spellbook` 0.4 is alpha: no phonetic suggestions, and dictionaries with complex compounding rules (German, Hungarian, Finnish) may check less well than in Hunspell.
 - The word being typed is flagged at once (no wait until the word is finished), and there is no setting to turn checking as you type off.
 - Squiggles are drawn for text frames on the page shown, not for text on its master page.
 - Ignore accepts the word everywhere for the session (there is no "ignore once"; Next in the Spelling window skips one occurrence).
-- WordArt text (M25) is not spell checked: the spell worker's reports, squiggles and Change are all keyed to stories and a warped line has nowhere to draw a squiggle; table cells (M19) will be, because they are stories.
+- WordArt text (M25) is not spell checked: the spell worker's reports, squiggles and Change are all keyed to stories and a warped line has nowhere to draw a squiggle; table cells (M19) are checked, because they are stories.
 
 ## WordArt, shadows and BorderArt (M25)
 
@@ -118,7 +105,7 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Tables (M19)
 
 - Splitting a cell only undoes a merge; there is no "split into N rows and M columns" that adds grid lines. Insert rows and columns instead.
-- Table text is clipped to whole lines at the frame's bottom; a table never grows its frame, and rows below the bottom have no height.
+- Table text is clipped to whole lines at the frame's bottom, and rows below the bottom have no height; through the API a table frame does not grow with its rows (the GUI grows it, see M20).
 - Tagged PDF has no Table, Row or Cell structure elements (cells are artifacts and text spans).
 - Up/Down inside a cell use the cell's own lines; the arrow keys never leave a cell (Tab and Shift+Tab move between cells).
 - Wrap obstacles do not affect cell text (a cell never wraps around a frame above it); a table with wrap set is an obstacle by its rectangle.
@@ -138,6 +125,9 @@ Deferred and partial work. Each entry says what is missing and why.
 
 - A drop cap beside a multi-slot (both-sides/through) row can be overlapped by the second slot.
 - Up/Down move by story line, not by visual row, in multi-slot rows.
+
+## Clipboard, input and right-to-left (M27)
+
 - Clipboard (M27, ADR 0025): frames go on the OS clipboard as HTML with the pubrs payload in a comment (plus a PNG and the text alternative) because arboard replaces the clipboard on every set; a native multi-format offer per OS (pubrs flavour, PNG and text together) is not done.
 - Clipboard (M27): RTF is not read (arboard has no RTF format); only HTML, text and images are.
 - Clipboard (M27): Ctrl/Cmd+V with only an image on the clipboard does nothing, on Windows and Linux, because egui-winit 0.36.2 swallows the paste shortcut (it reads clipboard text, sends `Event::Paste` only if non-empty, and returns without a key event), so the app cannot see the keypress at all; Edit > Paste works, and on macOS the native menu's Cmd+V does too. Needs a key hook in the window layer (own winit event handling or an egui-winit change).
@@ -147,12 +137,18 @@ Deferred and partial work. Each entry says what is missing and why.
 - Clipboard (M27): `paste_image` encodes, scales and places a clipboard picture on the UI thread (up to 8,000 px a side, so a visible pause for a big picture); it belongs on a worker.
 - Clipboard (M27): copying renders the whole page at 96 dpi to crop a preview of the selection; a small selection on a big page, or a very long copy, pays for the full page.
 - Clipboard (M27): a pasted group keeps its name, style and wrap but not its rotation (setting a group's rotation rotates its members again).
+- Clipboard (M29): a picture over 200 megapixels is refused before it is copied, but arboard has already decoded it by then.
+
+## Design Checker (M29)
+
 - Design Checker (M29): `missing_alt_text` covers pictures only; WordArt and shapes have no alt-text field (and tagged PDF writes them as artifacts).
 - Design Checker (M29): frames stacked beneath a text frame are judged one level deep by their own fill (the topmost one holding the text frame's centre); text over a picture, a gradient or several partly covering fills is not judged exactly, and rotated frames use their bounds.
 - Design Checker (M29): `object_in_unprintable_area` assumes 0.25 in on every side and skips label sheets; real printer margins (and each label's own) are not modelled. The built-in newsletter's full-width masthead band is flagged for a desktop job, by design.
 - Design Checker (M29): the model-level checks run on the UI thread after the debounce (they need the session's layout); a refresh of every page after a style or swatch change is unmeasured on very large documents.
 - Design Checker (M29): the pre-export check covers missing fonts, RGB colour and low-resolution pictures only; ink coverage, overprint and trapping are not checked.
-- Clipboard (M29): a picture over 200 megapixels is refused before it is copied, but arboard has already decoded it by then.
+
+## Everyday templates (M30)
+
 - Tab leaders (M30 menu template): the leader fill can start flush against the text (dots sit on a fixed grid), so the menu template appends a space before each tab; the layout should leave a minimum gap after the text itself.
 
 ## Mail merge (M24)
@@ -168,3 +164,10 @@ Deferred and partial work. Each entry says what is missing and why.
 - The merge fields tint is drawn by the app over the page image, so it is not in exported PNG or PDF (intended); there is no setting to hide it.
 - Merge limits (ADR 0023): 64 MiB per file, 100,000 records, 512 fields, 5,000,000 cells and 20,000 output pages; larger lists must be split. A workbook cell beyond column 512 or row 100,001 below the header is an error, not ignored.
 - Mail merge (M24): a text line that holds a merge field has no per-character boxes for right-to-left hit testing (`caret_positions` returns no `CharSpan`s for it); carets themselves are right. Fields in table cells preview and merge (cell stories are ordinary stories), but the GUI's row growth runs only for edits, not for preview steps.
+
+## Owner steps for 0.2.0
+
+- Merge `plan/publisher-parity` into `main`, then `git tag v0.2.0 && git push origin v0.2.0` (RELEASE.md). Review and publish the draft release.
+- Manual print checks that need paper (RELEASE.md steps 10 to 12): a 30-label 5160 sheet from the address labels template and a CSV merge; an 8-page booklet printed duplex and folded; the PDF/X-4 export in a preflight tool. On Windows, a label sheet on a printer whose printable area is smaller than the paper is shrunk to fit (GDI path), which shifts the labels.
+- Check the sheet presets entered from memory against vendor datasheets (see Partial features; ASSETS.md).
+- Confirm the English (US) hyphenation pattern licence (see Hyphenation).

@@ -435,3 +435,57 @@ async fn resources_prompts_and_errors() {
     assert!(unknown.is_err());
     h.client.cancel().await.unwrap();
 }
+
+/// DoD 2 (PLAN.md), over MCP: apply the address-label template, point the merge
+/// at a 30-row CSV file, validate with zero warnings, and merge to PDF: 30
+/// records on one sheet page. (The API and CLI twins are
+/// `address_labels_merge_thirty_records_onto_one_sheet` and
+/// `merge_address_labels_template_gives_thirty_labels_on_one_sheet`.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn address_labels_merge_acceptance() {
+    let h = start("mcp-labels-merge").await;
+    let applied = h
+        .call("template_apply", json!({"name": "address_labels"}))
+        .await;
+    let doc_id = applied["doc_id"].as_str().unwrap().to_string();
+
+    let mut csv = String::from("Name,Address,City,State,Zip\n");
+    for i in 1..=30 {
+        csv.push_str(&format!(
+            "Person {i},{i} Main Street,Town {i},TX,{:05}\n",
+            75000 + i
+        ));
+    }
+    let csv_path = h.out.join("people.csv");
+    std::fs::write(&csv_path, csv).unwrap();
+
+    let src = h
+        .call(
+            "merge_set_source",
+            json!({"doc_id": doc_id, "path": csv_path.display().to_string()}),
+        )
+        .await;
+    assert_eq!(src["record_count"], 30, "{src}");
+    assert_eq!(
+        src["fields"],
+        json!(["Name", "Address", "City", "State", "Zip"])
+    );
+
+    let v = h.call("validate", json!({"doc_id": doc_id})).await;
+    assert_eq!(v["warnings"], json!([]), "{v}");
+
+    let out = h
+        .call(
+            "merge_export",
+            json!({"doc_id": doc_id, "format": "pdf", "path": "labels.pdf"}),
+        )
+        .await;
+    assert_eq!(out["record_count"], 30, "{out}");
+    assert_eq!(out["page_count"], 1, "{out}");
+    let bytes = std::fs::read(h.out.join("labels.pdf")).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert_eq!(
+        lopdf::Document::load_mem(&bytes).unwrap().get_pages().len(),
+        1
+    );
+}

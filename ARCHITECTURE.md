@@ -13,10 +13,10 @@ Dependencies point strictly downward in this list.
 | `pubrs-core` | Document model, ids, geometry, styles, commands, undo/redo, validation. No I/O, no UI, no rendering. Builds with `--no-default-features`. | serde, uuid, thiserror, schemars (optional) |
 | `pubrs-layout` | Text shaping and flow: linked frame chains, columns, overflow, wrap around objects, styles → positioned glyph runs. | core, parley, fontique, fontdb, skrifa |
 | `pubrs-render` | Builds a display list from a laid-out document and renders it to raster (tiny-skia; vello on GPU) or PDF (krilla). Never mutates the document. | core, layout, resvg/usvg, krilla, vello (feature `gpu`) |
-| `pubrs-io` | `.pubrs` file format (zip: `document.json` + `assets/`), schema migration, image decoding, SVG, templates, export orchestration. | core, layout, render, zip, image |
+| `pubrs-io` | `.pubrs` file format (zip: `document.json` + `assets/`), schema migration, image decoding, SVG, templates, sheet presets, export orchestration, Publisher (`.pub`) import, mail-merge list readers (CSV, XLSX), spell checking. | core, layout, render, zip, image, cfb, calamine, spellbook |
 | `pubrs-api` | `Session`: open documents + command dispatch + queries. **The single entry point** for every client. Tool registry (names, JSON schemas, handlers). | core, layout, render, io, schemars |
 | `pubrs-mcp` | MCP server (rmcp) over stdio or streamable HTTP. Maps tools 1:1 onto the `pubrs-api` registry; only schema and error mapping. | api, rmcp, tokio |
-| `pubrs-cli` | `pubrs render / export / validate / script`. | api, clap |
+| `pubrs-cli` | `pubrs render / export / validate / import / merge / perf / script / tools`. | api, clap |
 | `pubrs-app` | egui/eframe GUI. Platform services behind traits in `src/platform/`. | api, eframe, rfd, dirs, arboard, windows / objc2 |
 
 Rule: if a feature is not in `pubrs-api`, it does not exist for any client.
@@ -157,10 +157,13 @@ integration test executes every example through an in-process rmcp client.
 ## Templates
 
 Templates are ordinary documents whose frames carry `placeholder` metadata
-(name, kind, hint). Built-ins (`flyer`, `trifold_brochure`, `business_card`,
-`newsletter`) are built in `pubrs-io::templates` through normal commands with
-deterministic ids; user templates are `.pubrs` files in the user template
-folder. A text placeholder counts as unfilled while its text equals its hint.
+(name, kind, hint). Built-ins (13: `flyer`, `trifold_brochure`, `business_card`, `newsletter`,
+`greeting_card`, `postcard`, `certificate`, `menu`, `letterhead`, `envelope`,
+`calendar`, `address_labels`, `business_cards`; ADR 0028) are built in
+`pubrs-io::templates` through normal commands with deterministic ids; user
+templates are `.pubrs` files in the user template folder. A built-in name
+always wins: `TemplateStore::list` hides a user file with a built-in name,
+`load` returns the built-in first, and `save` refuses those names. A text placeholder counts as unfilled while its text equals its hint.
 
 ## GUI
 
@@ -223,3 +226,120 @@ saved files and goldens never do.
   offers them after a crash.
 - `--self-test DIR` drives the real window with injected input through the
   Definition of Done scenario; CI runs it on every OS.
+
+## Design checker (M29, ADR 0027)
+
+`validate` is split so a client can check part of a document.
+`pubrs_core::validate_page(doc, page, opts)` returns the frame-level warnings
+of one page; `validate_document(doc, opts)` the story-level ones;
+`Session::validate_parts(doc, commercial, pages)` adds the layout-based ones
+(overflow, missing fonts and glyphs, undecodable images) for just the pages
+asked for. The warning codes include `rgb_in_cmyk_job` (only in a commercial
+request), `text_too_small`, `low_contrast_text`, `object_in_unprintable_area`,
+`empty_table_cells`, `missing_alt_text` and `merge_field_missing`. The GUI panel
+(`checker.rs`, Review > Design Checker) debounces: a change starts a 400 ms
+timer, and after it the panel re-checks only the pages whose frames or stories
+changed (compared as `Arc`s), never on a keystroke and not at all while
+closed. A commercial export runs the checks first and offers Export anyway,
+Fix first or Cancel for missing fonts, RGB colour and low-resolution pictures.
+Dangling swatch references are integrity errors (`check_integrity`), not
+warnings.
+
+## Mail merge (M24, ADR 0023)
+
+`Document.merge: Option<MergeSource>` stores the list (fields, records as an
+`Arc<Vec<Vec<String>>>`, preview index and switch) inside the document, so a
+file reopens without its CSV or XLSX. `pubrs-io/merge_source.rs` reads the
+lists: CSV in-tree (RFC 4180, delimiter sniffed), XLSX with `calamine` after
+the workbook has been re-written as a sanitised zip (part counts, expansion
+ratios and shared-string counts are checked, and `quick-xml` re-serialises the
+shared strings) so no number a file declares is trusted. Values are sanitised
+to one line (`merge::sanitize_value`) and limits are enforced by
+`SetMergeSource` and `check_integrity`. A field is one U+FFFC character in a run
+of its own with `field: Some(name)`, which `Run::same_format` never merges.
+Layout shows the previewed record's value, or «Name», through an edit table on
+the shadow text (the same one that holds soft hyphens), keyed in the story
+cache by the field values, so stepping a record recomposes only stories with
+fields. Merge to PDF lays out one document clone per record through one cache
+and imposes the whole run once (so 30 records on a 5160 sheet in `Sequence`
+fill are one sheet); `merge_to_publication` copies the pages with the fields
+replaced by their values (`realise_story`) and ids derived from the originals.
+
+## Spelling (M28)
+
+`pubrs-io/spell.rs` wraps `spellbook` (Hunspell-compatible; en_US built in,
+other languages from the user's dictionaries folder) and splits text into words
+per paragraph language. In the app (`spell.rs`) one worker thread owns the
+checker; the UI thread never checks a word. Requests are newest-wins, answers
+carry the `Arc<Story>` they checked so squiggles are drawn only while that is
+still the story on screen, and unchanged paragraphs come from a cache. A dead
+worker is restarted (up to three times). The `spell_*` tools use the same
+checker from a `Session`.
+
+## Colour, CMYK and PDF/X output (M21, M22; ADR 0016, 0018)
+
+Fills, strokes and text hold a `Paint`: a hex colour, a swatch reference with a
+tint, or (fills only) a gradient. `Document.swatches` holds RGB, CMYK and spot
+swatches and the colour scheme slots; colour is resolved at draw time
+(`ResolvedPaint` / `ResolvedInk` carry the exact definition), so a swatch edit
+repaints and never re-lays out. The PDF writer maps RGB to RGB, CMYK to
+DeviceCMYK and spot colours to `/Separation`. PDF/X-4 is krilla's PDF 1.6 with
+a CMYK profile and `no_device_cs`, plus an incremental update (`pdfx.rs`:
+output intent, ICC stream, XMP, Info keys); `pdfx::check` is the gate every
+PDF/X-4 export passes (veraPDF has no PDF/X profile). PDF/A-2b is krilla's
+validator. Colour management and soft proofing are out of scope.
+
+## Performance harness (M9)
+
+`pubrs perf` (`pubrs-api/src/perf.rs`) builds a synthetic publication through
+`DocBuilder` commands (letter pages, chains of text frames, generated PNGs)
+and times what the GUI does: keystroke (command, layout, render), relayout,
+tile render, save, open and PDF export, as medians over `--runs`. Rows have
+stable keys; budgets are attached by key and page count, and only enforced ones
+make `--check` exit 1. CI runs `--pages 50 --runs 5 --check` on Linux.
+
+## Publisher (`.pub`) import (M31, M32; ADR 0017, 0026)
+
+`pubrs-io/src/pubfile/` is an own parser (no libmspub code). `container.rs`
+reads the OLE compound file with `cfb` under size caps; `records.rs` parses the
+Contents, Quill and Escher streams with every count and offset clamped to the
+stream it points into; `text.rs` decodes story text and formatting;
+`images.rs` reads the BLIP store (PNG, JPEG, GIF; metafiles are reported, not
+drawn); `mod.rs` maps it all onto a `Document` through `DocBuilder` commands
+(pages, linked text frames, shapes, tables, colour scheme swatches, masters) and
+returns an `ImportReport` of what was dropped or substituted. `import` catches
+panics. Entry points: `doc_import` (API and MCP), `pubrs import`, File > Import
+Publisher File… and dropping a `.pub` file on the window.
+
+## Architecture decision records
+
+| ADR | Decision |
+|-----|----------|
+| [0001](docs/adr/0001-patch-based-undo.md) | Patch-based undo |
+| [0002](docs/adr/0002-macos-intel-runner.md) | macOS Intel CI runner |
+| [0003](docs/adr/0003-license.md) | Project licence |
+| [0004](docs/adr/0004-gui-renderer-fallback.md) | GUI renderer fallback |
+| [0005](docs/adr/0005-ids-in-commands.md) | Ids are allocated before commands are built |
+| [0006](docs/adr/0006-wrap-bounding-box.md) | Text wrap uses bounding boxes |
+| [0007](docs/adr/0007-paragraph-shaping.md) | One parley layout per paragraph |
+| [0008](docs/adr/0008-golden-tolerance.md) | Golden images compare with a tolerance |
+| [0009](docs/adr/0009-image-decoding-in-io.md) | Image decoding lives in pubrs-io |
+| [0010](docs/adr/0010-packaging.md) | Installers: one release workflow, per-OS native tools |
+| [0011](docs/adr/0011-gui-adapter.md) | GUI adapter: hardware on any API first, then bundled Mesa llvmpipe |
+| [0012](docs/adr/0012-story-layout-cache.md) | Story layout cache: per-story snapshot keys, compared by equality |
+| [0013](docs/adr/0013-viewport-rendering.md) | Viewport rendering: exact parallel tiles off the UI thread; vello leaves the GUI |
+| [0014](docs/adr/0014-hyphenation.md) | Hyphenation and bounded justification: a shadow text with soft hyphens |
+| [0015](docs/adr/0015-break-characters.md) | Break characters, keeps and drop caps |
+| [0016](docs/adr/0016-paint-and-swatches.md) | Paint, swatches and resolving colour at draw time |
+| [0017](docs/adr/0017-pub-import.md) | Publisher (`.pub`) import: own parser, bounded reads, three file generations |
+| [0018](docs/adr/0018-pdfx.md) | Commercial print output: CMYK and spot colour, PDF/X-4 as an incremental update, PDF/A-2b |
+| [0019](docs/adr/0019-tabs-and-lists.md) | Tab stops, leaders, bullets and numbering |
+| [0020](docs/adr/0020-wordart-shadows-borderart.md) | WordArt, drop shadows and BorderArt |
+| [0021](docs/adr/0021-character-formatting.md) | Character formatting and missing glyphs |
+| [0022](docs/adr/0022-tight-wrap.md) | Tight, through and both-sides wrap |
+| [0023](docs/adr/0023-mail-merge.md) | Mail merge |
+| [0024](docs/adr/0024-tables.md) | Tables |
+| [0025](docs/adr/0025-clipboard-ime-rtl.md) | Clipboard, input methods and right-to-left carets |
+| [0026](docs/adr/0026-pub-import-part-2.md) | Publisher (`.pub`) import, part 2: pictures, shapes, colours, tables, masters and entry points |
+| [0027](docs/adr/0027-design-checker.md) | Design Checker: warnings, commercial context, incremental panel |
+| [0028](docs/adr/0028-everyday-templates.md) | Everyday templates (M30) |

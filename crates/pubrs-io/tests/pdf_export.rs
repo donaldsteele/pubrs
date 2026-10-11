@@ -1385,3 +1385,71 @@ fn table_cells_are_drawn_with_fills_borders_and_extractable_text() {
     assert!(!operands(&pdf, "f").is_empty(), "the cell fill is painted");
     assert!(operands(&pdf, "S").len() >= 4, "the borders are stroked");
 }
+
+// ---------------------------------------------------------------- booklet (DoD 3)
+
+/// An 8-page booklet exported to PDF is 4 sheet pages at double page width,
+/// with the pages in saddle-stitch order (8|1, 2|7, 6|3, 4|5), and the PDF/X-4
+/// checker passes. Page n carries a full-page rectangle whose red level is n.
+#[test]
+fn eight_page_booklet_exports_four_imposed_sheets_in_saddle_order() {
+    let mut b = DocBuilder::new(SeqIds::new(33), PageSetup::default());
+    b.exec(Command::SetBooklet { booklet: true }).unwrap();
+    let mut pages = vec![b.page(0)];
+    for _ in 1..8 {
+        pages.push(b.add_page().unwrap());
+    }
+    for (i, p) in pages.into_iter().enumerate() {
+        let r = b
+            .shape(
+                p,
+                Rect::new(50.0, 50.0, 500.0, 600.0),
+                Shape::Rectangle { corner_radius: 0.0 },
+            )
+            .unwrap();
+        b.style(
+            r,
+            FrameStyle {
+                fill: Some(Color::rgb(((i + 1) * 30) as u8, 0, 0).into()),
+                stroke: None,
+                opacity: 1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    let doc = b.finish();
+    assert_eq!(doc.pages.len(), 8);
+
+    let (_, pdf) = export(&doc, &PdfOptions::default());
+    let sheets: Vec<_> = pdf.get_pages().into_values().collect();
+    assert_eq!(sheets.len(), 4, "8 pages make 4 sheet sides");
+    for id in &sheets {
+        let media = page_boxes(&pdf, pdf.get_dictionary(*id).unwrap()).media;
+        assert_eq!(media, vec![0.0, 0.0, 1224.0, 792.0], "double page width");
+    }
+    // Page order: the red level of each page's rectangle, as the sheet draws it.
+    let reds = |id: ObjectId| -> Vec<u32> {
+        let content = lopdf::content::Content::decode(&pdf.get_page_content(id)).unwrap();
+        content
+            .operations
+            .iter()
+            .filter(|o| o.operator == "rg")
+            .filter_map(|o| o.operands.first()?.as_float().ok())
+            .map(|r| (f64::from(r) * 255.0 / 30.0).round() as u32)
+            .filter(|n| (1..=8).contains(n))
+            .collect()
+    };
+    let order: Vec<Vec<u32>> = sheets.iter().map(|id| reds(*id)).collect();
+    assert_eq!(order, vec![vec![8, 1], vec![2, 7], vec![6, 3], vec![4, 5]]);
+
+    // And as PDF/X-4.
+    let mut ctx = ExportContext::new(test_fonts());
+    let bytes = ctx.export_pdf(&doc, &x4()).unwrap();
+    let issues = pubrs_render::pdfx::check(&bytes);
+    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(
+        lopdf::Document::load_mem(&bytes).unwrap().get_pages().len(),
+        4
+    );
+}

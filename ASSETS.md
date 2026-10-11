@@ -83,3 +83,25 @@ and snowflakes. They contain no Microsoft or Adobe artwork.
 | Path | Source | Licence | SHA-256 |
 | --- | --- | --- | --- |
 | `assets/borderart/` | Original SVG drawn for pubrs (M25); `LICENSE` is the CC0 1.0 legal code | CC0 1.0 Universal (original work for pubrs) | `assets/borderart/SHA256SUMS` |
+
+## Sheet presets (label, card and postcard sheets)
+
+`crates/pubrs-io/src/presets.rs` holds 26 sheet presets as plain data: product number, paper size, rows and
+columns, label size, the top-left corner of the first label and the pitch between labels, in inches (US Letter
+sheets) or millimetres (A4 sheets). They are facts about physical products, entered by hand. Nothing is copied from
+a vendor template, driver or datasheet file, and pubrs ships no vendor artwork.
+
+- Avery is a trademark of Avery Dennison Corporation. Avery product numbers (5160, 5161, 5162, 5163, 5164, 5167,
+  5371, 5376, 5377, 8160, 8163, 22805, 5305 and 8315) and the A4 sheet codes (L7160, L7161, L7162, L7163, L7173,
+  L7651, J8160 and C32011, which are used by Avery and other makers) belong to their owners. They appear only to
+  name the sheet a user has bought. pubrs is not affiliated with or endorsed by any of them.
+- The four generic presets (2-up and 4-up on Letter and on A4) name no product.
+- A unit test proves every grid fits inside its sheet and that the Avery 5160 values give 30 labels of 2.625 by
+  1 in; it cannot prove a value matches the product.
+
+**Several presets were entered from memory of the published specifications and are not checked against vendor
+datasheets**: Avery 5376, 5377, 22805, 5305 and 8315, C32011, L7651, and the margins of L7161 and L7162. Check them
+against the datasheets (or with a test print on plain paper held over a real sheet) before relying on them, and fix
+the row in `presets.rs` if a number is off. The commonly used presets (5160, 5161, 5162, 5163, 5164, 5167, 5371,
+8160, 8163, L7160, L7163, L7173 and J8160) are well known, but the same check applies. RELEASE.md has the manual
+print check.

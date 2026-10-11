@@ -2525,12 +2525,14 @@ mod tests {
         era * 146_097 + doe - 719_468
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
     fn weekday_rejects_month_zero() {
         weekday(2024, 0, 1);
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic]
     fn weekday_rejects_month_thirteen() {
