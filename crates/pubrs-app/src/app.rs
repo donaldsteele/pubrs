@@ -904,6 +904,11 @@ impl PubrsApp {
                     self.export_png_to(&p);
                 }
             }
+            Paragraph => {
+                if let Some(state) = crate::dialogs::ParagraphState::for_selection(self) {
+                    self.dialog = Some(Dialog::Paragraph(state));
+                }
+            }
             PageSetup => {
                 if let Some(state) = crate::dialogs::PageSetupState::for_doc(self.doc()) {
                     self.dialog = Some(Dialog::PageSetup(state));

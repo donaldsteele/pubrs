@@ -52,6 +52,7 @@ pub enum Action {
     Rotate90,
     LinkTextFrames,
     UnlinkTextFrames,
+    Paragraph,
     Bold,
     Italic,
     Underline,
@@ -114,6 +115,7 @@ pub fn shortcut(a: Action) -> Option<KeyboardShortcut> {
         Bold => cmd(Key::B),
         Italic => cmd(Key::I),
         Underline => cmd(Key::U),
+        Paragraph => KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::ALT), Key::P),
         ZoomIn => cmd(Key::Plus),
         ZoomOut => cmd(Key::Minus),
         ZoomFit => cmd(Key::Num0),
@@ -238,6 +240,8 @@ pub const MENUS: &[MenuSpec] = &[
             Sep,
             A("Link to Next Text Box", Action::LinkTextFrames),
             A("Break Link", Action::UnlinkTextFrames),
+            Sep,
+            A("Paragraph…", Action::Paragraph),
         ],
     },
     MenuSpec {
@@ -289,7 +293,7 @@ pub fn shortcut_actions() -> Vec<(KeyboardShortcut, Action)> {
         .into_iter()
         .filter_map(|a| shortcut(a).map(|s| (s, a)))
         .collect();
-    v.sort_by_key(|(s, _)| std::cmp::Reverse(s.modifiers.shift));
+    v.sort_by_key(|(s, _)| std::cmp::Reverse((s.modifiers.shift, s.modifiers.alt)));
     v
 }
 

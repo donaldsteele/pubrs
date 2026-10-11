@@ -17,6 +17,7 @@ use pubrs_core::{
 };
 
 use crate::fonts::FontLibrary;
+use crate::hyphen::{self, BreakParams, LineCx, LineInfo, Shadow};
 use crate::types::{
     Decoration, DocumentLayout, FontHandle, FrameText, GlyphRun, LineBox, Overflow,
     PositionedGlyph, StoryLayout,
@@ -351,114 +352,165 @@ impl Layouter {
         is_last_paragraph: bool,
     ) -> Option<usize> {
         let pa = doc.styles.resolve_para(para);
-        let text: String = para.text();
-        let mut spans: Vec<(Range<usize>, CharAttrs)> = Vec::new();
-        let mut b = 0;
-        for r in &para.runs {
-            let attrs = doc.styles.resolve_char(para, r);
-            spans.push((b..b + r.text.len(), attrs));
-            b += r.text.len();
-        }
-        let first = spans
-            .first()
-            .map(|s| s.1.clone())
-            .unwrap_or_else(|| doc.styles.resolve_char(para, &Run::default()));
-        for (_, a) in &spans {
-            if !self.fonts.ensure_family(&a.font_family) {
-                out.missing_fonts.insert(a.font_family.clone());
+        let orig: String = para.text();
+        // `text` is what parley shapes: the paragraph with soft hyphens
+        // inserted at hyphenation points (ADR 0014). Story offsets are
+        // always counted on `orig`.
+        let hy_lang = hyphen::lang_of(&pa.language).filter(|_| pa.hyphenate);
+        // If the line analysis cannot follow the paragraph (right-to-left
+        // text, a line end it cannot place), it is laid out again once
+        // without the inserted soft hyphens (ADR 0014).
+        let cur0 = *cur;
+        let mut plain = hy_lang.is_none();
+        let (shadow, mut layout, mut lcx, line_infos, placements, overflowed) = 'attempt: loop {
+            *cur = cur0;
+            let shadow = match hy_lang.filter(|_| !plain) {
+                Some(lang) => Shadow::hyphenated(&orig, lang),
+                None => Shadow::plain(&orig),
+            };
+            let text: &str = &shadow.text;
+            let mut spans: Vec<(Range<usize>, CharAttrs)> = Vec::new();
+            let mut b = 0;
+            for r in &para.runs {
+                let attrs = doc.styles.resolve_char(para, r);
+                spans.push((
+                    shadow.from_orig(b)..shadow.from_orig(b + r.text.len()),
+                    attrs,
+                ));
+                b += r.text.len();
             }
-        }
-        let mut builder = self
-            .lcx
-            .ranged_builder(&mut self.fonts.fcx, &text, 1.0, false);
-        builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
-            pa.line_spacing as f32,
-        )));
-        push_attrs(&mut builder, None, &first);
-        for (range, a) in &spans {
-            if !range.is_empty() && *a != first {
-                push_attrs(&mut builder, Some(range.clone()), a);
+            let first = spans
+                .first()
+                .map(|s| s.1.clone())
+                .unwrap_or_else(|| doc.styles.resolve_char(para, &Run::default()));
+            for (_, a) in &spans {
+                if !self.fonts.ensure_family(&a.font_family) {
+                    out.missing_fonts.insert(a.font_family.clone());
+                }
             }
-        }
-        let mut layout: Layout<Color> = builder.build(&text);
+            let mut builder = self
+                .lcx
+                .ranged_builder(&mut self.fonts.fcx, text, 1.0, false);
+            builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
+                pa.line_spacing as f32,
+            )));
+            push_attrs(&mut builder, None, &first);
+            for (range, a) in &spans {
+                if !range.is_empty() && *a != first {
+                    push_attrs(&mut builder, Some(range.clone()), a);
+                }
+            }
+            let mut layout: Layout<Color> = builder.build(text);
+            let justified = pa.align == Align::Justify;
+            let limited = justified && pa.justify_limits.is_some();
+            let mut lcx =
+                (limited || text.contains(hyphen::SHY)).then(|| LineCx::new(&mut layout, text));
+            if !plain && !shadow.inserted.is_empty() && lcx.as_ref().is_some_and(|c| !c.ok()) {
+                plain = true;
+                continue 'attempt;
+            }
+            let bparams = BreakParams {
+                shadow: &shadow,
+                justify: justified,
+                limits: pa.justify_limits,
+            };
+            let mut line_infos: Vec<LineInfo> = Vec::new();
 
-        let max_w = regions.iter().map(|r| r.w).fold(1.0, f64::max) as f32;
-        let min_w = (first.font_size * 3.0).max(18.0);
-        let mut placements: Vec<(usize, f64, f64)> = Vec::new();
-        let mut overflowed = false;
-        {
-            let mut bl = layout.break_lines();
-            bl.state_mut().set_layout_max_advance(max_w);
-            let mut first_line = true;
-            let mut est_h = (first.font_size * pa.line_spacing).max(1.0);
-            let mut retried = false;
-            let mut guard = 0u32;
-            loop {
-                guard += 1;
-                if guard > 100_000 {
-                    overflowed = true;
-                    break;
-                }
-                let Some(r) = regions.get(cur.region) else {
-                    overflowed = true;
-                    break;
-                };
-                let mut y = cur.y;
-                if first_line && y > r.y + 1e-6 {
-                    y += pa.space_before;
-                }
-                let (ax, aw) = match r.available(y, y + est_h, min_w) {
-                    Avail::Span(x, w) => (x, w),
-                    Avail::Skip(ny) => {
-                        cur.y = ny.max(cur.y + 0.5);
-                        if cur.y >= r.bottom() {
-                            advance_region(cur, regions);
+            let max_w = regions.iter().map(|r| r.w).fold(1.0, f64::max) as f32;
+            let min_w = (first.font_size * 3.0).max(18.0);
+            let mut placements: Vec<(usize, f64, f64)> = Vec::new();
+            let mut overflowed = false;
+            {
+                let mut bl = layout.break_lines();
+                bl.state_mut().set_layout_max_advance(max_w);
+                let mut first_line = true;
+                let mut est_h = (first.font_size * pa.line_spacing).max(1.0);
+                let mut retried = false;
+                let mut guard = 0u32;
+                loop {
+                    guard += 1;
+                    if guard > 100_000 {
+                        overflowed = true;
+                        break;
+                    }
+                    let Some(r) = regions.get(cur.region) else {
+                        overflowed = true;
+                        break;
+                    };
+                    let mut y = cur.y;
+                    if first_line && y > r.y + 1e-6 {
+                        y += pa.space_before;
+                    }
+                    let (ax, aw) = match r.available(y, y + est_h, min_w) {
+                        Avail::Span(x, w) => (x, w),
+                        Avail::Skip(ny) => {
+                            cur.y = ny.max(cur.y + 0.5);
+                            if cur.y >= r.bottom() {
+                                advance_region(cur, regions);
+                            }
+                            continue;
                         }
+                    };
+                    let indent = pa.left_indent
+                        + if first_line {
+                            pa.first_line_indent
+                        } else {
+                            0.0
+                        };
+                    let x = ax + indent.max(0.0);
+                    let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
+                    {
+                        let st = bl.state_mut();
+                        st.set_line_x(x as f32);
+                        st.set_line_max_advance((w as f32).min(max_w));
+                        st.set_line_y(y);
+                    }
+                    let next = match lcx.as_mut() {
+                        Some(c) => c.break_line(&mut bl, &bparams, text, (w as f32).min(max_w)),
+                        None => bl.break_next(),
+                    };
+                    let Some(data) = next else { break };
+                    let YieldData::LineBreak(d) = data else {
+                        continue;
+                    };
+                    let h = d.line_y_end - d.line_y_start;
+                    if h > est_h + 0.01
+                        && !retried
+                        && !r.obstacles.is_empty()
+                        && r.available(y, y + h, min_w) != Avail::Span(ax, aw)
+                    {
+                        bl.revert();
+                        est_h = h;
+                        retried = true;
                         continue;
                     }
-                };
-                let indent = pa.left_indent
-                    + if first_line {
-                        pa.first_line_indent
-                    } else {
-                        0.0
-                    };
-                let x = ax + indent.max(0.0);
-                let w = (aw - indent.max(0.0) - pa.right_indent).max(1.0);
-                {
-                    let st = bl.state_mut();
-                    st.set_line_x(x as f32);
-                    st.set_line_max_advance((w as f32).min(max_w));
-                    st.set_line_y(y);
-                }
-                let Some(data) = bl.break_next() else { break };
-                let YieldData::LineBreak(d) = data else {
-                    continue;
-                };
-                let h = d.line_y_end - d.line_y_start;
-                if h > est_h + 0.01
-                    && !retried
-                    && !r.obstacles.is_empty()
-                    && r.available(y, y + h, min_w) != Avail::Span(ax, aw)
-                {
-                    bl.revert();
+                    retried = false;
+                    if y + h > r.bottom() + 0.01 {
+                        bl.revert();
+                        advance_region(cur, regions);
+                        continue;
+                    }
+                    if let Some(c) = lcx.as_mut() {
+                        let info = c.pending.take();
+                        if let Some(i) = &info {
+                            c.pos = i.end;
+                        }
+                        line_infos.push(info.unwrap_or_default());
+                    }
+                    placements.push((cur.region, y, h));
+                    cur.y = y + h;
+                    first_line = false;
                     est_h = h;
-                    retried = true;
-                    continue;
                 }
-                retried = false;
-                if y + h > r.bottom() + 0.01 {
-                    bl.revert();
-                    advance_region(cur, regions);
-                    continue;
-                }
-                placements.push((cur.region, y, h));
-                cur.y = y + h;
-                first_line = false;
-                est_h = h;
+                bl.finish();
             }
-            bl.finish();
-        }
+            if !plain && !shadow.inserted.is_empty() && lcx.as_ref().is_some_and(|c| !c.ok()) {
+                plain = true;
+                continue 'attempt;
+            }
+            break (shadow, layout, lcx, line_infos, placements, overflowed);
+        };
+        let text: &str = &shadow.text;
         layout.align(
             to_parley_align(pa.align),
             AlignmentOptions {
@@ -467,11 +519,11 @@ impl Layouter {
             },
         );
 
-        let text_arc: Arc<str> = Arc::from(text.as_str());
+        let text_arc: Arc<str> = Arc::from(orig.as_str());
         let n_lines = placements.len();
         let mut groups_cache: HashMap<usize, (Vec<ClusterGroup>, usize)> = HashMap::new();
         let mut last_end_byte = 0usize;
-        let mut counter = CharCounter::new(&text);
+        let mut counter = CharCounter::new(text);
         let offsets = ClusterOffsets::new(&layout, text.len());
         for (li, line) in layout.lines().enumerate() {
             let Some(&(region, y, h)) = placements.get(li) else {
@@ -481,7 +533,13 @@ impl Layouter {
             let tr = line.text_range();
             let (tb0, tb1) = (tr.start.min(text.len()), tr.end.min(text.len()));
             last_end_byte = tb1;
-            let (c0, c1) = (counter.at(tb0), counter.at(tb1));
+            let (c0, c1) = (
+                counter.at(tb0) - shadow.inserted_before(tb0),
+                counter.at(tb1) - shadow.inserted_before(tb1),
+            );
+            let info = line_infos.get(li).copied().unwrap_or_default();
+            let letter = info.letter;
+            let mut end_x = 0.0f64;
             let chars = para_start + c0..para_start + c1;
             let mut runs = Vec::new();
             let mut decorations = Vec::new();
@@ -539,6 +597,22 @@ impl Layouter {
                 let style = gr.style();
                 let synth = run.synthesis();
                 let font = run.font();
+                // Letter spacing added to a justified line past its word-space
+                // cap: every character gap grows by `letter`.
+                let before = |b: usize| -> f64 {
+                    if letter == 0.0 {
+                        return 0.0;
+                    }
+                    let b = b.clamp(tb0, tb1);
+                    let n = text[tb0..b].chars().count()
+                        - (shadow.inserted_before(b) - shadow.inserted_before(tb0));
+                    n as f64 * letter
+                };
+                let run_start = ranges.iter().map(|r| r.start).min().unwrap_or(tb0);
+                let run_end = ranges.iter().map(|r| r.end).max().unwrap_or(tb0);
+                let run_shift = before(run_start);
+                let run_extra = before(run_end) - run_shift;
+                end_x = f64::from(gr.offset() + gr.advance()) + before(run_end);
                 runs.push(GlyphRun {
                     font: FontHandle {
                         data: font.data.clone(),
@@ -552,12 +626,14 @@ impl Layouter {
                     glyphs: positioned
                         .iter()
                         .zip(ranges)
-                        .map(|(g, text)| PositionedGlyph {
+                        // Soft hyphens are invisible inside a line.
+                        .filter(|(_, r)| text.get(r.clone()) != Some("\u{ad}"))
+                        .map(|(g, r)| PositionedGlyph {
                             id: g.id,
-                            x: f64::from(g.x),
+                            x: f64::from(g.x) + before(r.start),
                             y: f64::from(g.y),
                             advance: f64::from(g.advance),
-                            text,
+                            text: shadow.to_orig(r.start)..shadow.to_orig(r.end),
                         })
                         .collect(),
                 });
@@ -567,16 +643,47 @@ impl Layouter {
                     let size = ul.size.unwrap_or(fm.underline_size).max(0.5);
                     decorations.push(Decoration {
                         rect: Rect::new(
-                            f64::from(gr.offset()),
+                            f64::from(gr.offset()) + run_shift,
                             f64::from(gr.baseline() - off),
-                            f64::from(gr.advance()),
+                            f64::from(gr.advance()) + run_extra,
                             f64::from(size),
                         ),
                         color: ul.brush,
                     });
                 }
             }
-            let carets = caret_positions(&layout, &offsets, &text, tb0..tb1, para_start + c0);
+            // A line that breaks at a soft hyphen ends with the font's
+            // hyphen glyph (its width was reserved when the line was broken).
+            if info.hyphen
+                && tb1 >= tb0 + hyphen::SHY_LEN
+                && tb1 < text.len()
+                && text.get(tb1 - hyphen::SHY_LEN..tb1) == Some("\u{ad}")
+                && let Some(c) = lcx.as_mut()
+                && let Some((font, size, gid, adv)) = c.hyphen_glyph(tb1 - hyphen::SHY_LEN)
+                && let Some(last) = runs.last()
+            {
+                let mut hr: GlyphRun = last.clone();
+                let (gy, o) = (last.glyphs.last().map_or(0.0, |g| g.y), shadow.to_orig(tb1));
+                hr.font = font;
+                hr.font_size = f64::from(size);
+                hr.glyphs = vec![PositionedGlyph {
+                    id: gid,
+                    x: end_x,
+                    y: gy,
+                    advance: f64::from(adv),
+                    text: o..o,
+                }];
+                runs.push(hr);
+            }
+            let carets = caret_positions(
+                &layout,
+                &offsets,
+                text,
+                &shadow,
+                tb0..tb1,
+                para_start + c0,
+                letter,
+            );
             let ends_paragraph = li + 1 == n_lines && !overflowed;
             placed.push(PlacedLine {
                 region,
@@ -584,7 +691,10 @@ impl Layouter {
                     rect: Rect::new(
                         f64::from(m.inline_min_coord),
                         y,
-                        f64::from(m.inline_max_coord - m.inline_min_coord),
+                        info.full_w.map_or(
+                            f64::from(m.inline_max_coord - m.inline_min_coord),
+                            f64::from,
+                        ),
                         h,
                     ),
                     baseline: f64::from(m.baseline),
@@ -598,7 +708,7 @@ impl Layouter {
         }
         if overflowed {
             let byte = if n_lines == 0 { 0 } else { last_end_byte };
-            return Some(para_start + counter.at(byte));
+            return Some(para_start + counter.at(byte) - shadow.inserted_before(byte));
         }
         cur.y += pa.space_after;
         let _ = is_last_paragraph;
@@ -643,12 +753,17 @@ fn push_attrs(
 
 /// Caret x for each character boundary of the line whose paragraph bytes
 /// are `bytes`; `first` is the story offset of its first character.
+/// `text` is the shadow text: boundaries at an inserted soft hyphen are
+/// skipped (it is not a story character), and `letter` is added per
+/// character for justified lines stretched with letter spacing.
 fn caret_positions(
     layout: &Layout<Color>,
     offsets: &ClusterOffsets,
     text: &str,
+    shadow: &Shadow,
     bytes: Range<usize>,
     first: usize,
+    letter: f64,
 ) -> Vec<(usize, f64)> {
     let (b0, b1) = (bytes.start, bytes.end);
     let mut boundaries: Vec<usize> = match text.get(b0..b1) {
@@ -661,7 +776,11 @@ fn caret_positions(
     };
     boundaries.push(b1);
     let mut out = Vec::with_capacity(boundaries.len());
-    for (k, b) in boundaries.iter().enumerate() {
+    let mut k = 0usize;
+    for b in &boundaries {
+        if *b != b1 && shadow.is_inserted(*b) {
+            continue;
+        }
         let at_end = *b == b1 && *b != b0;
         let affinity = if at_end {
             Affinity::Upstream
@@ -669,7 +788,11 @@ fn caret_positions(
             Affinity::Downstream
         };
         let cursor = Cursor::from_byte_index(layout, *b, affinity);
-        out.push((first + k, caret_x(layout, offsets, cursor)));
+        out.push((
+            first + k,
+            caret_x(layout, offsets, cursor) + k as f64 * letter,
+        ));
+        k += 1;
     }
     out
 }

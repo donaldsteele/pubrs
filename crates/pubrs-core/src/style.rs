@@ -93,6 +93,68 @@ pub struct ParaProps {
     pub left_indent: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub right_indent: Option<f64>,
+    /// Break words at hyphenation points when a line would be loose
+    /// (default off).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyphenate: Option<bool>,
+    /// BCP 47 language tag used for hyphenation, e.g. "en-US" (default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// Caps on how far justification may stretch a line. Unset inherits;
+    /// `{"unbounded": true}` overrides inherited limits with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub justify_limits: Option<JustifyLimits>,
+}
+
+/// How far justification may stretch a line before it is left short.
+/// Word spaces stretch up to `max_word_space` first, then letter spacing
+/// up to `letter_spacing`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct JustifyLimits {
+    /// Widest a word space may get, as a multiple of a normal space
+    /// (default 1.33).
+    #[serde(default = "default_max_word_space")]
+    pub max_word_space: f64,
+    /// Widest letter spacing, as a fraction of the font size (default 0.05).
+    #[serde(default = "default_justify_letter_spacing")]
+    pub letter_spacing: f64,
+    /// `true` turns limits off: justification is unbounded, as when no
+    /// limits are set. Use it to override limits a paragraph style sets.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unbounded: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn default_max_word_space() -> f64 {
+    1.33
+}
+
+fn default_justify_letter_spacing() -> f64 {
+    0.05
+}
+
+impl Default for JustifyLimits {
+    fn default() -> Self {
+        Self {
+            max_word_space: default_max_word_space(),
+            letter_spacing: default_justify_letter_spacing(),
+            unbounded: false,
+        }
+    }
+}
+
+impl JustifyLimits {
+    pub fn is_valid(&self) -> bool {
+        self.max_word_space.is_finite()
+            && self.max_word_space >= 1.0
+            && self.letter_spacing.is_finite()
+            && (0.0..=1.0).contains(&self.letter_spacing)
+    }
 }
 
 impl ParaProps {
@@ -105,6 +167,9 @@ impl ParaProps {
             first_line_indent: other.first_line_indent.or(self.first_line_indent),
             left_indent: other.left_indent.or(self.left_indent),
             right_indent: other.right_indent.or(self.right_indent),
+            hyphenate: other.hyphenate.or(self.hyphenate),
+            language: other.language.clone().or_else(|| self.language.clone()),
+            justify_limits: other.justify_limits.or(self.justify_limits),
         }
     }
 
@@ -118,6 +183,11 @@ impl ParaProps {
             && fin(self.first_line_indent)
             && nonneg(self.left_indent)
             && nonneg(self.right_indent)
+            && self
+                .language
+                .as_deref()
+                .is_none_or(|l| !l.trim().is_empty() && l.len() <= 35)
+            && self.justify_limits.is_none_or(|j| j.is_valid())
     }
 }
 
@@ -195,6 +265,10 @@ pub struct ParaAttrs {
     pub first_line_indent: f64,
     pub left_indent: f64,
     pub right_indent: f64,
+    pub hyphenate: bool,
+    pub language: String,
+    /// `None` = unbounded justification (v0.1 behaviour, Locked Decision 2).
+    pub justify_limits: Option<JustifyLimits>,
 }
 
 impl Default for ParaAttrs {
@@ -207,6 +281,9 @@ impl Default for ParaAttrs {
             first_line_indent: 0.0,
             left_indent: 0.0,
             right_indent: 0.0,
+            hyphenate: false,
+            language: "en-US".to_string(),
+            justify_limits: None,
         }
     }
 }
@@ -233,6 +310,15 @@ impl ParaAttrs {
         }
         if let Some(v) = p.right_indent {
             self.right_indent = v;
+        }
+        if let Some(v) = p.hyphenate {
+            self.hyphenate = v;
+        }
+        if let Some(v) = &p.language {
+            self.language = v.clone();
+        }
+        if let Some(v) = p.justify_limits {
+            self.justify_limits = (!v.unbounded).then_some(v);
         }
     }
 }
@@ -299,6 +385,7 @@ impl StyleSheet {
                     first_line_indent: Some(0.0),
                     left_indent: Some(0.0),
                     right_indent: Some(0.0),
+                    ..ParaProps::default()
                 },
                 CharProps {
                     font_family: Some(DEFAULT_FONT_FAMILY.into()),

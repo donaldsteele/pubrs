@@ -17,6 +17,7 @@ parley.workspace = true
 fontique.workspace = true
 fontdb.workspace = true
 skrifa.workspace = true
+hypher.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

@@ -19,6 +19,7 @@ pub enum Dialog {
     ConfirmDeletePage(PageId),
     Recovery(Vec<Recoverable>),
     PageSetup(PageSetupState),
+    Paragraph(ParagraphState),
     SaveTemplate(String),
     Message(String, String),
 }
@@ -242,6 +243,7 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
             }
         }
         Dialog::PageSetup(state) => page_setup_ui(app, ui, state),
+        Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
         Dialog::Print(printers, options) => {
             ui.heading("Print");
             if let Some(note) = app.doc().and_then(imposition_note) {
@@ -847,4 +849,263 @@ fn paint_preview(ui: &mut egui::Ui, st: &PageSetupState, setup: &PageSetup, page
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------
+// Paragraph
+
+use pubrs_api::core::{JustifyLimits, ParaAttrs, ParaProps, StoryId};
+
+/// Languages with bundled hyphenation patterns, as (BCP 47 tag, name).
+const LANGUAGES: [(&str, &str); 6] = [
+    ("en-US", "English (US)"),
+    ("de-DE", "German"),
+    ("es-ES", "Spanish"),
+    ("fr-FR", "French"),
+    ("pl-PL", "Polish"),
+    ("pt-PT", "Portuguese"),
+];
+
+/// The Paragraph dialog's edits, applied (as one undo step) on OK.
+pub struct ParagraphState {
+    story: StoryId,
+    start: usize,
+    end: usize,
+    initial: ParaAttrs,
+    line_spacing: f64,
+    space_before: f64,
+    space_after: f64,
+    first_line_indent: f64,
+    left_indent: f64,
+    right_indent: f64,
+    hyphenate: bool,
+    language: String,
+    limit: bool,
+    word_pct: f64,
+    letter_pct: f64,
+}
+
+impl ParagraphState {
+    /// For the caret's paragraph, the selected text, or the whole story of
+    /// the selected text frame.
+    pub fn for_selection(app: &PubrsApp) -> Option<Self> {
+        let doc = app.doc()?;
+        let story = match app.view().and_then(|v| v.edit.as_ref()) {
+            Some(e) => e.story,
+            None => app.selection().iter().find_map(|f| doc.story_of(*f))?,
+        };
+        let s = doc.story(story)?;
+        let (start, end) = match app.view().and_then(|v| v.edit.as_ref()) {
+            Some(e) if e.has_selection() => e.range(),
+            Some(e) => (e.caret, e.caret),
+            None => (0, s.char_len()),
+        };
+        let initial = doc.styles.resolve_para(&s.paragraphs[s.locate(start).0]);
+        let lim = initial.justify_limits.unwrap_or_default();
+        Some(Self {
+            story,
+            start,
+            end,
+            line_spacing: initial.line_spacing,
+            space_before: initial.space_before,
+            space_after: initial.space_after,
+            first_line_indent: initial.first_line_indent,
+            left_indent: initial.left_indent,
+            right_indent: initial.right_indent,
+            hyphenate: initial.hyphenate,
+            language: initial.language.clone(),
+            limit: initial.justify_limits.is_some(),
+            word_pct: lim.max_word_space * 100.0,
+            letter_pct: lim.letter_spacing * 100.0,
+            initial,
+        })
+    }
+
+    /// The paragraph overrides that differ from what the paragraph has now.
+    fn props(&self) -> ParaProps {
+        let i = &self.initial;
+        let changed = |new: f64, old: f64| ((new - old).abs() > 1e-9).then_some(new);
+        let limits = if self.limit {
+            let l = JustifyLimits {
+                max_word_space: self.word_pct / 100.0,
+                letter_spacing: self.letter_pct / 100.0,
+                unbounded: false,
+            };
+            (i.justify_limits != Some(l)).then_some(l)
+        } else if i.justify_limits.is_some() {
+            // Unticked: override whatever the paragraph or its style set.
+            Some(JustifyLimits {
+                unbounded: true,
+                ..JustifyLimits::default()
+            })
+        } else {
+            None
+        };
+        ParaProps {
+            align: None,
+            line_spacing: changed(self.line_spacing, i.line_spacing),
+            space_before: changed(self.space_before, i.space_before),
+            space_after: changed(self.space_after, i.space_after),
+            first_line_indent: changed(self.first_line_indent, i.first_line_indent),
+            left_indent: changed(self.left_indent, i.left_indent),
+            right_indent: changed(self.right_indent, i.right_indent),
+            hyphenate: (self.hyphenate != i.hyphenate).then_some(self.hyphenate),
+            language: (self.language != i.language).then(|| self.language.clone()),
+            justify_limits: limits,
+        }
+    }
+}
+
+fn paragraph_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut ParagraphState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Paragraph");
+    let num = |ui: &mut egui::Ui,
+               name: &str,
+               label: &str,
+               v: &mut f64,
+               r: std::ops::RangeInclusive<f64>,
+               suffix: &str| {
+        ui.label(label);
+        let resp = ui.add(egui::DragValue::new(v).speed(0.5).range(r).suffix(suffix));
+        mark(ui, name, &resp);
+        ui.end_row();
+    };
+    egui::Grid::new("paragraph-grid")
+        .num_columns(2)
+        .show(ui, |ui| {
+            num(
+                ui,
+                "line-spacing",
+                "Line spacing",
+                &mut st.line_spacing,
+                0.5..=4.0,
+                "",
+            );
+            num(
+                ui,
+                "space-before",
+                "Space before",
+                &mut st.space_before,
+                0.0..=200.0,
+                " pt",
+            );
+            num(
+                ui,
+                "space-after",
+                "Space after",
+                &mut st.space_after,
+                0.0..=200.0,
+                " pt",
+            );
+            num(
+                ui,
+                "left-indent",
+                "Left indent",
+                &mut st.left_indent,
+                0.0..=500.0,
+                " pt",
+            );
+            num(
+                ui,
+                "right-indent",
+                "Right indent",
+                &mut st.right_indent,
+                0.0..=500.0,
+                " pt",
+            );
+            num(
+                ui,
+                "first-indent",
+                "First line indent",
+                &mut st.first_line_indent,
+                -500.0..=500.0,
+                " pt",
+            );
+        });
+    ui.separator();
+    let r = ui.checkbox(&mut st.hyphenate, "Hyphenate");
+    mark(ui, "hyphenate", &r);
+    ui.horizontal(|ui| {
+        ui.label("Language");
+        let name = LANGUAGES
+            .iter()
+            .find(|(t, _)| *t == st.language)
+            .map_or(st.language.as_str(), |(_, n)| *n)
+            .to_string();
+        let combo = egui::ComboBox::from_id_salt("paragraph-language")
+            .selected_text(name)
+            .show_ui(ui, |ui| {
+                for (tag, name) in LANGUAGES {
+                    let r = ui.selectable_label(st.language == tag, name);
+                    mark(ui, &format!("lang:{tag}"), &r);
+                    if r.clicked() {
+                        st.language = tag.to_string();
+                    }
+                }
+            });
+        mark(ui, "language", &combo.response);
+    });
+    if !pubrs_api::core::validate::hyphenation_supported(&st.language) {
+        ui.small("This language has no hyphenation patterns; words will not be hyphenated.");
+    }
+    ui.separator();
+    let r = ui.checkbox(&mut st.limit, "Limit word and letter spacing");
+    mark(ui, "limit", &r);
+    r.on_hover_text("Justified lines that would need more stretch than this are left short");
+    if st.limit {
+        egui::Grid::new("paragraph-limits")
+            .num_columns(2)
+            .show(ui, |ui| {
+                num(
+                    ui,
+                    "word-pct",
+                    "Word space up to",
+                    &mut st.word_pct,
+                    100.0..=1000.0,
+                    "%",
+                );
+                num(
+                    ui,
+                    "letter-pct",
+                    "Letter spacing up to",
+                    &mut st.letter_pct,
+                    0.0..=100.0,
+                    "%",
+                );
+            });
+    }
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let editing = ui.ctx().text_edit_focused();
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("OK");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || (enter && !editing) {
+            let props = st.props();
+            if props == ParaProps::default()
+                || app.exec(Command::ApplyParaProps {
+                    story: st.story,
+                    start: st.start,
+                    end: st.end,
+                    props,
+                })
+            {
+                out = Outcome::Close;
+            }
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
 }

@@ -479,3 +479,71 @@ fn imposed_booklet_8_pages() {
         &ctx.sheet_png(&doc, 1, &opts()).unwrap(),
     );
 }
+
+const NEWSLETTER: &str = "Harvest Festival Newsletter\nThe community gardening association \
+celebrates extraordinary participation this autumn. Volunteers organised comprehensive \
+workshops, demonstrating sustainable cultivation techniques throughout neighbouring \
+communities. Unforgettable contributions came from international exhibitors, particularly \
+those representing agricultural cooperatives. Registration for next season's educational \
+programmes opens immediately; interested participants should contact the administration \
+office.";
+
+/// A justified two-column newsletter column pair, with or without
+/// hyphenation (and the justify limits that go with it).
+fn newsletter(hyphenate: bool) -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(14), small_page());
+    let p = b.page(0);
+    let f = b
+        .text(p, Rect::new(18.0, 18.0, 264.0, 164.0), NEWSLETTER)
+        .unwrap();
+    b.exec(Command::SetTextFrame {
+        frame: f,
+        props: TextFrameProps {
+            columns: Some(2),
+            column_gap: Some(10.0),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let s = b.story_of(f);
+    let size = |start, end, v| Command::ApplyCharProps {
+        story: s,
+        start,
+        end,
+        props: CharProps {
+            font_size: Some(v),
+            ..Default::default()
+        },
+    };
+    b.exec(size(0, NEWSLETTER.chars().count(), 9.0)).unwrap();
+    b.exec(size(0, 27, 12.0)).unwrap();
+    b.exec(Command::ApplyParaProps {
+        story: s,
+        start: 28,
+        end: 28,
+        props: ParaProps {
+            align: Some(Align::Justify),
+            hyphenate: hyphenate.then_some(true),
+            justify_limits: hyphenate.then(JustifyLimits::default),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.finish()
+}
+
+#[test]
+fn newsletter_justified() {
+    assert_png_golden(
+        "newsletter_justified",
+        &render(&newsletter(false), 0, &opts()),
+    );
+}
+
+#[test]
+fn newsletter_justified_hyphenated() {
+    assert_png_golden(
+        "newsletter_justified_hyphenated",
+        &render(&newsletter(true), 0, &opts()),
+    );
+}

@@ -38,6 +38,9 @@ pub enum WarningCode {
     EmptyPlaceholder,
     /// An image frame with no picture.
     EmptyImageFrame,
+    /// A paragraph asks for hyphenation in a language with no bundled
+    /// patterns; its words are not hyphenated.
+    HyphenationUnavailable,
 }
 
 /// A validation warning.
@@ -268,7 +271,55 @@ pub fn validate(doc: &Document) -> Vec<Warning> {
             }
         }
     }
+    // Paragraphs that ask for hyphenation in a language with no patterns.
+    for story in doc.stories.values() {
+        let mut seen: Vec<String> = Vec::new();
+        for p in &story.paragraphs {
+            let a = doc.styles.resolve_para(p);
+            if !a.hyphenate || hyphenation_supported(&a.language) {
+                continue;
+            }
+            if seen.contains(&a.language) {
+                continue;
+            }
+            seen.push(a.language.clone());
+            let frame = story.frames.first().copied();
+            let page = frame.and_then(|f| match doc.owner_of(f) {
+                Some(Owner::Page(p)) => Some(p),
+                _ => None,
+            });
+
+            out.push(Warning {
+                code: WarningCode::HyphenationUnavailable,
+                message: format!(
+                    "no hyphenation patterns for language {:?}; words are not hyphenated",
+                    a.language
+                ),
+                hint: format!(
+                    "set the paragraph language to one of: {}",
+                    HYPHENATION_LANGUAGES.join(", ")
+                ),
+                page,
+                frame,
+            });
+        }
+    }
     out
+}
+
+/// ISO 639-1 codes with bundled hyphenation patterns (see `ASSETS.md`).
+/// `pubrs-layout` tests that this list matches the enabled `hypher`
+/// languages.
+pub const HYPHENATION_LANGUAGES: &[&str] = &["en", "de", "es", "fr", "pl", "pt"];
+
+/// Whether the BCP 47 tag (e.g. "en-US", "de_DE") has bundled patterns.
+pub fn hyphenation_supported(tag: &str) -> bool {
+    let primary = tag
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    HYPHENATION_LANGUAGES.contains(&primary.as_str())
 }
 
 fn overhang(b: &Rect, bounds: &Rect) -> f64 {

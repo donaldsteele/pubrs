@@ -9,7 +9,7 @@ use crate::error::IoError;
 type Step = fn(Value) -> Result<Value, IoError>;
 
 /// One entry per past version, indexed by the version it upgrades from.
-const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2];
+const MIGRATIONS: [Step; SCHEMA_VERSION as usize] = [v0_to_v1, v1_to_v2, v2_to_v3];
 
 /// The schema version a document JSON declares (absent = 0).
 pub fn version_of(v: &Value) -> u64 {
@@ -55,6 +55,15 @@ fn v1_to_v2(mut v: Value) -> Result<Value, IoError> {
     v.as_object_mut()
         .expect("checked object")
         .insert("schema_version".into(), json!(2));
+    Ok(v)
+}
+
+/// Version 3 adds the paragraph fields `hyphenate`, `language` and
+/// `justify_limits`, all optional; unset keeps v0.1 behaviour.
+fn v2_to_v3(mut v: Value) -> Result<Value, IoError> {
+    v.as_object_mut()
+        .expect("checked object")
+        .insert("schema_version".into(), json!(3));
     Ok(v)
 }
 

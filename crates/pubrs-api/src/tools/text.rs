@@ -150,6 +150,15 @@ pub struct TextApplyParaStyle {
     pub left_indent: Option<f64>,
     #[serde(default)]
     pub right_indent: Option<f64>,
+    /// Break words at hyphenation points on loose lines (default off).
+    #[serde(default)]
+    pub hyphenate: Option<bool>,
+    /// BCP 47 language tag for hyphenation (default "en-US").
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Caps on justified stretch: `{max_word_space, letter_spacing}` (defaults 1.33 and 0.05). Unset leaves it as is (inherited, or unbounded as in v0.1); `{"unbounded": true}` removes limits a paragraph style sets.
+    #[serde(default)]
+    pub justify_limits: Option<pubrs_core::JustifyLimits>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -466,6 +475,9 @@ impl Session {
             first_line_indent: req.first_line_indent,
             left_indent: req.left_indent,
             right_indent: req.right_indent,
+            hyphenate: req.hyphenate,
+            language: req.language,
+            justify_limits: req.justify_limits,
         };
         if props != ParaProps::default() {
             commands.push(Command::ApplyParaProps {

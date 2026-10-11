@@ -5,7 +5,7 @@ Deferred and partial work. Each entry says what is missing and why.
 ## Later phases (designed for, not built)
 
 - Mail merge from CSV.
-- `.pub` import (reference: libmspub).
+- `.pub` import beyond M31 part 1 (reference: libmspub).
 - CMYK / spot colours, PDF/X output.
 - Tables.
 - WordArt-style text effects.
@@ -33,3 +33,20 @@ Deferred and partial work. Each entry says what is missing and why.
 - Bundled Mesa is pinned to mesa-dist-win 26.2.4. Updating it means a new version and SHA-256 in `packaging/windows/fetch-mesa.ps1` and `packaging/windows/mesa/THIRD-PARTY-NOTICES.txt`.
 - Find and replace does not search WordArt text yet (M25 must add it in `crates/pubrs-api/src/tools/find.rs`); table cells are covered because they are stories.
 - Guides on master pages are drawn on the pages using them but can only be moved through `guide_move` (there is no master-editing view in the GUI).
+
+## Hyphenation (M14)
+
+- Hyphenation languages left out (licence unclear or not allowed): Afrikaans, Danish, Greek, Estonian, Croatian, Icelandic, Italian, Georgian, Kurmanji, Latin, Mongolian, Dutch, Russian, Sanskrit, Serbian (Cyrillic), Slovenian, Swedish, Turkish and Ukrainian (LPPL-only or LPPL with MIT alternatives not yet checked); Slovak (GPL). Possible additions once checked: Belarusian, Bengali, Assamese, Gujarati, Hindi, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Turkmen, Albanian, Czech and Finnish (headers say MIT, or MIT alongside GPL/LGPL).
+- English US pattern licence (Kuiken's notice-preserving grant) is outside the LD5 list; the owner must confirm (ASSETS.md).
+- The built-in styles leave `justify_limits` unset (v0.1 behaviour, LD2); the M30 templates should enable limits in their body styles.
+- Letter-spaced justification spaces characters, not grapheme clusters, and uses the mean font size of the line for its cap.
+- The Paragraph dialog is under Text → Paragraph… (Ctrl/Cmd+Alt+P); there is no Format menu.
+
+## `.pub` import (M31)
+
+- `.pub` margin guides are not read; imported pages use 36 pt margins.
+- Blank `.pub` pages are dropped on import (they can't be told apart from placeholder pages).
+- Publisher 98 text is read as Windows-1252; non-Western code pages import garbled.
+- Masters, pictures, shapes, tables and colour schemes in `.pub` files are dropped and reported until M32.
+- Linked-chain flow order in 98/2000 `.pub` files is page order; prev/next ids are read only for 2002+.
+- The `.pub` oracle (libmspub) counts a chained story once per frame; recall is measured that way (ADR 0017).

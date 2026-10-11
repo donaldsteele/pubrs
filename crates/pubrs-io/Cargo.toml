@@ -30,4 +30,5 @@ image = { workspace = true, features = ["png", "jpeg"] }
 lopdf.workspace = true
 hayro = "0.8"
 proptest.workspace = true
+sha2 = "0.11"
 resvg.workspace = true

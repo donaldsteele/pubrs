@@ -33,6 +33,8 @@ pub use id::{
 };
 pub use model::*;
 pub use patch::{Patch, Touched};
-pub use style::{Align, CharAttrs, CharProps, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet};
+pub use style::{
+    Align, CharAttrs, CharProps, JustifyLimits, ParaAttrs, ParaProps, Style, StyleKind, StyleSheet,
+};
 pub use text::RunFormat;
 pub use validate::{Warning, WarningCode};

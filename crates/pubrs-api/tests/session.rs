@@ -360,6 +360,9 @@ fn styles_align_group_and_zorder() {
         space_after: None,
         first_line_indent: None,
         left_indent: None,
+        hyphenate: None,
+        language: None,
+        justify_limits: None,
         right_indent: None,
     })
     .unwrap();

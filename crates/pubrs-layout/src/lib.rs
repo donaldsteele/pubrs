@@ -10,6 +10,7 @@
 pub mod cache;
 pub mod flow;
 pub mod fonts;
+pub mod hyphen;
 pub mod types;
 
 pub use cache::{CacheStats, StoryLayoutCache};

@@ -276,10 +276,10 @@ Result:
 
 ```json
 {
-  "bytes": 158209,
+  "bytes": 158282,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -311,10 +311,10 @@ Result:
 
 ```json
 {
-  "bytes": 158209,
+  "bytes": 158282,
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "path": "<output_dir>/spring-fair.pubrs",
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -740,7 +740,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000b"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 51
+  "revision": 52
 }
 ```
 
@@ -930,7 +930,7 @@ Result:
     "height": 841.8897637795277,
     "width": 595.2755905511812
   },
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -1046,7 +1046,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000d"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 52
+  "revision": 53
 }
 ```
 
@@ -1477,7 +1477,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001e"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 48
+  "revision": 49
 }
 ```
 
@@ -1519,7 +1519,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 35
+  "revision": 36
 }
 ```
 
@@ -1560,7 +1560,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 36
+  "revision": 37
 }
 ```
 
@@ -1598,7 +1598,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 37
+  "revision": 38
 }
 ```
 
@@ -1637,7 +1637,7 @@ Result:
     "00000000-0000-87ea-8000-000000000002"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 38
+  "revision": 39
 }
 ```
 
@@ -1678,7 +1678,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "group_id": "00000000-0000-87ea-8000-00000000001d",
-  "revision": 45
+  "revision": 46
 }
 ```
 
@@ -1719,7 +1719,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014",
     "00000000-0000-87ea-8000-000000000013"
   ],
-  "revision": 46
+  "revision": 47
 }
 ```
 
@@ -1757,7 +1757,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 41
+  "revision": 42
 }
 ```
 
@@ -1781,7 +1781,7 @@ Result:
     "00000000-0000-87ea-8000-000000000011"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 42
+  "revision": 43
 }
 ```
 
@@ -1823,7 +1823,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 43
+  "revision": 44
 }
 ```
 
@@ -1866,7 +1866,7 @@ Result:
     "00000000-0000-87ea-8000-000000000014"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 44
+  "revision": 45
 }
 ```
 
@@ -1911,7 +1911,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 40
 }
 ```
 
@@ -1949,7 +1949,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 39
+  "revision": 40
 }
 ```
 
@@ -1989,7 +1989,7 @@ Result:
     "00000000-0000-87ea-8000-00000000000f"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 40
+  "revision": 41
 }
 ```
 
@@ -2057,7 +2057,7 @@ Result:
       "…": "5 more keys"
     }
   ],
-  "revision": 48
+  "revision": 49
 }
 ```
 
@@ -2122,7 +2122,7 @@ Result:
       "mode": "square"
     }
   },
-  "revision": 48,
+  "revision": 49,
   "summary": {
     "asset_id": "00000000-0000-87ea-8000-00000000001b",
     "frame_id": "00000000-0000-87ea-8000-000000000013",
@@ -2182,7 +2182,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "frame_id": "00000000-0000-87ea-8000-00000000001e",
-  "revision": 47
+  "revision": 48
 }
 ```
 
@@ -2227,7 +2227,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "length": 43,
   "overflowing": true,
-  "revision": 27,
+  "revision": 28,
   "story_id": "00000000-0000-87ea-8000-000000000010"
 }
 ```
@@ -2390,6 +2390,9 @@ Format paragraphs touching start..end (default all): paragraph style by name (e.
 | `end` | integer |  |  |
 | `first_line_indent` | number |  |  |
 | `frame_id` | string |  | Identifies a frame (text, image, shape or group). |
+| `hyphenate` | boolean |  | Break words at hyphenation points on loose lines (default off). |
+| `justify_limits` | object |  | Caps on justified stretch: `{max_word_space, letter_spacing}` (defaults 1.33 and 0.05). Unset leaves it as is (inherited, or unbounded as in v0.1); `{"unbounded": true}` removes limits a paragraph style sets. |
+| `language` | string |  | BCP 47 language tag for hyphenation (default "en-US"). |
 | `left_indent` | number |  |  |
 | `line_spacing` | number |  | Line height as a multiple of the font size (1.2 = normal). |
 | `right_indent` | number |  |  |
@@ -2425,6 +2428,36 @@ Result:
   "length": 219,
   "overflowing": false,
   "revision": 25,
+  "story_id": "00000000-0000-87ea-8000-000000000016"
+}
+```
+
+**Example** — Hyphenation on, and justification limited to the defaults (word spaces up to 133%, then letter spacing up to 5%). Without justify_limits, justification is unbounded as in v0.1; typed soft hyphens (U+00AD) are honoured either way.
+
+```json
+{
+  "arguments": {
+    "align": "justify",
+    "frame_id": "00000000-0000-87ea-8000-000000000015",
+    "hyphenate": true,
+    "justify_limits": {},
+    "language": "en-US"
+  },
+  "name": "text_apply_para_style"
+}
+```
+
+Result:
+
+```json
+{
+  "affected_ids": [
+    "00000000-0000-87ea-8000-000000000016"
+  ],
+  "doc_id": "00000000-0000-87ea-8000-00000000000a",
+  "length": 219,
+  "overflowing": false,
+  "revision": 26,
   "story_id": "00000000-0000-87ea-8000-000000000016"
 }
 ```
@@ -2507,7 +2540,7 @@ Result:
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "new_story_id": "00000000-0000-87ea-8000-000000000019",
-  "revision": 28
+  "revision": 29
 }
 ```
 
@@ -2760,7 +2793,7 @@ Result:
     "00000000-0000-87ea-8000-000000000017"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 26
+  "revision": 27
 }
 ```
 
@@ -2796,7 +2829,7 @@ Result:
 
 ```json
 {
-  "revision": 28,
+  "revision": 29,
   "styles": [
     {
       "character": {
@@ -2887,7 +2920,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 29,
+  "revision": 30,
   "style_id": "00000000-0000-87ea-8000-00000000001a"
 }
 ```
@@ -2931,7 +2964,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 30
+  "revision": 31
 }
 ```
 
@@ -2971,7 +3004,7 @@ Result:
     "00000000-0000-87ea-8000-00000000001a"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 31
+  "revision": 32
 }
 ```
 
@@ -3020,7 +3053,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000014",
   "pixel_height": 100,
   "pixel_width": 100,
-  "revision": 34
+  "revision": 35
 }
 ```
 
@@ -3062,7 +3095,7 @@ Result:
     "00000000-0000-87ea-8000-000000000013"
   ],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 32
+  "revision": 33
 }
 ```
 
@@ -3099,7 +3132,7 @@ Result:
 {
   "affected_ids": [],
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
-  "revision": 32
+  "revision": 33
 }
 ```
 
@@ -3147,7 +3180,7 @@ Result:
   "frame_id": "00000000-0000-87ea-8000-000000000013",
   "pixel_height": 1200,
   "pixel_width": 1800,
-  "revision": 33
+  "revision": 34
 }
 ```
 
@@ -3521,7 +3554,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "page_count": 2,
   "path": "<output_dir>/spring-fair.pdf",
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -3590,7 +3623,7 @@ Result:
   "height": 842,
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "path": "<output_dir>/spring-fair.png",
-  "revision": 50,
+  "revision": 51,
   "width": 596
 }
 ```
@@ -3632,7 +3665,7 @@ Result:
   "mime_type": "image/png",
   "page_id": "00000000-0000-87ea-8000-000000000002",
   "png_base64": "iVBORw0KGgoAAAANSUhEUgAAAPkAAAFfCAYAAACMfWrXAAAdKklEQVR4nO3d… (10032 characters)",
-  "revision": 50,
+  "revision": 51,
   "width": 249
 }
 ```
@@ -3673,7 +3706,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 49
+  "revision": 50
 }
 ```
 
@@ -3711,7 +3744,7 @@ Result:
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "done": true,
   "label": "delete frame",
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -3764,9 +3797,9 @@ Result:
       "name": "add_page",
       "undone": false
     },
-    "… 43 more"
+    "… 44 more"
   ],
-  "revision": 48
+  "revision": 49
 }
 ```
 
@@ -3948,7 +3981,7 @@ Result:
         "master": "00000000-0000-87ea-8000-00000000000c"
       }
     ],
-    "schema_version": 2,
+    "schema_version": 3,
     "setup": {
       "bleed": 9.0,
       "margins": {
@@ -4005,23 +4038,23 @@ Result:
         "paragraphs": [
           {
             "align": "justify",
-            "runs": [
-              {
-                "text": "Stalls, games and the famous cake competition. Bring everyone for a day on the green."
-              }
-            ],
-            "space_after": 6.0,
-            "style": "00000000-0000-87ea-8000-000000000007"
+            "hyphenate": true,
+            "justify_limits": {
+              "letter_spacing": 0.05,
+              "max_word_space": 1.33
+            },
+            "language": "en-US",
+            "…": "3 more keys"
           },
           {
             "align": "justify",
-            "runs": [
-              {
-                "text": "Entry is free. All proceeds go to the church roof fund, which still needs a great deal of help after last winter's storms. Thank you!"
-              }
-            ],
-            "space_after": 6.0,
-            "style": "00000000-0000-87ea-8000-000000000007"
+            "hyphenate": true,
+            "justify_limits": {
+              "letter_spacing": 0.05,
+              "max_word_space": 1.33
+            },
+            "language": "en-US",
+            "…": "3 more keys"
           }
         ]
       },
@@ -4033,13 +4066,13 @@ Result:
         "paragraphs": [
           {
             "align": "justify",
-            "runs": [
-              {
-                "text": ""
-              }
-            ],
-            "space_after": 6.0,
-            "style": "00000000-0000-87ea-8000-000000000007"
+            "hyphenate": true,
+            "justify_limits": {
+              "letter_spacing": 0.05,
+              "max_word_space": 1.33
+            },
+            "language": "en-US",
+            "…": "3 more keys"
           }
         ]
       }
@@ -4074,7 +4107,7 @@ Result:
       ]
     }
   },
-  "revision": 50
+  "revision": 51
 }
 ```
 
@@ -4107,7 +4140,7 @@ Result:
 {
   "doc_id": "00000000-0000-87ea-8000-00000000000a",
   "ok": false,
-  "revision": 50,
+  "revision": 51,
   "warnings": [
     {
       "code": "overflow",

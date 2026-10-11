@@ -1215,6 +1215,65 @@ impl SelfTest {
                 }
                 crate::find::close(app);
                 self.ok("a single Cmd+Z restored every replaced match (one undo step)");
+            }
+            50 => {
+                // Paragraph dialog: hyphenation on a justified story.
+                app.new_blank();
+                let req: pubrs_api::tools::frames::FrameAddText =
+                    serde_json::from_value(serde_json::json!({
+                        "x": 40.0, "y": 40.0, "width": 150.0, "height": 400.0,
+                        "align": "justify",
+                        "text": "Extraordinary hyphenation demonstrates comprehensive typographic \
+                    craftsmanship throughout international newsletters, particularly considering \
+                    unforgettable communication opportunities and administration.",
+                    }))
+                    .map_err(|e| e.to_string())?;
+                let out = app.session.frame_add_text(req).map_err(|e| e.message)?;
+                app.select(vec![out.frame_id]);
+                self.key(Key::P, Modifiers::COMMAND | Modifiers::ALT);
+            }
+            51 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Paragraph(_))) {
+                    return Err(format!(
+                        "Cmd+Alt+P did not open the Paragraph dialog (selection {:?}, dialog open: {})",
+                        app.selection(),
+                        app.dialog.is_some()
+                    ));
+                }
+                self.click_target(ctx, "hyphenate")?;
+            }
+            52 => {
+                self.click_target(ctx, "limit")?;
+            }
+            53 => {
+                self.screenshot(ctx);
+                // Confirm from the keyboard.
+                self.key(Key::Enter, Modifiers::NONE);
+            }
+            54 => {
+                if app.dialog.is_some() {
+                    return Err("Enter did not close the Paragraph dialog".into());
+                }
+                let id = app.doc_id();
+                let lay = app.session.layout(id).map_err(|e| e.message)?;
+                let hyphenated = lay
+                    .stories
+                    .values()
+                    .flat_map(|s| s.frames.values())
+                    .flat_map(|f| f.lines.iter())
+                    .filter(|l| {
+                        l.runs
+                            .last()
+                            .and_then(|r| r.glyphs.last())
+                            .is_some_and(|g| g.text.is_empty() && g.advance > 0.0)
+                    })
+                    .count();
+                if hyphenated == 0 {
+                    return Err("no hyphenated line after turning Hyphenate on".into());
+                }
+                self.ok(format!(
+                    "Paragraph dialog (keyboard + mouse): Hyphenate on, {hyphenated} hyphenated line(s) in the layout"
+                ));
                 return Ok(true);
             }
             _ => return Ok(true),

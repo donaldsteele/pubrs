@@ -34,6 +34,7 @@
   {"tool": "text_replace_range", "args": {"frame_id": "${title.frame_id}", "start": 0, "end": 4, "text": ""}},
   {"tool": "text_apply_char_style", "args": {"frame_id": "${title.frame_id}", "start": 0, "end": 11, "color": "#C2410C", "font_size": 40}},
   {"tool": "text_apply_para_style", "args": {"frame_id": "${body.frame_id}", "align": "justify", "space_after": 6}},
+  {"tool": "text_apply_para_style", "args": {"frame_id": "${body.frame_id}", "align": "justify", "hyphenate": true, "language": "en-US", "justify_limits": {}}, "note": "Hyphenation on, and justification limited to the defaults (word spaces up to 133%, then letter spacing up to 5%). Without justify_limits, justification is unbounded as in v0.1; typed soft hyphens (U+00AD) are honoured either way."},
   {"tool": "text_set_frame_options", "args": {"frame_id": "${body2.frame_id}", "inset": 6, "vertical_align": "top"}},
   {"tool": "text_set", "args": {"frame_id": "${title.frame_id}", "text": "# Spring Fair\nSaturday 12 May · **Village Green**", "markup": true}},
   {"tool": "text_unlink_frames", "args": {"frame_id": "${body.frame_id}"}},

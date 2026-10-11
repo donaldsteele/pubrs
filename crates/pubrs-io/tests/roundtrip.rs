@@ -403,10 +403,14 @@ fn schema_1_bakery_sample_opens_renders_the_same_golden_and_round_trips() {
 #[test]
 fn every_schema_fixture_opens_and_round_trips() {
     let bless = std::env::var_os("PUBRS_BLESS").is_some();
-    let v = SCHEMA_VERSION;
-    let current = fixtures_dir().join(format!("schema_v{v}.pubrs"));
-    if bless || !current.exists() {
-        pubrs_io::save(&sheet_document(), &current, None).unwrap();
+    // Each fixture is written once by the milestone that introduced its
+    // version and never rewritten except when blessing.
+    let fixtures: [(u32, Document); 2] = [(2, sheet_document()), (3, hyphenation_document())];
+    for (v, doc) in &fixtures {
+        let path = fixtures_dir().join(format!("schema_v{v}.pubrs"));
+        if bless || !path.exists() {
+            pubrs_io::save(doc, &path, None).unwrap();
+        }
     }
     let mut n = 0;
     for entry in std::fs::read_dir(fixtures_dir()).unwrap() {
@@ -421,15 +425,50 @@ fn every_schema_fixture_opens_and_round_trips() {
         assert_eq!(again, doc, "{name} round trip");
         n += 1;
     }
-    assert!(n >= 2, "expected schema_v1 and schema_v{v} fixtures");
-    let doc = pubrs_io::load(&current).unwrap();
-    let sheet = doc
-        .setup
-        .sheet
-        .as_ref()
-        .expect("the current fixture uses a sheet");
+    assert!(n >= 3, "expected the schema_v1, v2 and v3 fixtures");
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v2.pubrs")).unwrap();
+    let sheet = doc.setup.sheet.as_ref().expect("v2 fixture uses a sheet");
     assert_eq!(
         (sheet.preset.as_str(), sheet.fill),
         ("avery-5160", SheetFill::Sequence)
     );
+    let doc = pubrs_io::load(&fixtures_dir().join("schema_v3.pubrs")).unwrap();
+    let story = doc.stories.values().next().unwrap();
+    let a = doc.styles.resolve_para(&story.paragraphs[0]);
+    assert!(a.hyphenate);
+    assert_eq!(a.language, "de-DE");
+    assert_eq!(a.justify_limits.unwrap().max_word_space, 1.2);
+}
+
+/// The document `tests/fixtures/schema_v3.pubrs` is written from: a
+/// justified German paragraph with hyphenation and justify limits.
+fn hyphenation_document() -> Document {
+    let mut b = DocBuilder::new(SeqIds::new(1402), PageSetup::default());
+    let p = b.page(0);
+    let f = b
+        .text(
+            p,
+            Rect::new(36.0, 36.0, 200.0, 120.0),
+            "Donaudampfschifffahrtsgesellschaft und Kaffeetassenhersteller.",
+        )
+        .unwrap();
+    let story = b.story_of(f);
+    b.exec(Command::ApplyParaProps {
+        story,
+        start: 0,
+        end: 0,
+        props: ParaProps {
+            align: Some(Align::Justify),
+            hyphenate: Some(true),
+            language: Some("de-DE".into()),
+            justify_limits: Some(JustifyLimits {
+                max_word_space: 1.2,
+                letter_spacing: 0.03,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    b.finish()
 }
