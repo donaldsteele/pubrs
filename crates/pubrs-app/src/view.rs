@@ -254,6 +254,27 @@ pub enum Drag {
         current: Point,
     },
     TextSelect,
+    /// Dragging across the cells of a table from `anchor` (row, column).
+    TableSel {
+        frame: FrameId,
+        anchor: (u32, u32),
+    },
+    /// Dragging the border right of column `col` (left edge `x0`, frame-local).
+    TableCol {
+        frame: FrameId,
+        col: u32,
+        x0: f64,
+        orig: f64,
+        width: f64,
+    },
+    /// Dragging the bottom border of row `row` (top edge `top`, frame-local).
+    TableRow {
+        frame: FrameId,
+        row: u32,
+        top: f64,
+        orig: f64,
+        height: f64,
+    },
     /// Placing a new guide (`id` is None) or moving an existing one.
     Guide {
         owner: Owner,
@@ -327,6 +348,8 @@ pub struct DocView {
     pub canvas_rect: Option<egui::Rect>,
     /// A page-space rectangle to scroll into view on the next frame.
     pub scroll_to: Option<Rect>,
+    /// The cell range selected in a table (M20).
+    pub table_sel: Option<crate::tables::TableSel>,
 }
 
 impl DocView {
@@ -348,6 +371,7 @@ impl DocView {
             xf: None,
             canvas_rect: None,
             scroll_to: None,
+            table_sel: None,
         }
     }
 

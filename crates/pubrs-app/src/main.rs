@@ -20,6 +20,7 @@ mod render_worker;
 mod rulers;
 mod selftest;
 mod spell;
+mod tables;
 mod textedit;
 mod view;
 

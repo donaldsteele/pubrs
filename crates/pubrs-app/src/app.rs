@@ -141,6 +141,12 @@ pub struct PubrsApp {
     renderer_restarts: u32,
     /// Spell checking off the UI thread, squiggles, menu and window.
     pub spell: crate::spell::SpellState,
+    /// The table context menu, while it is open (M20).
+    pub table_menu: Option<crate::tables::TableMenu>,
+    /// Counts table edits so each gets its own undo key.
+    pub table_serial: u64,
+    /// One-shot request to bring the panel's Cell section into view.
+    pub focus_cell_props: bool,
 }
 
 /// Failed renders of one view retried before giving up until it changes.
@@ -204,6 +210,9 @@ impl PubrsApp {
             renderer: crate::render_worker::RenderWorker::new(cc.egui_ctx.clone()),
             renderer_restarts: 0,
             spell: crate::spell::SpellState::new(&cc.egui_ctx, Some(dictionaries)),
+            table_menu: None,
+            table_serial: 0,
+            focus_cell_props: false,
         };
         app.load_settings();
         app.fonts = app
@@ -290,6 +299,13 @@ impl PubrsApp {
 
     /// Execute a raw command on the active document (GUI edits).
     pub fn exec(&mut self, command: Command) -> bool {
+        // A command on a table cell's text can make a row taller: it runs
+        // under its own key so the frame's growth joins its undo step.
+        if self.cell_frame(&command).is_some() {
+            self.table_serial += 1;
+            let key = format!("table-cell-{}", self.table_serial);
+            return self.exec_merge(command, &key);
+        }
         let Some(id) = self.doc_id() else {
             return false;
         };
@@ -306,12 +322,35 @@ impl PubrsApp {
         let Some(id) = self.doc_id() else {
             return false;
         };
+        let cell_frame = self.cell_frame(&command);
         let t0 = Instant::now();
         let r = self.session.exec_coalesced(Some(id), command, key);
         if let Some(p) = &mut self.perf {
             p.command(t0.elapsed());
         }
-        self.report(r).is_some()
+        let ok = self.report(r).is_some();
+        if ok && let Some(frame) = cell_frame {
+            // The edit grew a row: the frame follows, in the same undo step
+            // (and the same coalescing key). Only GUI commands do this.
+            crate::tables::grow(self, frame, key);
+        }
+        ok
+    }
+
+    /// The table whose cell a text command edits (the edited cell's frame
+    /// without a search, else the table holding the story).
+    fn cell_frame(&self, command: &Command) -> Option<FrameId> {
+        let story = crate::tables::story_of_command(command)?;
+        if let Some(e) = self.view().and_then(|v| v.edit.as_ref())
+            && e.story == story
+        {
+            return self
+                .doc()?
+                .frame(e.frame)
+                .is_some_and(|f| f.as_table().is_some())
+                .then_some(e.frame);
+        }
+        self.doc()?.table_of_story(story)
     }
 
     /// Bring a document's layout up to date, timed for the frame statistics
@@ -462,6 +501,7 @@ impl PubrsApp {
         if let Some(v) = self.view_mut() {
             v.selection = frames;
             v.edit = None;
+            v.table_sel = None;
         }
     }
 
@@ -967,7 +1007,7 @@ impl PubrsApp {
             Action::ToggleShadow | Action::BorderArt if self.selection().is_empty() => {
                 Some("Select a frame first")
             }
-            Action::InsertWordArt if self.doc().is_none() => {
+            Action::InsertWordArt | Action::InsertTable if self.doc().is_none() => {
                 Some("Open or create a publication first")
             }
             _ => None,
@@ -1182,6 +1222,11 @@ impl PubrsApp {
             InsertPicture => self.tool = crate::app::Tool::Picture,
             InsertRectangle => self.tool = crate::app::Tool::Rectangle,
             InsertEllipse => self.tool = crate::app::Tool::Ellipse,
+            InsertTable => {
+                if self.doc().is_some() {
+                    self.dialog = Some(Dialog::Table(crate::dialogs::TableState::new()));
+                }
+            }
             InsertWordArt => {
                 if self.doc().is_some() {
                     self.dialog = Some(Dialog::WordArt(Box::new(

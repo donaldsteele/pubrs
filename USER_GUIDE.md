@@ -142,6 +142,44 @@ onto the window to place it in the selected picture frame.
 - Words with digits, web and e-mail addresses, and words in capitals only
   (acronyms) are not checked.
 
+### Tables
+
+- **Insert → Table…** opens a grid: point at it and click to choose the rows
+  and columns (or type them; up to 200 rows and 40 columns) and press
+  **Insert**. The table appears centred on the page, about two thirds of the
+  margin width, with 24 pt rows and thin black borders, and its first cell is
+  ready for typing. Inserting is one undo step.
+- **Typing.** Click a table once to select it, then click a cell (or
+  double-click a cell at any time) to type in it. **Tab** moves to the next
+  cell and **Shift+Tab** to the previous one, with the cursor at the end of
+  its text. **Tab in the last cell adds a row** (one undo step). **Control+Tab**
+  types a tab character (the Control key on macOS too, not Command). Typing in a cell is undone like other text: five
+  characters typed in a row are one step. A row grows with its text, and the
+  table's frame grows with the rows.
+- **Selecting cells.** With the table selected, drag from one cell to another
+  to select a rectangle of cells (shown in blue; merged cells are always
+  included whole), or Shift+click a second cell while editing. **Esc** clears
+  the range. Hold **Alt** while dragging to move a table that is already
+  selected.
+- **Resizing.** With the table selected or a cell being edited, point at a
+  column border or the bottom of a row: the pointer changes, and dragging moves
+  the border (a line shows where it will land). Dragging a column border
+  changes the width of the column on its left, so the table gets wider or
+  narrower; dragging a row border sets that row's minimum height. Each drag is
+  one undo step; columns and rows stay at least 6 pt.
+- **Right-click** in a table for **Insert Row Above/Below**, **Insert Column
+  Left/Right**, **Delete Row(s)** and **Delete Column(s)** (for the selected
+  cells, or the cell you clicked), **Merge Cells** (when more than one cell is
+  selected), **Split Cell** (for a merged cell) and **Cell Properties…**. A
+  table always keeps at least one row and one column. On a misspelt word the
+  spelling suggestions come first. Every item is one undo step.
+- **Cell properties.** The properties panel has a Cell section for the cell
+  being edited, the selected cells, or every cell when only the table is
+  selected: **Fill**, **Borders** (All, Top, Right, Bottom or Left, with colour,
+  width and None), **Vertical** alignment, **Insets** (one value, or each
+  side), and the width of the current column and the minimum height of the
+  current row. A change to several cells is one undo step.
+
 ### Keyboard shortcuts
 
 | Action | Windows / Linux | macOS |

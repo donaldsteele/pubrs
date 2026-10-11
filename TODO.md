@@ -116,11 +116,21 @@ Deferred and partial work. Each entry says what is missing and why.
 - Splitting a cell only undoes a merge; there is no "split into N rows and M columns" that adds grid lines. Insert rows and columns instead.
 - Table text is clipped to whole lines at the frame's bottom; a table never grows its frame, and rows below the bottom have no height.
 - Tagged PDF has no Table, Row or Cell structure elements (cells are artifacts and text spans).
-- The canvas edits a cell on double-click only: clicking another cell while editing, arrow keys moving between cells and Tab to the next cell are T12 (M20), with the table GUI. Up/Down inside a cell use the cell's own lines.
+- Up/Down inside a cell use the cell's own lines; the arrow keys never leave a cell (Tab and Shift+Tab move between cells).
 - Wrap obstacles do not affect cell text (a cell never wraps around a frame above it); a table with wrap set is an obstacle by its rectangle.
 - A cell's fill is a solid colour or swatch (no gradients).
 
 - Templates have no table builder yet: T22 adds a `table(...)` helper to `templates.rs` with the first template that carries a table (`DocBuilder::table` and `cell_text` exist).
+
+## Tables in the GUI (M20)
+
+- A selected table moves only with Alt+drag (a plain drag in a selected table selects text or cells); there is no move handle on the table's border.
+- A column or row border drag shows a guide line and applies on release; the table does not reflow live.
+- Text menu, Format and character shortcuts act on the cell being edited only; with cells selected (or only the table) they are unavailable. Delete and typing do nothing on a cell range, and copy, cut and paste of cell ranges are not done.
+- The frame grows with its rows (typing, row inserts, row heights) but never shrinks; shrinking rows leaves the frame as tall as it was, and resizing the frame is how to trim it.
+- Insert Row/Column insert one line at a time (the count of selected rows is not used); no "distribute columns evenly".
+- Shift+F10 opens the spelling menu in a cell without the table items; only a right-click shows them.
+- The frame grows with its rows only for edits the GUI makes (typing, replace, character and paragraph formats, row, column and cell-style commands). Changes through the MCP tools do not grow the frame; `table_set_row_height` etc. leave the frame as it was.
 
 ## Wrap (M18 review)
 

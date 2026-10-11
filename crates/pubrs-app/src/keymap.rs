@@ -35,6 +35,7 @@ pub enum Action {
     InsertLine,
     /// Insert → WordArt…
     InsertWordArt,
+    InsertTable,
     /// Format → Shadow: toggle a default drop shadow on the selection.
     ToggleShadow,
     /// Format → Border Art…
@@ -226,6 +227,7 @@ pub const MENUS: &[MenuSpec] = &[
             A("Ellipse", Action::InsertEllipse),
             A("Line", Action::InsertLine),
             A("WordArt…", Action::InsertWordArt),
+            A("Table…", Action::InsertTable),
             Sub(
                 "Break",
                 &[

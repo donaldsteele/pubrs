@@ -708,6 +708,8 @@ pub fn context_menu(app: &mut PubrsApp, ui: &egui::Ui) {
     }
     let mut open = true;
     let mut act = None;
+    let mut table_act = None;
+    let table_menu = app.table_menu.clone();
     let mut focused = false;
     egui::Popup::new(
         egui::Id::new("spell-menu"),
@@ -754,6 +756,11 @@ pub fn context_menu(app: &mut PubrsApp, ui: &egui::Ui) {
         if r.clicked() {
             act = Some(MenuAct::Ignore);
         }
+        // A right-click in a table cell lists the table items after these.
+        if let Some(tm) = &table_menu {
+            ui.separator();
+            table_act = crate::tables::items_ui(ui, tm);
+        }
         if menu.focus
             && let Some(id) = first
         {
@@ -777,6 +784,13 @@ pub fn context_menu(app: &mut PubrsApp, ui: &egui::Ui) {
             open = false;
         }
         None => {}
+    }
+    if let (Some(tm), Some(a)) = (table_menu, table_act) {
+        crate::tables::apply(app, &tm, a);
+        open = false;
+    }
+    if !open {
+        app.table_menu = None;
     }
     match (&mut app.spell.menu, open) {
         (Some(m), true) => m.focus &= !focused,

@@ -126,6 +126,12 @@ struct Data {
     m25: Option<(FrameId, FrameId)>,
     /// Undo steps done before the step being checked (M25).
     m25_hist: usize,
+    /// M20: the table, the undo steps before a check and a column's width.
+    m20: Option<FrameId>,
+    m20_hist: usize,
+    m20_w: f64,
+    /// The table frame's height before the wrapping edit.
+    m20_h: f64,
     /// The step being retried and how often.
     retry: (usize, u32),
     /// M16: the list frame and the price frame.
@@ -456,6 +462,26 @@ impl SelfTest {
             .ok_or_else(|| format!("Page Setup control '{name}' is not on screen"))?;
         self.click(r.center(), false);
         Ok(())
+    }
+
+    /// Screen centre of a table cell (an unrotated table).
+    fn cell_center(app: &mut PubrsApp, frame: FrameId, row: u32, col: u32) -> Result<Pos2, String> {
+        let id = app.doc_id().ok_or("no doc")?;
+        let layout = app.session.layout(Some(id)).map_err(|e| e.message)?;
+        let doc = app.doc().ok_or("no doc")?;
+        let f = doc.frame(frame).ok_or("no table")?;
+        let t = f.as_table().ok_or("not a table")?;
+        let i = t
+            .cells
+            .iter()
+            .position(|c| c.row == row && c.col == col)
+            .ok_or("no such cell")?;
+        let r = layout.table(frame).ok_or("no table layout")?.cells[i].rect;
+        let c = Point::new(
+            f.rect.x + r.x + r.width / 2.0,
+            f.rect.y + r.y + r.height / 2.0,
+        );
+        Self::screen_of(app, c).ok_or_else(|| "canvas not laid out".to_string())
     }
 
     fn drag(&mut self, from: Pos2, to: Pos2) {
@@ -2812,6 +2838,432 @@ impl SelfTest {
                 }
                 self.ok("Text wrap \u{25b8} Tight and Text on both sides (chosen in the panel): lines sit left and right of the ellipse on the same rows");
                 self.screenshot(ctx);
+            }
+            161 => {
+                // M20: tables. Insert > Table… in a blank publication.
+                app.new_blank();
+                app.select(Vec::new());
+                // A swatch for the cell fill (a blank publication has none).
+                let id = pubrs_api::core::SwatchId::new(app.session.ids());
+                app.exec(Command::AddSwatch {
+                    swatch: pubrs_api::core::Swatch {
+                        id,
+                        name: "Header blue".into(),
+                        value: pubrs_api::core::SwatchValue::Rgb(pubrs_api::core::Color::rgb(
+                            191, 219, 254,
+                        )),
+                    },
+                });
+                self.data.m20_hist = Self::done_steps(app);
+                app.run_action(ctx, Action::InsertTable);
+            }
+            162 => {
+                if !matches!(app.dialog, Some(crate::dialogs::Dialog::Table(_))) {
+                    return Err("Insert \u{25b8} Table… did not open the dialog".into());
+                }
+                self.screenshot(ctx);
+                // The third row and third column of the hover grid.
+                self.click_target(ctx, "table-grid-2-2")?;
+            }
+            163 => {
+                self.click_target(ctx, "ok")?;
+            }
+            164 => {
+                if app.dialog.is_some() {
+                    return Err("the Table dialog stayed open after Insert".into());
+                }
+                let steps_now = Self::done_steps(app);
+                let doc = app.doc().ok_or("no doc")?;
+                let (id, t) = doc
+                    .frames
+                    .values()
+                    .find_map(|f| f.as_table().map(|t| (f.id, t.clone())))
+                    .ok_or("Insert did not add a table")?;
+                if t.rows.len() != 3 || t.cols.len() != 3 {
+                    return Err(format!("the grid gave {}x{}", t.rows.len(), t.cols.len()));
+                }
+                if steps_now != self.data.m20_hist + 1 {
+                    return Err("inserting the table was not one undo step".into());
+                }
+                let first = t.cells[0].story;
+                let editing = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.story);
+                if editing != Some(first) || app.selection() != [id] {
+                    return Err("the new table is not selected with its first cell in edit".into());
+                }
+                self.data.m20 = Some(id);
+                self.ok("Insert \u{25b8} Table…: 3x3 from the hover grid, one undo step, first cell ready for typing");
+                // Type into every cell with Tab between them, one character
+                // at a time (typing coalesces per cell).
+                for k in 0..9 {
+                    for ch in format!("cell{k}").chars() {
+                        self.pending.push_back(vec![Event::Text(ch.to_string())]);
+                    }
+                    if k < 8 {
+                        self.key(Key::Tab, Modifiers::NONE);
+                    }
+                }
+            }
+            165 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps = Self::done_steps(app) - self.data.m20_hist;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                for (i, c) in t.cells.iter().enumerate() {
+                    let text = doc
+                        .story(c.story)
+                        .map(|s| s.plain_text())
+                        .unwrap_or_default();
+                    if text != format!("cell{i}") {
+                        return Err(format!("cell {i} holds {text:?}, not \"cell{i}\""));
+                    }
+                }
+                if steps != 10 {
+                    return Err(format!("table + 9 cells took {steps} undo steps, not 10"));
+                }
+                self.ok("typed into all nine cells with Tab (no tab characters), one undo step per cell");
+                // Five typed characters undo as one step.
+                app.run_action(ctx, Action::Undo);
+            }
+            166 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let last = t.cells.last().ok_or("no cells")?.story;
+                let text = doc.story(last).map(|s| s.plain_text()).unwrap_or_default();
+                if !text.is_empty() {
+                    return Err(format!("undo left {text:?} in the last cell"));
+                }
+                self.ok("undo removed the five characters typed in the last cell in one step");
+                app.run_action(ctx, Action::Redo);
+            }
+            167 => {
+                // Tab in the last cell adds a row.
+                let id = self.data.m20.ok_or("no table")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let last = t.cells.last().ok_or("no cells")?.story;
+                if doc.story(last).map(|s| s.plain_text()).as_deref() != Some("cell8") {
+                    return Err("redo did not bring the text back".into());
+                }
+                self.data.m20_hist = Self::done_steps(app);
+                crate::canvas::begin_edit(app, id, last, 5);
+                self.key(Key::Tab, Modifiers::NONE);
+            }
+            168 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                if t.rows.len() != 4 {
+                    return Err(format!("Tab in the last cell gave {} rows", t.rows.len()));
+                }
+                if steps_now != self.data.m20_hist + 1 {
+                    return Err("Tab in the last cell took more than one undo step".into());
+                }
+                let new_first = t.cell_at(3, 0).ok_or("no new cell")?.story;
+                let editing = app.view().and_then(|v| v.edit.as_ref()).map(|e| e.story);
+                if editing != Some(new_first) {
+                    return Err("the new row's first cell is not being edited".into());
+                }
+                self.ok("Tab in the last cell added a row (4 rows) and edits its first cell");
+                app.run_action(ctx, Action::Undo);
+            }
+            169 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let rows = app
+                    .doc()
+                    .and_then(|d| d.frame(id))
+                    .and_then(|f| f.as_table())
+                    .map(|t| t.rows.len());
+                if rows != Some(3) || Self::done_steps(app) != self.data.m20_hist {
+                    return Err(format!("undo of the new row left {rows:?} rows"));
+                }
+                self.ok("one undo removed the row again (3 rows)");
+                app.select(vec![id]);
+            }
+            170 => {
+                // Drag across the header row.
+                let id = self.data.m20.ok_or("no table")?;
+                let a = Self::cell_center(app, id, 0, 0)?;
+                let b = Self::cell_center(app, id, 0, 2)?;
+                self.drag(a, b);
+            }
+            171 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let sel = app.view().and_then(|v| v.table_sel);
+                match sel {
+                    Some(s) if s.frame == id && (s.r0, s.c0, s.r1, s.c1) == (0, 0, 0, 2) => {}
+                    other => return Err(format!("dragging across the header gave {other:?}")),
+                }
+                self.ok("dragging across the header row selected cells (0,0) to (0,2)");
+                let pos = Self::cell_center(app, id, 0, 1)?;
+                self.right_click(pos);
+            }
+            172 => {
+                if app.table_menu.is_none() {
+                    return Err("right-click in the table did not open its menu".into());
+                }
+                // The menu is on screen for the screenshot.
+                self.screenshot(ctx);
+            }
+            173 => {
+                self.data.m20_hist = Self::done_steps(app);
+                self.click_target(ctx, "table-merge")?;
+            }
+            174 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let y = Self::cell_center(app, id, 2, 0)?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let c = t.cell_at(0, 0).ok_or("no cell")?;
+                if (c.row_span, c.col_span) != (1, 3) {
+                    return Err(format!("merge gave a {}x{} span", c.row_span, c.col_span));
+                }
+                if steps_now != self.data.m20_hist + 1 {
+                    return Err("merging took more than one undo step".into());
+                }
+                let text = doc
+                    .story(c.story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if text != "cell0\ncell1\ncell2" {
+                    return Err(format!("the merged header holds {text:?}"));
+                }
+                self.ok("context menu \u{25b8} Merge Cells: the header is one 1x3 cell in one undo step, text kept as paragraphs");
+                // Drag the border between columns 1 and 2 below the header.
+                self.data.m20_w = t.cols[0];
+                self.data.m20_hist = steps_now;
+                let f = doc.frame(id).ok_or("frame")?.rect;
+                let x =
+                    Self::screen_of(app, Point::new(f.x + t.cols[0], f.y)).ok_or("no canvas")?;
+                self.drag(Pos2::new(x.x, y.y), Pos2::new(x.x + 30.0, y.y));
+            }
+            175 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let cell10 = Self::cell_center(app, id, 1, 0)?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let scale = app
+                    .view()
+                    .and_then(|v| v.xf)
+                    .map_or(1.0, |xf| f64::from(xf.scale));
+                let grown = t.cols[0] - self.data.m20_w;
+                if (grown - 30.0 / scale).abs() > 1.5 {
+                    return Err(format!(
+                        "dragging the border 30 px changed the column by {grown:.2} pt (expected {:.2})",
+                        30.0 / scale
+                    ));
+                }
+                if steps_now != self.data.m20_hist + 1 {
+                    return Err("the border drag was not one undo step".into());
+                }
+                let w = doc.frame(id).map_or(0.0, |f| f.rect.width);
+                if (w - t.width()).abs() > 1e-6 {
+                    return Err("the frame width does not follow the columns".into());
+                }
+                self.ok(format!(
+                    "dragging a column border widened column 1 by {grown:.1} pt in one undo step"
+                ));
+                // Click a cell of the selected table to edit it, then set its fill.
+                self.data.m20_hist = steps_now;
+                self.click(cell10, false);
+            }
+            176 => {
+                let id = self.data.m20.ok_or("no table")?;
+                if app.view().and_then(|v| v.edit.as_ref()).map(|e| e.frame) != Some(id) {
+                    return Err("clicking a cell of the selected table did not edit it".into());
+                }
+                self.click_target(ctx, &format!("paint-cell-fill-{id}"))?;
+            }
+            177 => {
+                let name = app
+                    .doc()
+                    .and_then(|d| d.swatches.iter().next().map(|s| s.name.clone()))
+                    .ok_or("no swatch")?;
+                self.click_target(ctx, &format!("paint-swatch-{name}"))?;
+            }
+            178 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let c = t.cell_at(1, 0).ok_or("no cell")?;
+                if c.fill.is_none() || t.cell_at(1, 1).is_some_and(|o| o.fill.is_some()) {
+                    return Err(format!("the panel fill gave {:?}", c.fill));
+                }
+                if Self::done_steps(app) != self.data.m20_hist + 1 {
+                    return Err("the fill took more than one undo step".into());
+                }
+                self.ok(
+                    "Cell section of the panel: fill set on the edited cell only, one undo step",
+                );
+                self.screenshot(ctx);
+            }
+            179 => {
+                // The panel's border control: None on the edited cell.
+                self.click_target(ctx, "cell-border-none")?;
+            }
+            180 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let cell10 = Self::cell_center(app, id, 1, 0)?;
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let c = t.cell_at(1, 0).ok_or("no cell")?;
+                let o = t.cell_at(1, 1).ok_or("no cell")?;
+                if c.borders.iter().any(Option::is_some) || o.borders.iter().all(Option::is_none) {
+                    return Err(format!(
+                        "None gave {:?} / neighbour {:?}",
+                        c.borders, o.borders
+                    ));
+                }
+                if steps_now != self.data.m20_hist + 2 {
+                    return Err("fill then no borders should be two undo steps".into());
+                }
+                self.ok(
+                    "Cell section: Borders > None removed the four borders of the edited cell only",
+                );
+                // Back to the canvas so the next keys reach the cell.
+                self.click(cell10, false);
+            }
+            181 => {
+                // Select all in the cell and type text that wraps: the
+                // row grows, and the frame with it, in ONE undo step.
+                let id = self.data.m20.ok_or("no table")?;
+                let h = app
+                    .doc()
+                    .and_then(|d| d.frame(id))
+                    .map_or(0.0, |f| f.rect.height);
+                self.data.m20_h = h;
+                self.data.m20_hist = Self::done_steps(app);
+                self.key(Key::A, Modifiers::COMMAND);
+                self.pending.push_back(vec![Event::Text(
+                    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi"
+                        .to_string(),
+                )]);
+            }
+            182 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let c = t.cell_at(1, 0).ok_or("no cell")?;
+                let text = doc
+                    .story(c.story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                if !text.starts_with("alpha beta") {
+                    return Err(format!("the replacement text is {text:?}"));
+                }
+                let h = doc.frame(id).map_or(0.0, |f| f.rect.height);
+                if h <= self.data.m20_h + 5.0 {
+                    return Err(format!(
+                        "the frame stayed {h:.1} pt tall (was {:.1})",
+                        self.data.m20_h
+                    ));
+                }
+                if steps_now != self.data.m20_hist + 1 {
+                    return Err(format!(
+                        "replacing text and growing the frame took {} undo steps",
+                        steps_now - self.data.m20_hist
+                    ));
+                }
+                self.ok(format!(
+                    "select all + typing that wraps grew the frame {:.1} -> {h:.1} pt, in one undo step",
+                    self.data.m20_h
+                ));
+                app.run_action(ctx, Action::Undo);
+            }
+            183 => {
+                let id = self.data.m20.ok_or("no table")?;
+                let steps_now = Self::done_steps(app);
+                let doc = app.doc().ok_or("no doc")?;
+                let t = doc
+                    .frame(id)
+                    .and_then(|f| f.as_table())
+                    .ok_or("table gone")?;
+                let c = t.cell_at(1, 0).ok_or("no cell")?;
+                let text = doc
+                    .story(c.story)
+                    .map(|s| s.plain_text())
+                    .unwrap_or_default();
+                let h = doc.frame(id).map_or(0.0, |f| f.rect.height);
+                if text != "cell3"
+                    || (h - self.data.m20_h).abs() > 1e-6
+                    || steps_now != self.data.m20_hist
+                {
+                    return Err(format!(
+                        "one undo left text {text:?}, height {h:.2} (was {:.2}), {} steps",
+                        self.data.m20_h,
+                        steps_now - self.data.m20_hist
+                    ));
+                }
+                self.ok("one undo restored both the text and the frame height");
+            }
+            184 => {
+                let pdf = self.out.join("tables.pdf");
+                if !app.export_pdf_to(&pdf) {
+                    return Err("PDF export failed".into());
+                }
+                let bytes = std::fs::read(&pdf).map_err(|e| e.to_string())?;
+                let has = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+                // Page objects: "/Type/Page" or "/Type /Page" not followed by 's' (Pages).
+                let pages = bytes
+                    .windows(12)
+                    .filter(|w| {
+                        let tail = if w.starts_with(b"/Type/Page") {
+                            &w[10..]
+                        } else if w.starts_with(b"/Type /Page") {
+                            &w[11..]
+                        } else {
+                            return false;
+                        };
+                        tail.first() != Some(&b's')
+                    })
+                    .count();
+                if bytes.len() < 1000
+                    || !bytes.starts_with(b"%PDF-")
+                    || !has(b"%%EOF")
+                    || !has(b"startxref")
+                    || pages != 1
+                {
+                    return Err(format!(
+                        "the table PDF looks wrong ({} bytes, {pages} page objects)",
+                        bytes.len()
+                    ));
+                }
+                self.ok(format!(
+                    "exported the table page as PDF ({} bytes: header, one page object, xref and EOF present; the cell text is in compressed subset-font streams, so it is not checked here)",
+                    bytes.len()
+                ));
                 return Ok(true);
             }
             _ => return Ok(true),

@@ -39,6 +39,8 @@ pub enum Dialog {
     WordArt(Box<WordArtState>),
     /// Format → Border Art…
     BorderArt(Box<BorderArtState>),
+    /// Insert → Table…
+    Table(TableState),
 }
 
 /// What kind of swatch the editor makes.
@@ -376,6 +378,7 @@ fn body(app: &mut PubrsApp, ui: &mut egui::Ui, dialog: &mut Dialog) -> Outcome {
         Dialog::Paragraph(state) => paragraph_ui(app, ui, state),
         Dialog::DropCap(state) => drop_cap_ui(app, ui, state),
         Dialog::WordArt(state) => wordart_ui(app, ui, state),
+        Dialog::Table(state) => table_ui(app, ui, state),
         Dialog::BorderArt(state) => border_art_ui(app, ui, state),
         Dialog::Tabs(state) => tabs_ui(app, ui, state),
         Dialog::Lists(state) => list_ui(app, ui, state),
@@ -3124,6 +3127,182 @@ fn wordart_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut WordArtState) -> O
                 }
             }
         });
+    ui.add_space(8.0);
+    let (enter, escape) = ui.input(|i| {
+        (
+            i.key_pressed(egui::Key::Enter),
+            i.key_pressed(egui::Key::Escape),
+        )
+    });
+    let mut out = Outcome::Keep;
+    ui.horizontal(|ui| {
+        let ok = ui.button("Insert");
+        mark(ui, "ok", &ok);
+        if ok.clicked() || enter {
+            out = if st.insert(app) {
+                Outcome::Close
+            } else {
+                Outcome::Keep
+            };
+        }
+        let c = ui.button("Cancel");
+        mark(ui, "cancel", &c);
+        if c.clicked() || escape {
+            out = Outcome::Close;
+        }
+    });
+    out
+}
+
+/// Insert → Table…: rows and columns, from a hover grid or typed.
+pub struct TableState {
+    rows: u32,
+    cols: u32,
+    focused: bool,
+}
+
+/// The hover grid: rows by columns.
+const TABLE_GRID: (u32, u32) = (8, 10);
+
+impl TableState {
+    pub fn new() -> Self {
+        Self {
+            rows: 3,
+            cols: 3,
+            focused: false,
+        }
+    }
+
+    /// Add the table, centred on the page shown and about two thirds of the
+    /// margin box wide, with rows of 24 pt: one undo step. The first cell is
+    /// then ready for typing.
+    fn insert(&self, app: &mut PubrsApp) -> bool {
+        use pubrs_api::tools::tables::TableAdd;
+        let Some(doc) = app.doc() else { return false };
+        let Some(page) = app.view().and_then(|v| doc.pages.get(v.page)) else {
+            return false;
+        };
+        let (size, m) = (doc.setup.size, doc.setup.margins);
+        let page_id = page.id;
+        let w = ((size.width - m.left - m.right) * 2.0 / 3.0).max(72.0);
+        // Every row shows: the frame is rows x 24 pt, even past the page.
+        let h = f64::from(self.rows) * crate::tables::ROW_HEIGHT;
+        let y_top = ((size.height - h) / 2.0).max(m.top).max(0.0);
+        let req = TableAdd {
+            doc_id: app.doc_id(),
+            page_id: Some(page_id),
+            master_id: None,
+            rows: self.rows,
+            cols: self.cols,
+            x: (size.width - w) / 2.0,
+            y: y_top,
+            width: w,
+            height: h,
+            header_fill: None,
+            border_width: None,
+            border_color: None,
+            name: None,
+        };
+        let r = app.session.table_add(req);
+        let Some(out) = app.report(r) else {
+            return false;
+        };
+        app.select(vec![out.frame_id]);
+        if let Some(first) = out.story_ids.first() {
+            crate::canvas::begin_edit(app, out.frame_id, *first, 0);
+        }
+        if y_top + h > size.height {
+            app.notify("The table runs past the bottom of the page: resize it or use fewer rows");
+        }
+        true
+    }
+}
+
+fn table_ui(app: &mut PubrsApp, ui: &mut egui::Ui, st: &mut TableState) -> Outcome {
+    ui.ctx().data_mut(|d| {
+        d.remove::<HashMap<String, egui::Rect>>(egui::Id::new(TARGETS));
+    });
+    ui.heading("Insert Table");
+    ui.label("Point at the grid and click, or type the numbers.");
+    ui.add_space(4.0);
+    let cell = 18.0;
+    let (grid, _) = ui.allocate_exact_size(
+        egui::vec2(
+            cell * TABLE_GRID.1 as f32 + 2.0 * (TABLE_GRID.1 as f32 - 1.0),
+            cell * TABLE_GRID.0 as f32 + 2.0 * (TABLE_GRID.0 as f32 - 1.0),
+        ),
+        egui::Sense::hover(),
+    );
+    let hover = ui.input(|i| i.pointer.hover_pos());
+    let mut shown = (st.rows, st.cols);
+    let mut clicked = None;
+    for r in 0..TABLE_GRID.0 {
+        for c in 0..TABLE_GRID.1 {
+            let rect = egui::Rect::from_min_size(
+                grid.min + egui::vec2(c as f32 * (cell + 2.0), r as f32 * (cell + 2.0)),
+                egui::vec2(cell, cell),
+            );
+            let resp = ui.interact(
+                rect,
+                egui::Id::new(("table-grid", r, c)),
+                egui::Sense::click(),
+            );
+            mark(ui, &format!("table-grid-{r}-{c}"), &resp);
+            if resp.hovered() || hover.is_some_and(|h| rect.contains(h)) {
+                shown = (r + 1, c + 1);
+            }
+            if resp.clicked() {
+                clicked = Some((r + 1, c + 1));
+            }
+        }
+    }
+    if let Some((r, c)) = clicked {
+        st.rows = r;
+        st.cols = c;
+        shown = (r, c);
+    }
+    let hovering = hover.is_some_and(|h| grid.contains(h));
+    for r in 0..TABLE_GRID.0 {
+        for c in 0..TABLE_GRID.1 {
+            let rect = egui::Rect::from_min_size(
+                grid.min + egui::vec2(c as f32 * (cell + 2.0), r as f32 * (cell + 2.0)),
+                egui::vec2(cell, cell),
+            );
+            let on = r < shown.0 && c < shown.1;
+            let fill = if on && hovering {
+                Color32::from_rgb(147, 197, 253)
+            } else if on {
+                Color32::from_rgb(191, 219, 254)
+            } else {
+                Color32::from_gray(245)
+            };
+            ui.painter().rect(
+                rect,
+                1.0,
+                fill,
+                egui::Stroke::new(1.0, Color32::from_gray(150)),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+    ui.label(if hovering {
+        format!("{} \u{d7} {}", shown.0, shown.1)
+    } else {
+        format!("{} rows \u{d7} {} columns", st.rows, st.cols)
+    });
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label("Rows");
+        let r = ui.add(egui::DragValue::new(&mut st.rows).range(1..=200));
+        mark(ui, "table-rows", &r);
+        ui.label("Columns");
+        let r = ui.add(egui::DragValue::new(&mut st.cols).range(1..=40));
+        mark(ui, "table-cols", &r);
+        if !st.focused {
+            r.request_focus();
+            st.focused = true;
+        }
+    });
     ui.add_space(8.0);
     let (enter, escape) = ui.input(|i| {
         (

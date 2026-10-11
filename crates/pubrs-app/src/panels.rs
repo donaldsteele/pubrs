@@ -1136,10 +1136,7 @@ fn frame_props(
             }
         }
         FrameContent::WordArt(w) => wordart_props(app, ui, doc, id, w),
-        // Read-only until the table GUI (T12).
-        FrameContent::Table(t) => {
-            ui.label(format!("Table: {}×{}", t.rows.len(), t.cols.len()));
-        }
+        FrameContent::Table(t) => table_props(app, ui, doc, id, t),
         FrameContent::Group(g) => {
             ui.label(format!("{} items", g.children.len()));
             let ctx = ui.ctx().clone();
@@ -1148,6 +1145,260 @@ fn frame_props(
             }
         }
     }
+}
+
+/// The Table and Cell sections of the panel (M20): the fill, borders,
+/// vertical alignment and insets of the selected cells (the cell being
+/// edited, the dragged range, or every cell), and the current column's width
+/// and row's minimum height. Each control is one undo step, merged while a
+/// slider is dragged.
+fn table_props(
+    app: &mut PubrsApp,
+    ui: &mut egui::Ui,
+    doc: &Document,
+    id: FrameId,
+    t: &pubrs_api::core::table::TableFrame,
+) {
+    use crate::tables;
+    ui.label(format!(
+        "Table: {} rows \u{d7} {} columns",
+        t.rows.len(),
+        t.cols.len()
+    ));
+    let Some(cx) = tables::context(app, doc, id) else {
+        return;
+    };
+    let Some(cur) = t.cell_at(cx.cur.0, cx.cur.1) else {
+        return;
+    };
+    ui.separator();
+    let title = if cx.whole {
+        "Cell (all cells)".to_string()
+    } else if cx.range.cells() > 1 {
+        format!("Cells ({} selected)", cx.range.cells())
+    } else {
+        "Cell".to_string()
+    };
+    let head = ui.label(RichText::new(title).strong());
+    if std::mem::take(&mut app.focus_cell_props) {
+        head.scroll_to_me(Some(egui::Align::TOP));
+    }
+    let style = cur.style();
+    ui.label("Fill");
+    if let Some(fill) = paint_edit(
+        ui,
+        doc,
+        &format!("cell-fill-{id}"),
+        style.fill.as_ref(),
+        PaintOpts {
+            none_ok: true,
+            gradient_ok: false,
+        },
+    ) {
+        tables::set_style(app, t, &cx, "fill", |s| s.fill = fill.clone());
+    }
+    // ---- borders
+    ui.label("Borders");
+    let side_id = egui::Id::new(("cell-border-side", id));
+    let mut side: usize = ui.data_mut(|d| d.get_temp(side_id)).unwrap_or(4);
+    ui.horizontal(|ui| {
+        for (label, i) in [
+            ("All", 4),
+            ("Top", 0),
+            ("Right", 1),
+            ("Bottom", 2),
+            ("Left", 3),
+        ] {
+            let r = ui.selectable_label(side == i, label);
+            crate::dialogs::mark(
+                ui,
+                &format!("cell-border-side-{}", label.to_lowercase()),
+                &r,
+            );
+            if r.clicked() {
+                side = i;
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(side_id, side));
+    let cur_border = style.borders[side.min(3)].clone();
+    let put = |s: &mut pubrs_api::core::table::CellStyle, b: Option<Stroke>| {
+        if side == 4 {
+            for x in &mut s.borders {
+                *x = b.clone();
+            }
+        } else {
+            s.borders[side] = b;
+        }
+    };
+    if let Some(Some(color)) = paint_edit(
+        ui,
+        doc,
+        &format!("cell-border-{id}"),
+        cur_border.as_ref().map(|b| &b.color),
+        PaintOpts {
+            none_ok: false,
+            gradient_ok: false,
+        },
+    ) {
+        let dash = cur_border.as_ref().map_or(Dash::Solid, |b| b.dash);
+        let width = cur_border.as_ref().map_or(0.5, |b| b.width);
+        tables::set_style(app, t, &cx, &format!("bcolor{side}"), |s| {
+            put(
+                s,
+                Some(Stroke {
+                    color: color.clone(),
+                    width,
+                    dash,
+                }),
+            )
+        });
+    }
+    ui.horizontal(|ui| {
+        ui.label("Width");
+        let mut w = cur_border.as_ref().map_or(0.0, |b| b.width);
+        let r = ui.add(
+            egui::DragValue::new(&mut w)
+                .speed(0.1)
+                .range(0.0..=288.0)
+                .max_decimals(2)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "cell-border-width", &r);
+        if r.changed() {
+            let color = cur_border
+                .as_ref()
+                .map_or(Paint::Color(Color::BLACK), |b| b.color.clone());
+            let dash = cur_border.as_ref().map_or(Dash::Solid, |b| b.dash);
+            tables::set_style(app, t, &cx, &format!("bwidth{side}"), |s| {
+                put(
+                    s,
+                    (w >= 0.05).then(|| Stroke {
+                        color: color.clone(),
+                        width: w,
+                        dash,
+                    }),
+                )
+            });
+        }
+        let none = ui.add_enabled(cur_border.is_some(), egui::Button::new("None"));
+        crate::dialogs::mark(ui, "cell-border-none", &none);
+        if none.clicked() {
+            tables::set_style(app, t, &cx, &format!("bnone{side}"), |s| put(s, None));
+        }
+    });
+    // ---- vertical alignment
+    ui.horizontal(|ui| {
+        ui.label("Vertical");
+        for (label, v) in [
+            ("Top", VerticalAlign::Top),
+            ("Middle", VerticalAlign::Middle),
+            ("Bottom", VerticalAlign::Bottom),
+        ] {
+            let r = ui.selectable_label(style.valign == v, label);
+            crate::dialogs::mark(ui, &format!("cell-valign-{}", label.to_lowercase()), &r);
+            if r.clicked() && style.valign != v {
+                tables::set_style(app, t, &cx, "valign", |s| s.valign = v);
+            }
+        }
+    });
+    // ---- insets
+    let m = style.insets;
+    let mut all = m.top;
+    ui.horizontal(|ui| {
+        ui.label("Insets");
+        let r = ui.add(
+            egui::DragValue::new(&mut all)
+                .speed(0.25)
+                .range(0.0..=100.0)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "cell-inset-all", &r);
+        if r.changed() {
+            tables::set_style(app, t, &cx, "inset-all", |s| {
+                s.insets = Margins::uniform(all)
+            });
+        }
+    });
+    egui::CollapsingHeader::new("Each side")
+        .id_salt(("cell-insets", id))
+        .show(ui, |ui| {
+            let mut vals = [m.top, m.right, m.bottom, m.left];
+            let mut changed = false;
+            for (label, v) in ["Top", "Right", "Bottom", "Left"].iter().zip(&mut vals) {
+                ui.horizontal(|ui| {
+                    ui.label(*label);
+                    let r = ui.add(
+                        egui::DragValue::new(v)
+                            .speed(0.25)
+                            .range(0.0..=100.0)
+                            .suffix(" pt"),
+                    );
+                    changed |= r.changed();
+                });
+            }
+            if changed {
+                tables::set_style(app, t, &cx, "inset-sides", |s| {
+                    s.insets = Margins {
+                        top: vals[0],
+                        right: vals[1],
+                        bottom: vals[2],
+                        left: vals[3],
+                    }
+                });
+            }
+        });
+    // ---- the current column and row
+    let (r, c) = (cx.cur.0 as usize, cx.cur.1 as usize);
+    let mut cw = t.cols[c];
+    ui.horizontal(|ui| {
+        ui.label(format!("Column {} width", c + 1));
+        let resp = ui.add(
+            egui::DragValue::new(&mut cw)
+                .speed(1.0)
+                .range(tables::MIN_TRACK..=2000.0)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "table-col-width", &resp);
+        if resp.changed() {
+            // A narrower column can wrap text and make rows taller.
+            let key = format!("prop-table-colw-{id}-{c}");
+            if app.exec_merge(
+                Command::TableSetColWidth {
+                    frame: id,
+                    col: c as u32,
+                    width: cw,
+                },
+                &key,
+            ) {
+                tables::grow(app, id, &key);
+            }
+        }
+    });
+    let mut rh = t.rows[r].min_height;
+    ui.horizontal(|ui| {
+        ui.label(format!("Row {} min height", r + 1));
+        let resp = ui.add(
+            egui::DragValue::new(&mut rh)
+                .speed(1.0)
+                .range(0.0..=2000.0)
+                .suffix(" pt"),
+        );
+        crate::dialogs::mark(ui, "table-row-height", &resp);
+        if resp.changed() {
+            let key = format!("prop-table-rowh-{id}-{r}");
+            if app.exec_merge(
+                Command::TableSetRowHeight {
+                    frame: id,
+                    row: r as u32,
+                    min_height: rh,
+                },
+                &key,
+            ) {
+                tables::grow(app, id, &key);
+            }
+        }
+    });
 }
 
 /// The shadow controls of a frame's style: on/off, offset, blur, opacity and

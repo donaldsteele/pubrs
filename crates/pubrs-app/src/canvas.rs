@@ -549,6 +549,9 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                     );
                 }
             }
+            if let Some(layout) = &layout {
+                table_overlay(&painter, app, doc, layout, xf, &drag);
+            }
             match &drag {
                 Some(Drag::Create { start, current }) | Some(Drag::Marquee { start, current }) => {
                     let r = xf.rect_to_screen(Rect::from_points(*start, *current));
@@ -575,7 +578,75 @@ fn page_view(app: &mut PubrsApp, ui: &mut egui::Ui) {
                 layout.as_deref(),
             );
             crate::spell::context_menu(app, ui);
+            crate::tables::context_menu(app, ui);
         });
+}
+
+/// The table border under the pointer: only for the table selected alone or
+/// being edited, from the cached table layout.
+fn border_under(
+    app: &PubrsApp,
+    doc: &Document,
+    layout: Option<&pubrs_api::layout::DocumentLayout>,
+    xf: PageXf,
+    pos: Pos2,
+) -> Option<(FrameId, crate::tables::Border)> {
+    let layout = layout?;
+    let frame = crate::tables::active_table(app, doc)?;
+    let tol = f64::from(crate::tables::BORDER_PX / xf.scale);
+    crate::tables::border_at(doc, layout, frame, xf.to_page(pos), tol).map(|b| (frame, b))
+}
+
+/// The selected cell range and the guide line of a border being dragged.
+fn table_overlay(
+    painter: &egui::Painter,
+    app: &PubrsApp,
+    doc: &Document,
+    layout: &pubrs_api::layout::DocumentLayout,
+    xf: PageXf,
+    drag: &Option<Drag>,
+) {
+    if let Some(s) = crate::tables::live_sel(app, doc)
+        && let Some(c) = crate::tables::range_corners(doc, layout, xf, &s)
+    {
+        painter.add(quad(
+            c,
+            Color32::from_rgba_unmultiplied(59, 130, 246, 60),
+            Stroke::new(1.5, SELECT),
+        ));
+    }
+    let line = |frame: FrameId, a: (f64, f64), b: (f64, f64)| {
+        if let (Some(a), Some(b)) = (
+            crate::tables::local_to_screen(doc, xf, frame, a.0, a.1),
+            crate::tables::local_to_screen(doc, xf, frame, b.0, b.1),
+        ) {
+            painter.line_segment([a, b], Stroke::new(1.5, SELECT));
+        }
+    };
+    match drag {
+        Some(Drag::TableCol {
+            frame, x0, width, ..
+        }) => {
+            let bottom = layout.table(*frame).map_or(0.0, |tl| {
+                tl.row_tops
+                    .iter()
+                    .zip(&tl.row_heights)
+                    .map(|(a, h)| a + h)
+                    .fold(0.0, f64::max)
+            });
+            line(*frame, (x0 + width, 0.0), (x0 + width, bottom));
+        }
+        Some(Drag::TableRow {
+            frame, top, height, ..
+        }) => {
+            let w = doc
+                .frame(*frame)
+                .and_then(|f| f.as_table())
+                .map_or(0.0, |t| t.width());
+            line(*frame, (0.0, top + height), (w, top + height));
+        }
+        _ => {}
+    }
 }
 
 /// The frame under the pointer for a click, and whether a handle was hit.
@@ -632,6 +703,18 @@ fn handle_input(
             ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
         } else if let Some((_, h)) = handle_at(doc, &selection, xf, pos, rotate_offset) {
             ctx.set_cursor_icon(h.cursor());
+        } else if let Some(Drag::TableCol { .. } | Drag::TableRow { .. }) =
+            app.view().and_then(|v| v.drag.as_ref())
+        {
+            ctx.set_cursor_icon(match app.view().and_then(|v| v.drag.as_ref()) {
+                Some(Drag::TableCol { .. }) => egui::CursorIcon::ResizeColumn,
+                _ => egui::CursorIcon::ResizeRow,
+            });
+        } else if let Some((_, b)) = border_under(app, doc, layout, xf, pos) {
+            ctx.set_cursor_icon(match b {
+                crate::tables::Border::Col { .. } => egui::CursorIcon::ResizeColumn,
+                crate::tables::Border::Row { .. } => egui::CursorIcon::ResizeRow,
+            });
         } else if app.show_guides
             && let Some((_, g)) = crate::rulers::guide_at(&doc.pages[0].guides, xf, pos, owner)
         {
@@ -641,17 +724,44 @@ fn handle_input(
                 egui::CursorIcon::ResizeVertical
             });
         } else if app.view().is_some_and(|v| v.edit.is_some())
-            && hit_leaf(doc, owner, xf.to_page(pos), pad)
-                .is_some_and(|f| doc.frame(f).is_some_and(|f| f.kind() == FrameKind::Text))
+            && hit_leaf(doc, owner, xf.to_page(pos), pad).is_some_and(|f| {
+                doc.frame(f)
+                    .is_some_and(|f| matches!(f.kind(), FrameKind::Text | FrameKind::Table))
+            })
         {
             ctx.set_cursor_icon(egui::CursorIcon::Text);
         }
     }
-    // ---- right click: the spelling menu on a misspelt word
+    // ---- right click: the table menu, the spelling menu on a misspelt word
     if resp.secondary_clicked()
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let p = xf.to_page(pos);
+        app.table_menu = None;
+        if let (Some(leaf), Some(layout)) = (hit_leaf(doc, owner, p, pad), layout)
+            && doc
+                .frame(leaf)
+                .is_some_and(|f| f.kind() == FrameKind::Table)
+            && let Some(hit) = crate::tables::hit_cell(doc, layout, leaf, p)
+        {
+            let editing_here = app
+                .view()
+                .and_then(|v| v.edit.as_ref())
+                .is_some_and(|e| e.frame == leaf);
+            if !editing_here && selection != [leaf] {
+                app.select(vec![leaf]);
+            }
+            let menu = app.doc().and_then(|full| {
+                crate::tables::TableMenu::new(app, full, leaf, (hit.row, hit.col), pos)
+            });
+            app.table_menu = menu;
+            app.spell.menu = None;
+            if let Some(doc_id) = app.doc_id() {
+                let at = textedit::offset_at(doc, layout, hit.story, leaf, p).unwrap_or(0);
+                crate::spell::open_menu(app, doc_id, doc, hit.story, at, pos, false);
+            }
+            return;
+        }
         if let (Some(leaf), Some(layout), Some(doc_id)) =
             (hit_leaf(doc, owner, p, pad), layout, app.doc_id())
             && let Some(story) = doc.story_of(leaf)
@@ -676,20 +786,12 @@ fn handle_input(
                     }
                 }
                 Some(FrameKind::Table) => {
-                    // Edit the cell under the pointer (the full table GUI is T12).
-                    if let (Some(layout), Some((x, y))) =
-                        (layout, textedit::page_to_frame(doc, leaf, p))
-                        && let Some(t) = doc.frame(leaf).and_then(|f| f.as_table())
-                        && let Some(tl) = layout.table(leaf)
-                        && let Some(cl) = t
-                            .cells
-                            .iter()
-                            .zip(&tl.cells)
-                            .find(|(_, cl)| cl.rect.contains(Point::new(x, y)))
-                            .map(|(c, _)| c.story)
+                    // Edit the cell under the pointer.
+                    if let Some(layout) = layout
+                        && let Some(hit) = crate::tables::hit_cell(doc, layout, leaf, p)
                     {
-                        let at = textedit::offset_at(doc, layout, cl, leaf, p).unwrap_or(0);
-                        begin_edit(app, leaf, cl, at);
+                        let at = textedit::offset_at(doc, layout, hit.story, leaf, p).unwrap_or(0);
+                        begin_edit(app, leaf, hit.story, at);
                         resp.request_focus();
                     }
                 }
@@ -723,6 +825,50 @@ fn handle_input(
                     ed.set(at, modifiers.shift);
                     ed.frame = leaf;
                     ed.goal_x = None;
+                }
+                return;
+            }
+        }
+        // In a table: a click in a cell of the table being edited moves the
+        // caret there (Shift extends to a cell range); a click in a cell of
+        // a table that is already selected begins editing that cell.
+        if app.tool == Tool::Select
+            && let Some(layout) = layout
+            && let Some(leaf) = hit_leaf(doc, owner, p, pad)
+            && doc
+                .frame(leaf)
+                .is_some_and(|f| f.kind() == FrameKind::Table)
+            && let Some(hit) = crate::tables::hit_cell(doc, layout, leaf, p)
+        {
+            let in_table = editing.as_ref().is_some_and(|e| e.frame == leaf);
+            if in_table || selection == [leaf] {
+                let at = textedit::offset_at(doc, layout, hit.story, leaf, p).unwrap_or(0);
+                match &editing {
+                    Some(e) if e.story == hit.story => {
+                        if let Some(v) = app.view_mut()
+                            && let Some(ed) = &mut v.edit
+                        {
+                            ed.set(at, modifiers.shift);
+                            ed.goal_x = None;
+                        }
+                    }
+                    Some(e) if modifiers.shift => {
+                        let from = doc
+                            .frame(leaf)
+                            .and_then(|f| f.as_table())
+                            .and_then(|t| t.cell_of_story(e.story).map(|c| (c.row, c.col)));
+                        if let (Some(from), Some(t)) =
+                            (from, doc.frame(leaf).and_then(|f| f.as_table()))
+                        {
+                            let sel =
+                                crate::tables::range_between(t, leaf, from, (hit.row, hit.col));
+                            app.select(vec![leaf]);
+                            if let Some(v) = app.view_mut() {
+                                v.table_sel = Some(sel);
+                            }
+                        }
+                    }
+                    _ => begin_edit(app, leaf, hit.story, at),
                 }
                 return;
             }
@@ -785,6 +931,52 @@ fn handle_input(
                     rect: f.rect,
                 }
             })
+        } else if let Some((frame, b)) = border_under(app, doc, layout, xf, origin) {
+            Some(match b {
+                crate::tables::Border::Col { col, x0 } => {
+                    let orig = doc
+                        .frame(frame)
+                        .and_then(|f| f.as_table())
+                        .map_or(0.0, |t| t.cols[col as usize]);
+                    Drag::TableCol {
+                        frame,
+                        col,
+                        x0,
+                        orig,
+                        width: orig,
+                    }
+                }
+                crate::tables::Border::Row { row, top } => {
+                    let h = layout
+                        .and_then(|l| l.table(frame))
+                        .map_or(0.0, |tl| tl.row_heights[row as usize]);
+                    Drag::TableRow {
+                        frame,
+                        row,
+                        top,
+                        orig: h,
+                        height: h,
+                    }
+                }
+            })
+        } else if let Some(leaf) = hit_leaf(doc, owner, p, pad)
+            && !modifiers.alt
+            && let Some(layout) = layout
+            && doc
+                .frame(leaf)
+                .is_some_and(|f| f.kind() == FrameKind::Table)
+            && (selection == [leaf]
+                || app
+                    .view()
+                    .and_then(|v| v.edit.as_ref())
+                    .is_some_and(|e| e.frame == leaf))
+            && let Some(hit) = crate::tables::hit_cell(doc, layout, leaf, p)
+        {
+            // A drag that starts in a cell of a selected table selects text
+            // in the cell, and cells once it leaves the cell.
+            let at = textedit::offset_at(doc, layout, hit.story, leaf, p).unwrap_or(0);
+            begin_edit(app, leaf, hit.story, at);
+            Some(Drag::TextSelect)
         } else if app.show_guides
             && hit_leaf(doc, owner, p, pad).is_none()
             && let Some((o, g)) = crate::rulers::guide_at(&doc.pages[0].guides, xf, origin, owner)
@@ -908,14 +1100,70 @@ fn handle_input(
             }
             Some(Drag::Guide { .. }) => {}
             Some(Drag::TextSelect) => {
-                if let (Some(layout), Some(e)) = (layout, app.view().and_then(|v| v.edit.clone()))
-                    && let Some(leaf) = hit_leaf(doc, owner, p, pad)
-                    && doc.story_of(leaf) == Some(e.story)
-                    && let Some(at) = textedit::offset_at(doc, layout, e.story, leaf, p)
-                    && let Some(v) = app.view_mut()
-                    && let Some(ed) = &mut v.edit
+                if let (Some(layout), Some(e)) = (layout, app.view().and_then(|v| v.edit.clone())) {
+                    if let Some(leaf) = hit_leaf(doc, owner, p, pad)
+                        && doc.story_of(leaf) == Some(e.story)
+                        && let Some(at) = textedit::offset_at(doc, layout, e.story, leaf, p)
+                        && let Some(v) = app.view_mut()
+                        && let Some(ed) = &mut v.edit
+                    {
+                        ed.set(at, true);
+                    } else if let Some(t) = doc.frame(e.frame).and_then(|f| f.as_table())
+                        && let Some(from) = t.cell_of_story(e.story).map(|c| (c.row, c.col))
+                        && let Some(to) = crate::tables::nearest_cell(doc, layout, e.frame, p)
+                    {
+                        if to == from || t.cell_at(to.0, to.1).is_some_and(|c| c.story == e.story) {
+                            // Still in the cell being edited.
+                            if let Some(at) = textedit::offset_at(doc, layout, e.story, e.frame, p)
+                                && let Some(v) = app.view_mut()
+                                && let Some(ed) = &mut v.edit
+                            {
+                                ed.set(at, true);
+                            }
+                        } else {
+                            // Left the cell: select cells.
+                            let sel = crate::tables::range_between(t, e.frame, from, to);
+                            app.select(vec![e.frame]);
+                            if let Some(v) = app.view_mut() {
+                                v.table_sel = Some(sel);
+                            }
+                            drag = Some(Drag::TableSel {
+                                frame: e.frame,
+                                anchor: from,
+                            });
+                        }
+                    }
+                }
+            }
+            Some(Drag::TableSel { frame, anchor }) => {
+                if let Some(layout) = layout
+                    && let Some(t) = doc.frame(*frame).and_then(|f| f.as_table())
+                    && let Some(to) = crate::tables::nearest_cell(doc, layout, *frame, p)
                 {
-                    ed.set(at, true);
+                    let sel = crate::tables::range_between(t, *frame, *anchor, to);
+                    if let Some(v) = app.view_mut() {
+                        v.table_sel = Some(sel);
+                    }
+                }
+            }
+            Some(Drag::TableCol {
+                frame, x0, width, ..
+            }) => {
+                if let Some((x, _)) = textedit::page_to_frame(doc, *frame, p) {
+                    *width = (x - *x0).clamp(
+                        crate::tables::MIN_TRACK,
+                        pubrs_api::core::command::MAX_DIMENSION,
+                    );
+                }
+            }
+            Some(Drag::TableRow {
+                frame, top, height, ..
+            }) => {
+                if let Some((_, y)) = textedit::page_to_frame(doc, *frame, p) {
+                    *height = (y - *top).clamp(
+                        crate::tables::MIN_TRACK,
+                        pubrs_api::core::command::MAX_DIMENSION,
+                    );
                 }
             }
             None => {}
@@ -960,6 +1208,24 @@ fn handle_input(
                     frame,
                     degrees: angle,
                 });
+            }
+            Some(Drag::TableCol {
+                frame,
+                col,
+                orig,
+                width,
+                ..
+            }) if (width - orig).abs() > 1e-6 => {
+                crate::tables::set_col_width(app, frame, col, width);
+            }
+            Some(Drag::TableRow {
+                frame,
+                row,
+                orig,
+                height,
+                ..
+            }) if (height - orig).abs() > 1e-6 => {
+                crate::tables::set_row_height(app, frame, row, height);
             }
             Some(Drag::Create { start, current }) => {
                 let tool = app.tool;
@@ -1084,21 +1350,37 @@ fn object_keys(
         );
     }
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.select(Vec::new());
-        app.tool = Tool::Select;
+        // Esc first drops a cell range, then the selection.
+        if app.view().is_some_and(|v| v.table_sel.is_some()) {
+            if let Some(v) = app.view_mut() {
+                v.table_sel = None;
+            }
+        } else {
+            app.select(Vec::new());
+            app.tool = Tool::Select;
+        }
     }
     if ctx.input(|i| i.key_pressed(egui::Key::Enter))
         && let [f] = selection
-        && let Some(story) = doc.story_of(*f)
     {
-        let end = doc.story(story).map_or(0, |s| s.char_len());
-        let _ = layout;
-        begin_edit(app, *f, story, end);
+        if let Some(story) = doc.story_of(*f) {
+            let end = doc.story(story).map_or(0, |s| s.char_len());
+            let _ = layout;
+            begin_edit(app, *f, story, end);
+        } else if let Some(t) = doc.frame(*f).and_then(|f| f.as_table()) {
+            // The first cell of the range, or of the table.
+            let (r, c) = crate::tables::live_sel(app, doc).map_or((0, 0), |s| (s.r0, s.c0));
+            if let Some(cell) = t.cell_at(r, c) {
+                let end = doc.story(cell.story).map_or(0, |s| s.char_len());
+                begin_edit(app, *f, cell.story, end);
+            }
+        }
     }
 }
 
 pub fn begin_edit(app: &mut PubrsApp, frame: FrameId, story: pubrs_api::core::StoryId, at: usize) {
     if let Some(v) = app.view_mut() {
+        v.table_sel = None;
         v.selection = vec![frame];
         v.edit = Some(TextEdit::new(frame, story, at));
     }
@@ -1610,6 +1892,20 @@ mod enter_tests {
 /// each); anywhere else Tab inserts a tab character. Shortcuts with
 /// Cmd/Ctrl or Alt are not list gestures.
 fn tab_key(app: &mut PubrsApp, doc: &Document, e: &TextEdit, m: egui::Modifiers) {
+    // In a table cell Tab moves between cells; Control+Tab types a tab
+    // (Control, not Cmd, on macOS, where Cmd+Tab is the app switcher).
+    if doc
+        .frame(e.frame)
+        .is_some_and(|f| f.kind() == FrameKind::Table)
+        && !m.alt
+    {
+        if m.ctrl && !m.shift {
+            edit_insert(app, e, "\t");
+        } else if !m.command && !m.ctrl {
+            crate::tables::tab_cell(app, doc, e, !m.shift);
+        }
+        return;
+    }
     let list_item = || {
         let s = doc.story(e.story)?;
         let (pi, c) = s.locate(e.range().0);
