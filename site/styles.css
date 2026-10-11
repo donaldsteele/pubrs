@@ -145,6 +145,7 @@ section { padding: 88px 0 0; }
 .power { display: grid; gap: 32px; }
 @media (min-width: 900px) { .power { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: start; } }
 pre { margin: 0; background: #14171a; color: #e9ece9; padding: 20px; overflow-x: auto; font-size: 0.85rem; line-height: 1.65; border-left: 6px solid var(--cyan); }
+pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
 pre .c { color: #8e989f; }
 pre .p { color: #ff6fae; user-select: none; }
 .power p { color: var(--ink-2); }
