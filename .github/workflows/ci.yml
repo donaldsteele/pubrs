@@ -79,6 +79,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./packaging/windows/check-subsystem.ps1 -Gui target\debug\pubrs-app.exe
+      - name: Executables need no Visual C++ runtime DLLs (Windows; the runner has them, a clean PC may not)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Control: the runner's msvcp140.dll imports VCRUNTIME140.dll, so the check must flag it.
+          $control = ./packaging/windows/check-crt.ps1 -Report "$env:SystemRoot\System32\msvcp140.dll"
+          $control
+          if (-not ($control -match 'needs the C runtime: .*VCRUNTIME140')) { throw "check-crt.ps1 did not flag msvcp140.dll" }
+          cargo build -p pubrs-mcp
+          ./packaging/windows/check-crt.ps1 -Exe target\debug\pubrs-app.exe, target\debug\pubrs.exe, target\debug\pubrs-mcp.exe
       - name: GUI self-test through the Mesa llvmpipe restart (Windows; the runner has no GPU)
         if: runner.os == 'Windows'
         shell: pwsh

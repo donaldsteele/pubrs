@@ -59,6 +59,7 @@ Each installer job installs (or mounts) the package and then:
 | Launches the GUI | `pubrs-app --smoke-test`, which must restart with the bundled Mesa llvmpipe (the runner has no GPU) | `pubrs-app --smoke-test` | `xvfb-run pubrs-app --smoke-test` | `--smoke-test` under xvfb |
 | Opens the sample and exports a PDF | `pubrs export samples\bakery-trifold.pubrs` | `pubrs export Resources/samples/…` | `pubrs export /usr/share/doc/pubrs/examples/…` | `--cli export …` |
 | No console window | `check-subsystem.ps1`: pubrs-app GUI, pubrs and pubrs-mcp console | — | — | — |
+| No Visual C++ runtime DLLs | `check-crt.ps1` (dumpbin) on the built exes, x64 and ARM64; the bundled Mesa DLLs are listed | — | — | — |
 | File type registered | `assoc .pubrs` = `pubrs.Publication` | `CFBundleDocumentTypes` in Info.plist | mime XML installed | — |
 | Uninstalls cleanly | `msiexec /x /qn`, binaries gone | remove `.app` | `apt remove`, binaries gone | delete file |
 
@@ -120,6 +121,16 @@ macOS PDFKit, Linux CUPS):
 
 Record the results (OS version, installer, pass/fail per step) in the
 release notes.
+
+## 0.2.1 release notes
+
+**Fixed**
+
+- Windows: pubrs no longer needs the Visual C++ Redistributable. 0.2.0 could
+  fail to start on a clean Windows install with "VCRUNTIME140.dll was not
+  found"; the C runtime is now part of the executables.
+
+Everything else is as in 0.2.0 (below).
 
 ## 0.2.0 release notes
 

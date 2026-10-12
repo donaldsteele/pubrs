@@ -48,12 +48,18 @@ jobs:
           cargo install cargo-wix --version 0.3.9 --locked
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p pubrs-app -p pubrs-cli -p pubrs-mcp
+      - name: Executables need no Visual C++ runtime DLLs (the runner has them, a clean PC may not)
+        shell: pwsh
+        run: |
+          $bin = "target\${{ matrix.target }}\release"
+          ./packaging/windows/check-crt.ps1 -Exe "$bin\pubrs-app.exe", "$bin\pubrs.exe", "$bin\pubrs-mcp.exe"
       - name: Fetch Mesa llvmpipe for the MSI (x64 only; mesa-dist-win has no ARM64 build)
         if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: pwsh
         run: |
           ./packaging/windows/fetch-mesa.ps1 -Dest target\mesa
           "PUBRS_MESA_DIR=$PWD\target\mesa" | Out-File -FilePath $env:GITHUB_ENV -Append
+          ./packaging/windows/check-crt.ps1 -Report (Get-ChildItem target\mesa\*.dll).FullName
       - name: Build MSI
         run: cargo wix -p pubrs-app --no-build --nocapture --target ${{ matrix.target }} --output target/wix/pubrs-${{ env.VERSION }}-${{ matrix.target }}.msi
       - name: Sign MSI (placeholder, runs when a certificate is configured)

@@ -1,0 +1,9 @@
+# Link the C runtime into the Windows executables (/MT) so they start on a
+# clean Windows install without the Visual C++ Redistributable
+# (VCRUNTIME140.dll). CI runners have the redistributable installed, so
+# packaging/windows/check-crt.ps1 checks the imports instead (ADR 0010).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
