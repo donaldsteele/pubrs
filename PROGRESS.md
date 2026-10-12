@@ -14,7 +14,7 @@ Spec: `PLAN.md` (CLAUDE.md calls it PROMPT.md; same document). Read this file fi
 | M7 GUI | done; CI green | GUI self-test (14 steps, real input injection) + 7 app unit tests; Windows/macOS compile clean |
 | M8 Templates, printing, installers, docs, DoD | done; CI green; release workflow green | release workflow (MSI x64/ARM64, universal DMG, .deb + AppImage x86_64/aarch64, Flatpak manifest); .deb and AppImage built and run here; +1 CLI test (bundled sample); self-test reopens by file drop |
 
-**Next step:** v0.2.1: link the Windows C runtime statically (`+crt-static`; nothing sets it today, so `VCRUNTIME140.dll` may be missing on a clean Windows install, and CI runners already have it, so CI cannot catch it). Then the owner publishes the release. v0.2.0 is tagged on 101cf18 and its draft release is unpublished (see "After 0.2.0" at the end of this file).
+**Next step:** none queued. v0.2.0 and v0.2.1 are published; v0.2.1 is the latest release (see "0.2.1" at the end of this file). Open owner items are listed there.
 
 
 ## Phase 2: Publisher parity
@@ -173,3 +173,19 @@ Tests: 547 in `cargo test --workspace` (0 failed), also with `PUBRS_LAYOUT_VERIF
   checks (5160 alignment, booklet duplex fold, PDF/X-4 preflight), checking the label-sheet presets written from
   memory against datasheets (5376, 5377, 22805, 5305, 8315, C32011, L7651, L7161/L7162 margins), and the licence
   outliers listed in DEPENDENCIES.md (BSL-1.0 clipboard-win and error-code, OFL/Ubuntu fonts).
+
+## 0.2.0 published, 0.2.1 (2026-10-12)
+
+- The owner asked for v0.2.0 to be released: its draft was published on 2026-10-12 as the latest release, with the
+  RELEASE.md notes, an install section, and a workaround for a missing `VCRUNTIME140.dll`.
+- v0.2.1 links the Windows C runtime statically (`.cargo/config.toml`, `+crt-static` for x86_64- and
+  aarch64-pc-windows-msvc; ADR 0010 addendum). `packaging/windows/check-crt.ps1` runs `dumpbin /dependents` and fails
+  on `VCRUNTIME*`, `MSVCP*`, `ucrtbase` or `api-ms-win-crt-*`. CI runs it on the debug exes, with the runner's
+  `msvcp140.dll` as a control that must be flagged (it is: `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`,
+  `api-ms-win-crt-*`). The release workflow runs it on the x64 and ARM64 release exes and lists the bundled Mesa DLLs
+  (they need no C runtime either). Branch CI run 38198670733 and release rehearsal 38198672617 were green on
+  every job before `main` was fast-forwarded and tagged; tag release run 38203911965.
+- The v0.1.0 and v0.1.1 drafts are still there (unpublished; the owner has not said whether to delete them).
+- Still open for the owner: the RELEASE.md manual print checks (5160 alignment, booklet duplex fold, PDF/X-4
+  preflight), the label-sheet presets written from memory (5376, 5377, 22805, 5305, 8315, C32011, L7651,
+  L7161/L7162 margins), and the licence outliers in DEPENDENCIES.md.
